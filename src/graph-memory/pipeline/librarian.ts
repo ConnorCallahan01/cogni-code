@@ -117,6 +117,14 @@ export async function runLibrarian(sessionId: string): Promise<void> {
       throw new Error("No text response from librarian");
     }
 
+    // Warn if response was truncated by token limit
+    if (response.stop_reason === "max_tokens") {
+      activityBus.log("librarian:error", `Librarian response truncated (hit max_tokens=${CONFIG.maxTokens.librarian}). Output may need repair.`, {
+        outputTokens: response.usage?.output_tokens,
+        maxTokens: CONFIG.maxTokens.librarian,
+      });
+    }
+
     // Prepend the prefill brace back
     const result: LibrarianResult = extractJSON<LibrarianResult>("{" + textBlock.text);
     const elapsed = Date.now() - startTime;
@@ -157,6 +165,13 @@ export async function runLibrarian(sessionId: string): Promise<void> {
 
       const textBlock = response.content.find((b) => b.type === "text");
       if (!textBlock || textBlock.type !== "text") throw new Error("No text in retry");
+
+      if (response.stop_reason === "max_tokens") {
+        activityBus.log("librarian:error", `Librarian retry also truncated (hit max_tokens=${CONFIG.maxTokens.librarian}). Attempting repair.`, {
+          outputTokens: response.usage?.output_tokens,
+          maxTokens: CONFIG.maxTokens.librarian,
+        });
+      }
 
       const result: LibrarianResult = extractJSON<LibrarianResult>("{" + textBlock.text);
       await applyLibrarianResult(result);

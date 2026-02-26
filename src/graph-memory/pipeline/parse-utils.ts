@@ -36,5 +36,84 @@ export function extractJSON<T>(raw: string): T {
     }
   }
 
+  // 4. Attempt to repair truncated JSON (missing closing brackets/braces)
+  const firstBraceForRepair = text.indexOf("{");
+  if (firstBraceForRepair !== -1) {
+    try {
+      const repaired = repairTruncatedJSON(text.slice(firstBraceForRepair));
+      return JSON.parse(repaired);
+    } catch {
+      // continue
+    }
+  }
+
   throw new Error(`Could not extract JSON from response (length=${text.length}): ${text.slice(0, 200)}`);
+}
+
+/**
+ * Attempt to repair JSON that was truncated mid-output (e.g. due to max_tokens).
+ * Counts unmatched opening brackets/braces and appends the missing closers.
+ * Handles truncation mid-string by closing the open string first.
+ */
+export function repairTruncatedJSON(text: string): string {
+  let repaired = text.trimEnd();
+
+  // If we're inside an unterminated string, close it
+  let inString = false;
+  let escaped = false;
+  for (let i = 0; i < repaired.length; i++) {
+    const ch = repaired[i];
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (ch === "\\") {
+      escaped = true;
+      continue;
+    }
+    if (ch === '"') {
+      inString = !inString;
+    }
+  }
+  if (inString) {
+    repaired += '"';
+  }
+
+  // Remove trailing commas before we add closers (invalid JSON)
+  repaired = repaired.replace(/,\s*$/, "");
+
+  // Count unmatched openers
+  const stack: string[] = [];
+  inString = false;
+  escaped = false;
+  for (let i = 0; i < repaired.length; i++) {
+    const ch = repaired[i];
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (ch === "\\") {
+      escaped = true;
+      continue;
+    }
+    if (ch === '"') {
+      inString = !inString;
+      continue;
+    }
+    if (inString) continue;
+    if (ch === "{") stack.push("}");
+    else if (ch === "[") stack.push("]");
+    else if (ch === "}" || ch === "]") {
+      if (stack.length > 0 && stack[stack.length - 1] === ch) {
+        stack.pop();
+      }
+    }
+  }
+
+  // Append missing closers in reverse order
+  while (stack.length > 0) {
+    repaired += stack.pop();
+  }
+
+  return repaired;
 }

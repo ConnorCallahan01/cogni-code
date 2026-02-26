@@ -19,16 +19,16 @@ export const CONFIG = {
 
   maxTokens: {
     scribe: 4096,
-    librarian: 4000,
-    dreamer: 2000,
+    librarian: 8192,
+    dreamer: 4096,
   },
 
   session: {
     scribeInterval: 5, // messages between scribe runs
-    idleTimeoutMs: 300_000, // 5 minutes
+    idleTimeoutMs: 120_000, // 2 minutes
     maxSessionMessages: 200,
     minSessionMessages: 3, // sessions shorter than this skip consolidation
-    pipelineCooldownMs: 600_000, // 10 min debounce between pipeline runs
+    pipelineCooldownMs: 300_000, // 5 min debounce between pipeline runs
   },
 
   graph: {

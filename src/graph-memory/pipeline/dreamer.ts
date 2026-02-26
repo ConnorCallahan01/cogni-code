@@ -98,6 +98,14 @@ export async function runDreamer(sessionId: string): Promise<void> {
       throw new Error("No text response from dreamer");
     }
 
+    // Warn if response was truncated by token limit
+    if (response.stop_reason === "max_tokens") {
+      activityBus.log("dreamer:error", `Dreamer response truncated (hit max_tokens=${CONFIG.maxTokens.dreamer}). Output may need repair.`, {
+        outputTokens: response.usage?.output_tokens,
+        maxTokens: CONFIG.maxTokens.dreamer,
+      });
+    }
+
     const result: DreamerResult = extractJSON<DreamerResult>("{" + textBlock.text);
     const elapsed = Date.now() - startTime;
 
@@ -133,6 +141,13 @@ export async function runDreamer(sessionId: string): Promise<void> {
 
       const textBlock = response.content.find((b) => b.type === "text");
       if (!textBlock || textBlock.type !== "text") throw new Error("No text in retry");
+
+      if (response.stop_reason === "max_tokens") {
+        activityBus.log("dreamer:error", `Dreamer retry also truncated (hit max_tokens=${CONFIG.maxTokens.dreamer}). Attempting repair.`, {
+          outputTokens: response.usage?.output_tokens,
+          maxTokens: CONFIG.maxTokens.dreamer,
+        });
+      }
 
       const result: DreamerResult = extractJSON<DreamerResult>("{" + textBlock.text);
       applyDreamerResult(result, sessionId);

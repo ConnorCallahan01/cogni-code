@@ -23,7 +23,13 @@ const server = new McpServer({
 
 server.tool(
   "graph_memory",
-  "Access the knowledge graph. Actions: read_node, search, list_edges, read_dream, write_note, status",
+  `Access the persistent knowledge graph. Actions: read_node, search, list_edges, read_dream, write_note, status.
+
+RETRIEVAL GUIDANCE — follow these steps proactively:
+1. At conversation start, read the MAP resource (graph://map) to see all known topics and their connections.
+2. When the user mentions personal details, preferences, past events, or recurring topics, use the "search" action with relevant keywords to find matching nodes.
+3. When a relevant node is found, use "list_edges" on that node to discover related nodes — birthdays link to people, preferences link to projects, etc. Follow the edge chain.
+4. Combine MAP overview + targeted search + edge traversal for comprehensive recall. Don't wait to be asked — surface relevant context as soon as you recognize it.`,
   {
     action: z.enum(["read_node", "search", "list_edges", "read_dream", "write_note", "status"])
       .describe("The action to perform on the knowledge graph"),
