@@ -1,0 +1,14 @@
+{
+  "hooks": [
+    {
+      "event": "on_conversation_start",
+      "command": "node dist/hooks/session-start.js",
+      "description": "Load MAP and PRIORS into agent context at session start"
+    },
+    {
+      "event": "on_conversation_end",
+      "command": "node dist/hooks/session-end.js",
+      "description": "Run consolidation pipeline (scribe → librarian → dreamer → git commit) at session end"
+    }
+  ]
+}
