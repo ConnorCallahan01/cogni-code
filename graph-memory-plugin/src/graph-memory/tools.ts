@@ -230,7 +230,9 @@ function updateIndexEntry(nodePath: string, fm: any) {
       tags: fm.tags || [],
       keywords: fm.keywords || [],
       edges: (fm.edges || []).map((e: any) => e.target).filter(Boolean),
-      anti_edges: (fm.anti_edges || []).map((e: any) => e.target).filter(Boolean),
+      anti_edges: (fm.anti_edges || [])
+        .map((e: any) => ({ target: e.target, reason: e.reason || "" }))
+        .filter((e: any) => e.target),
       confidence: typeof fm.confidence === "number" ? fm.confidence : 0.5,
       soma_intensity: fm.soma?.intensity || 0,
       updated: fm.updated || fm.created || null,
@@ -272,7 +274,7 @@ function recallGraph(query?: string, depth?: number): { content: Array<{ type: "
     return { content: [{ type: "text", text: "Graph index not yet built. No nodes to search." }] };
   }
 
-  const hopDepth = depth ?? 1;
+  const hopDepth = Math.min(depth ?? 1, 3);
   const queryTokens = query.toLowerCase().split(/\s+/);
   const currentProject = readActiveProject()?.name;
 
@@ -303,24 +305,31 @@ function recallGraph(query?: string, depth?: number): { content: Array<{ type: "
     return { content: [{ type: "text", text: `No results for: "${query}"` }] };
   }
 
-  // Auto-load edge targets (1 hop)
-  const edgeTargets = new Set<string>();
+  // Multi-hop edge traversal
   const resultPaths = new Set(results.map((r: any) => r.path));
+  let frontier = new Set(resultPaths);
+  const visited = new Set(resultPaths);
+  const allConnected: any[] = [];
 
-  if (hopDepth >= 1) {
-    for (const result of results) {
-      for (const edgeTarget of result.edges || []) {
-        if (!resultPaths.has(edgeTarget)) {
-          edgeTargets.add(edgeTarget);
+  for (let hop = 0; hop < hopDepth; hop++) {
+    const nextFrontier = new Set<string>();
+    for (const nodePath of frontier) {
+      const entry = index.find((e: any) => e.path === nodePath);
+      for (const edgeTarget of entry?.edges || []) {
+        if (!visited.has(edgeTarget)) {
+          visited.add(edgeTarget);
+          nextFrontier.add(edgeTarget);
         }
       }
     }
+    for (const target of nextFrontier) {
+      const found = index.find((e: any) => e.path === target);
+      if (found) allConnected.push({ ...found, hopDistance: hop + 1 });
+    }
+    frontier = nextFrontier;
+    if (nextFrontier.size === 0) break;
   }
-
-  const connectedNodes = [...edgeTargets]
-    .map(target => index.find((e: any) => e.path === target))
-    .filter(Boolean)
-    .slice(0, 5);
+  const connectedNodes = allConnected.slice(0, 10);
 
   // Format output
   const sections: string[] = [];
@@ -330,12 +339,20 @@ function recallGraph(query?: string, depth?: number): { content: Array<{ type: "
     const dreamCount = (r.dream_refs || []).length;
     const dreamStr = dreamCount > 0 ? ` [${dreamCount} dreams]` : "";
     sections.push(`- **${r.path}** (relevance: ${r.relevance.toFixed(2)}, confidence: ${r.confidence})${dreamStr}\n  ${r.gist}`);
+    const antiEdges = r.anti_edges || [];
+    if (antiEdges.length > 0) {
+      const aeStr = antiEdges
+        .map((ae: any) => ae.reason ? `${ae.target} (${ae.reason})` : ae.target)
+        .join(", ");
+      sections.push(`  ⊘ abandoned: ${aeStr}`);
+    }
   }
 
   if (connectedNodes.length > 0) {
-    sections.push("\n## Connected Nodes (1 hop)\n");
+    sections.push("\n## Connected Nodes\n");
     for (const n of connectedNodes) {
-      sections.push(`- **${n.path}** (confidence: ${n.confidence})\n  ${n.gist}`);
+      const hopStr = n.hopDistance ? `, ${n.hopDistance} hop${n.hopDistance > 1 ? "s" : ""}` : "";
+      sections.push(`- **${n.path}** (confidence: ${n.confidence}${hopStr})\n  ${n.gist}`);
     }
   }
 
@@ -800,8 +817,8 @@ export const graphMemorySchema = {
     marker: z.string(),
   }).optional()
     .describe("Somatic marker for remember action"),
-  depth: z.number().optional()
-    .describe("Edge traversal depth for recall action (default 1)"),
+  depth: z.number().min(0).max(3).optional()
+    .describe("Edge traversal depth for recall action (default 1, max 3)"),
   graphRoot: z.string().optional()
     .describe("Storage path for initialize action (defaults to ~/.graph-memory/)"),
   project: z.string().optional()

@@ -146,6 +146,10 @@ export function fullRegenerateMAP(currentProject?: string) {
       const gist = parsed.data.gist || extractFirstParagraph(parsed.content);
       const edges: string[] = (parsed.data.edges || []).map((e: any) => e.target).filter(Boolean);
       const edgeStr = edges.length > 0 ? ` → [${edges.join(", ")}]` : "";
+      const antiEdges: string[] = (parsed.data.anti_edges || [])
+        .map((e: any) => e.reason ? `${e.target} (${e.reason})` : e.target)
+        .filter(Boolean);
+      const antiEdgeStr = antiEdges.length > 0 ? ` ⊘ [${antiEdges.join(", ")}]` : "";
       const confidence = typeof parsed.data.confidence === "number" ? parsed.data.confidence : 0.5;
       const somaMarker = parsed.data.soma?.marker;
       const somaStr = somaMarker ? ` ⚡${somaMarker}` : "";
@@ -154,7 +158,7 @@ export function fullRegenerateMAP(currentProject?: string) {
 
       allEntries.push({
         nodePath,
-        line: `- **${nodePath}** — ${gist}${edgeStr}${somaStr}`,
+        line: `- **${nodePath}** — ${gist}${edgeStr}${antiEdgeStr}${somaStr}`,
         confidence,
         somaMarker,
         project: nodeProject,
@@ -277,7 +281,9 @@ export function rebuildIndex() {
         tags: fm.tags || [],
         keywords: fm.keywords || [],
         edges: (fm.edges || []).map((e: any) => e.target).filter(Boolean),
-        anti_edges: (fm.anti_edges || []).map((e: any) => e.target).filter(Boolean),
+        anti_edges: (fm.anti_edges || [])
+          .map((e: any) => ({ target: e.target, reason: e.reason || "" }))
+          .filter((e: any) => e.target),
         confidence: typeof fm.confidence === "number" ? fm.confidence : 0.5,
         soma_intensity: fm.soma?.intensity || 0,
         updated: fm.updated || fm.created || null,
