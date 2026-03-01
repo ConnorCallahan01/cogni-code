@@ -21,6 +21,8 @@ export interface GraphEdge {
     id: string
     source: string
     target: string
+    weight?: number
+    edgeType?: string
     anti?: boolean
     reason?: string
   }
@@ -46,6 +48,62 @@ export interface PipelineStatus {
   bufferCount: number
   scribePending: number
   nodeCount: number
+}
+
+export interface ActivityEvent {
+  type: string
+  message: string
+  details?: Record<string, unknown>
+  timestamp: string
+}
+
+export interface DeltaSummary {
+  filename: string
+  sessionId: string
+  scribes: number
+  deltas: number
+  timestamp: string | null
+}
+
+export interface DreamEntry {
+  filename: string
+  bucket: string
+  type?: string
+  fragment?: string
+  content?: string
+  confidence?: number
+  dream_refs?: string[]
+  [key: string]: unknown
+}
+
+export interface DreamsData {
+  pending: DreamEntry[]
+  integrated: DreamEntry[]
+  archived: DreamEntry[]
+}
+
+export async function fetchActivity(limit = 200): Promise<ActivityEvent[]> {
+  const res = await fetch(`/api/activity?limit=${limit}`)
+  if (!res.ok) throw new Error(`API error: ${res.status}`)
+  return res.json()
+}
+
+export async function fetchDeltas(): Promise<DeltaSummary[]> {
+  const res = await fetch('/api/deltas')
+  if (!res.ok) throw new Error(`API error: ${res.status}`)
+  return res.json()
+}
+
+export async function fetchDeltaDetail(sessionId: string): Promise<any> {
+  const res = await fetch(`/api/deltas/${sessionId}`)
+  if (!res.ok) throw new Error(`API error: ${res.status}`)
+  return res.json()
+}
+
+export async function fetchDreams(): Promise<DreamsData> {
+  const res = await fetch('/api/dreams')
+  if (!res.ok) throw new Error(`API error: ${res.status}`)
+  return res.json()
 }
 
 export async function fetchGraph(): Promise<GraphData> {

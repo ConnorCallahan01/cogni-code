@@ -39,8 +39,26 @@ export default function GraphView({ elements, selectedNode, onSelect }: Props) {
             label: 'data(label)',
             'background-color': (ele: any) =>
               CATEGORY_COLORS[ele.data('category')] ?? '#64748b',
-            width: (ele: any) => 20 + (ele.data('confidence') ?? 0.5) * 20,
-            height: (ele: any) => 20 + (ele.data('confidence') ?? 0.5) * 20,
+            opacity: (ele: any) => {
+              const confidence = ele.data('confidence') ?? 0.5
+              const lastAccessed = ele.data('last_accessed')
+              let staleFactor = 1
+              if (lastAccessed) {
+                const days = (Date.now() - new Date(lastAccessed).getTime()) / 86400000
+                staleFactor = Math.max(0.5, 1 - days / 60)
+              }
+              return Math.max(0.25, (0.3 + confidence * 0.7) * staleFactor)
+            },
+            width: (ele: any) => {
+              const confidence = ele.data('confidence') ?? 0.5
+              const degree = ele.degree(false) || 1
+              return 18 + confidence * 16 + Math.min(degree, 8) * 2
+            },
+            height: (ele: any) => {
+              const confidence = ele.data('confidence') ?? 0.5
+              const degree = ele.degree(false) || 1
+              return 18 + confidence * 16 + Math.min(degree, 8) * 2
+            },
             'font-size': '10px',
             color: '#e2e8f0',
             'text-valign': 'bottom',
@@ -52,13 +70,13 @@ export default function GraphView({ elements, selectedNode, onSelect }: Props) {
         {
           selector: 'edge',
           style: {
-            width: 1.5,
+            width: (ele: any) => 0.5 + (ele.data('weight') ?? 0.5) * 2.5,
             'line-color': '#2e3348',
             'target-arrow-color': '#2e3348',
             'target-arrow-shape': 'triangle',
             'arrow-scale': 0.7,
             'curve-style': 'bezier',
-            opacity: 0.6,
+            opacity: (ele: any) => 0.3 + (ele.data('weight') ?? 0.5) * 0.5,
           },
         },
         {
@@ -154,13 +172,15 @@ export default function GraphView({ elements, selectedNode, onSelect }: Props) {
       const isConnected =
         edge.data('source') === selectedNode || edge.data('target') === selectedNode
       const isAnti = edge.data('anti')
+      const weight = edge.data('weight') ?? 0.5
+      const baseWidth = 0.5 + weight * 2.5
       const activeColor = isAnti ? '#ef4444' : '#4b82f0'
       const defaultColor = isAnti ? '#ef4444' : '#2e3348'
       edge.style({
         'line-color': isConnected ? activeColor : defaultColor,
         'target-arrow-color': isConnected ? activeColor : defaultColor,
-        opacity: isConnected ? 1 : (isAnti ? 0.7 : 0.6),
-        width: isConnected ? 2.5 : 1.5,
+        opacity: isConnected ? 1 : (isAnti ? 0.7 : 0.3 + weight * 0.5),
+        width: isConnected ? baseWidth + 1 : baseWidth,
       })
     })
 

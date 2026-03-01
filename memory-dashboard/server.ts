@@ -82,6 +82,8 @@ app.get('/api/graph', (_req, res) => {
       const edges = node.edges ?? []
       for (const edge of edges) {
         const target = typeof edge === 'string' ? edge : edge.target
+        const weight = typeof edge === 'string' ? 0.5 : (edge.weight ?? 0.5)
+        const type = typeof edge === 'string' ? 'relates_to' : (edge.type ?? 'relates_to')
         // Only add edge if target exists in index
         if (index.some((n: any) => n.path === target)) {
           cytoscapeElements.push({
@@ -90,6 +92,8 @@ app.get('/api/graph', (_req, res) => {
               id: `${node.path}->${target}`,
               source: node.path,
               target: target,
+              weight,
+              edgeType: type,
             },
           })
         }
@@ -149,9 +153,13 @@ app.get('/api/status', (_req, res) => {
     const dirty = existsSync(dirtyPath) ? safeJsonParse(dirtyPath) : null
     const consolidationPending = existsSync(consolidationPath) ? safeJsonParse(consolidationPath) : null
 
-    const bufferCount = existsSync(bufferDir)
-      ? readdirSync(bufferDir).filter((f) => f.endsWith('.jsonl')).length
-      : 0
+    // Count actual messages in conversation.jsonl (not file count)
+    const conversationLog = join(bufferDir, 'conversation.jsonl')
+    let bufferCount = 0
+    if (existsSync(conversationLog)) {
+      const content = readFileSync(conversationLog, 'utf-8').trim()
+      bufferCount = content ? content.split('\n').filter(Boolean).length : 0
+    }
 
     const scribePending = existsSync(scribePendingPath) ? 1 : 0
 
@@ -164,6 +172,84 @@ app.get('/api/status', (_req, res) => {
       scribePending,
       nodeCount: index.length,
     })
+  } catch (err) {
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
+// Activity feed — last N events from JSONL log
+app.get('/api/activity', (req, res) => {
+  try {
+    const limit = Math.min(parseInt(req.query.limit as string) || 200, 1000)
+    const logPath = join(GRAPH_ROOT, '.logs', 'activity.jsonl')
+    if (!existsSync(logPath)) return res.json([])
+    const lines = readFileSync(logPath, 'utf-8').trim().split('\n').filter(Boolean)
+    const tail = lines.slice(-limit)
+    const events = tail.map((l) => { try { return JSON.parse(l) } catch { return null } }).filter(Boolean)
+    res.json(events)
+  } catch (err) {
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
+// Delta files listing
+app.get('/api/deltas', (_req, res) => {
+  try {
+    const deltasDir = join(GRAPH_ROOT, '.deltas')
+    if (!existsSync(deltasDir)) return res.json([])
+    const files = readdirSync(deltasDir).filter((f) => f.endsWith('.json'))
+    const summaries = files.map((f) => {
+      const data = safeJsonParse(join(deltasDir, f))
+      if (!data) return null
+      return {
+        filename: f,
+        sessionId: data.sessionId ?? f.replace('.json', ''),
+        scribes: Array.isArray(data.scribes) ? data.scribes.length : 0,
+        deltas: Array.isArray(data.deltas) ? data.deltas.length : (Array.isArray(data.scribes) ? data.scribes.reduce((n: number, s: any) => n + (s.deltas?.length ?? 0), 0) : 0),
+        timestamp: data.timestamp ?? data.created ?? null,
+      }
+    }).filter(Boolean)
+    res.json(summaries)
+  } catch (err) {
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
+// Single delta file detail
+app.get('/api/deltas/:sessionId', (req, res) => {
+  try {
+    const deltasDir = join(GRAPH_ROOT, '.deltas')
+    const filePath = join(deltasDir, `${req.params.sessionId}.json`)
+    const resolved = resolve(filePath)
+    if (!resolved.startsWith(resolve(deltasDir))) return res.status(403).json({ error: 'Forbidden' })
+    if (!existsSync(resolved)) return res.status(404).json({ error: 'Not found' })
+    res.json(safeJsonParse(resolved))
+  } catch (err) {
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
+// Dreams listing grouped by bucket
+app.get('/api/dreams', (_req, res) => {
+  try {
+    const dreamsDir = join(GRAPH_ROOT, 'dreams')
+    const buckets = ['pending', 'integrated', 'archived']
+    const result: Record<string, any[]> = {}
+    for (const bucket of buckets) {
+      const dir = join(dreamsDir, bucket)
+      if (!existsSync(dir)) { result[bucket] = []; continue }
+      const files = readdirSync(dir).filter((f) => f.endsWith('.json') || f.endsWith('.md'))
+      result[bucket] = files.map((f) => {
+        if (f.endsWith('.json')) {
+          const data = safeJsonParse(join(dir, f))
+          return data ? { filename: f, bucket, ...data } : { filename: f, bucket }
+        }
+        const raw = readFileSync(join(dir, f), 'utf-8')
+        const { data, content } = matter(raw)
+        return { filename: f, bucket, ...data, content: content.trim().slice(0, 500) }
+      })
+    }
+    res.json(result)
   } catch (err) {
     res.status(500).json({ error: 'Internal server error' })
   }
@@ -219,14 +305,22 @@ const watcher = watch(GRAPH_ROOT, {
 
 watcher
   .on('add', (path) => {
-    if (path.includes('.dirty-session') || path.includes('.consolidation-pending') || path.includes('.scribe-pending')) {
+    if (path.includes('activity.jsonl')) {
+      broadcast('activity')
+    } else if (path.includes('.deltas/') || path.includes('dreams/')) {
+      broadcast('deltas')
+    } else if (path.includes('.dirty-session') || path.includes('.consolidation-pending') || path.includes('.scribe-pending')) {
       broadcast('status')
     } else if (path.endsWith('.md') || path.endsWith('.json')) {
       broadcast('graph')
     }
   })
   .on('change', (path) => {
-    if (path.includes('.index.json') || path.includes('MAP.md')) {
+    if (path.includes('activity.jsonl')) {
+      broadcast('activity')
+    } else if (path.includes('.deltas/') || path.includes('dreams/')) {
+      broadcast('deltas')
+    } else if (path.includes('.index.json') || path.includes('MAP.md')) {
       broadcast('graph')
     } else if (path.includes('.dirty-session') || path.includes('.consolidation-pending')) {
       broadcast('status')
@@ -235,7 +329,9 @@ watcher
     }
   })
   .on('unlink', (path) => {
-    if (path.includes('.dirty-session') || path.includes('.consolidation-pending') || path.includes('.scribe-pending')) {
+    if (path.includes('.deltas/') || path.includes('dreams/')) {
+      broadcast('deltas')
+    } else if (path.includes('.dirty-session') || path.includes('.consolidation-pending') || path.includes('.scribe-pending')) {
       broadcast('status')
     } else if (path.endsWith('.md')) {
       broadcast('graph')
