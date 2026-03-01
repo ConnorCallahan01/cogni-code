@@ -12,6 +12,27 @@ You do NOT create nodes from deltas — that's already done. You reason about th
 
 ## Steps
 
+### 0. Acquire Consolidation Lock
+
+Before doing anything else, prevent concurrent librarian runs:
+
+1. Check if `{graphRoot}/.consolidation.lock` exists (use Bash: `cat {graphRoot}/.consolidation.lock 2>/dev/null`)
+2. If it exists, parse the `pid_time` value:
+   - If `pid_time` is **less than 10 minutes old** → **stop immediately**. Another librarian is running. Do nothing further.
+   - If `pid_time` is **more than 10 minutes old** → the previous run is stale. Delete the lock and continue.
+3. If no lock exists (or stale lock was deleted), create the lock:
+   ```bash
+   echo '{"pid_time":'$(date +%s)'}' > {graphRoot}/.consolidation.lock
+   ```
+4. **Delete `.consolidation-pending` immediately** — do NOT wait until the end. This closes the race window so a second session starting now won't dispatch another librarian:
+   ```bash
+   rm -f {graphRoot}/.consolidation-pending
+   ```
+5. Log the start event to the activity log:
+   ```bash
+   echo '{"type":"librarian:start","message":"Librarian consolidation started","timestamp":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'"}' >> {graphRoot}/.logs/activity.jsonl
+   ```
+
 ### 1. Read the Graph (Smart, Not Exhaustive)
 
 Read `MAP.md` from the graph root directory for the full overview. The MAP has every node's gist, edges, and category — this is your primary working view.
@@ -100,9 +121,17 @@ If that doesn't work, find the compiled `graph-ops.js` in the dist directory and
 cd {graphRoot} && git add -A && git commit -m "memory: librarian consolidation"
 ```
 
+After the commit, log completion:
+```bash
+echo '{"type":"librarian:complete","message":"Librarian consolidation complete","timestamp":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'"}' >> {graphRoot}/.logs/activity.jsonl
+```
+
 ### 8. Clean Up
 
-Remove the `.consolidation-pending` marker file from the graph root if it exists.
+Remove the consolidation lock:
+```bash
+rm -f {graphRoot}/.consolidation.lock
+```
 
 ## Node File Format
 

@@ -14,6 +14,11 @@ You will be given a path to a conversation snapshot file and the graph root dire
 
 ### 1. Read the Snapshot
 
+Log the start event:
+```bash
+echo '{"type":"scribe:fired","message":"Scribe started for session {sessionId}","timestamp":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'"}' >> {graphRoot}/.logs/activity.jsonl
+```
+
 Read the snapshot file provided in your task input. It contains JSONL entries like:
 ```
 {"role":"user","content":"...","timestamp":"..."}
@@ -132,6 +137,10 @@ If a delta file already exists for this session, read it first and append a new 
 After writing the delta file:
 1. **Delete the snapshot file** you read in step 1. It has been fully processed into deltas and is no longer needed. The librarian and dreamer work from the delta files, not snapshots.
 2. **Remove the `.scribe-pending` marker** file from the graph root if it exists.
+3. Log the completion event (replace N with the actual count of deltas extracted):
+   ```bash
+   echo '{"type":"scribe:complete","message":"Scribe complete: N deltas extracted","timestamp":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'"}' >> {graphRoot}/.logs/activity.jsonl
+   ```
 
 ## Delta Types Reference
 
