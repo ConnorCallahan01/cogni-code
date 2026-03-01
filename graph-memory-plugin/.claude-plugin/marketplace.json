@@ -1,0 +1,13 @@
+{
+  "name": "graph-memory-local",
+  "owner": {
+    "name": "Patrick"
+  },
+  "plugins": [
+    {
+      "name": "graph-memory",
+      "source": "./",
+      "description": "Persistent, self-evolving memory for AI agents"
+    }
+  ]
+}

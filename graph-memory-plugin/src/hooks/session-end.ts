@@ -60,15 +60,57 @@ async function main() {
 
   initializeGraph();
 
-  // Flush any remaining buffer to snapshot
+  // Flush any remaining buffer to snapshot and mark for scribe
   const logPath = CONFIG.paths.conversationLog;
   if (fs.existsSync(logPath)) {
     const bufferContent = fs.readFileSync(logPath, "utf-8").trim();
     if (bufferContent) {
-      const snapshotName = `snapshot_${Date.now()}.jsonl`;
-      fs.writeFileSync(path.join(CONFIG.paths.buffer, snapshotName), bufferContent + "\n");
       fs.writeFileSync(logPath, "");
-      console.error("[graph-memory] Final buffer flushed to snapshot.");
+
+      if (fs.existsSync(CONFIG.paths.scribePending)) {
+        // Scribe marker already exists — append to its snapshot so nothing is orphaned
+        try {
+          const marker = JSON.parse(fs.readFileSync(CONFIG.paths.scribePending, "utf-8"));
+          if (marker.snapshotPath && fs.existsSync(marker.snapshotPath)) {
+            fs.appendFileSync(marker.snapshotPath, bufferContent + "\n");
+            console.error("[graph-memory] Final buffer appended to existing scribe snapshot.");
+          } else {
+            // Snapshot gone — write a new one and update the marker
+            const snapshotName = `snapshot_${Date.now()}.jsonl`;
+            const snapshotPath = path.join(CONFIG.paths.buffer, snapshotName);
+            fs.writeFileSync(snapshotPath, bufferContent + "\n");
+            marker.snapshotPath = snapshotPath;
+            fs.writeFileSync(CONFIG.paths.scribePending, JSON.stringify(marker));
+            console.error("[graph-memory] Final buffer flushed to new snapshot (previous snapshot missing).");
+          }
+        } catch {
+          // Unreadable marker — overwrite with fresh one
+          const snapshotName = `snapshot_${Date.now()}.jsonl`;
+          const snapshotPath = path.join(CONFIG.paths.buffer, snapshotName);
+          fs.writeFileSync(snapshotPath, bufferContent + "\n");
+          const marker = {
+            snapshotPath,
+            sessionId: sessionId || `end_${Date.now()}`,
+            graphRoot: CONFIG.paths.graphRoot,
+            createdAt: new Date().toISOString(),
+          };
+          fs.writeFileSync(CONFIG.paths.scribePending, JSON.stringify(marker));
+          console.error("[graph-memory] Final buffer flushed (replaced unreadable scribe marker).");
+        }
+      } else {
+        // No existing marker — create snapshot and marker
+        const snapshotName = `snapshot_${Date.now()}.jsonl`;
+        const snapshotPath = path.join(CONFIG.paths.buffer, snapshotName);
+        fs.writeFileSync(snapshotPath, bufferContent + "\n");
+        const marker: Record<string, any> = {
+          snapshotPath,
+          sessionId: sessionId || `end_${Date.now()}`,
+          graphRoot: CONFIG.paths.graphRoot,
+          createdAt: new Date().toISOString(),
+        };
+        fs.writeFileSync(CONFIG.paths.scribePending, JSON.stringify(marker));
+        console.error("[graph-memory] Final buffer flushed to snapshot. Scribe-pending marker written.");
+      }
     }
   }
 

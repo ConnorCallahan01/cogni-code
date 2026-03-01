@@ -1,4 +1,10 @@
 import { EventEmitter } from "events";
+import { appendFileSync, mkdirSync } from "fs";
+import { join } from "path";
+import { homedir } from "os";
+
+const ACTIVITY_LOG = join(homedir(), ".graph-memory", ".logs", "activity.jsonl");
+let logDirReady = false;
 
 export type ActivityEventType =
   | "session:start"
@@ -8,6 +14,7 @@ export type ActivityEventType =
   | "buffer:threshold_reached"
   | "buffer:cleared"
   | "scribe:fired"
+  | "scribe:pending"
   | "scribe:complete"
   | "scribe:error"
   | "librarian:start"
@@ -25,6 +32,14 @@ export type ActivityEventType =
   | "git:commit"
   | "git:push"
   | "git:error"
+  | "mechanical:start"
+  | "mechanical:complete"
+  | "mechanical:error"
+  | "graph:node_relocated"
+  | "graph:node_restructured"
+  | "graph:node_compacted"
+  | "graph:dream_linked"
+  | "graph:dream_capped"
   | "system:init"
   | "system:info"
   | "system:error";
@@ -55,6 +70,14 @@ class ActivityBus extends EventEmitter {
       timestamp: new Date().toISOString(),
     };
     this.emit("activity", event);
+    // Append to JSONL log for dashboard consumption
+    try {
+      if (!logDirReady) {
+        mkdirSync(join(homedir(), ".graph-memory", ".logs"), { recursive: true });
+        logDirReady = true;
+      }
+      appendFileSync(ACTIVITY_LOG, JSON.stringify(event) + "\n");
+    } catch {}
     // Also log to server console for debugging
     const prefix = type.split(":")[0].toUpperCase().padEnd(10);
     console.error(`[${event.timestamp}] ${prefix} ${message}`);

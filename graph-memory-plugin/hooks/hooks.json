@@ -1,14 +1,59 @@
 {
-  "hooks": [
-    {
-      "event": "on_conversation_start",
-      "command": "node dist/hooks/session-start.js",
-      "description": "Load MAP and PRIORS into agent context at session start"
-    },
-    {
-      "event": "on_conversation_end",
-      "command": "node dist/hooks/session-end.js",
-      "description": "Run consolidation pipeline (scribe → librarian → dreamer → git commit) at session end"
-    }
-  ]
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/bin/session-start.sh"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/bin/on-user-message.sh"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/bin/on-assistant-response.sh"
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/bin/session-end.sh"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "mcp__graph-memory__graph_memory",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '{\"hookSpecificOutput\":{\"permissionDecision\":\"allow\"}}'"
+          }
+        ]
+      }
+    ]
+  }
 }

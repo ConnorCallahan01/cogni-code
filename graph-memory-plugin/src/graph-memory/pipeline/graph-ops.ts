@@ -280,7 +280,9 @@ export function rebuildIndex() {
         gist: ((fm.gist || extractFirstParagraph(parsed.content)) as string).slice(0, 200),
         tags: fm.tags || [],
         keywords: fm.keywords || [],
-        edges: (fm.edges || []).map((e: any) => e.target).filter(Boolean),
+        edges: (fm.edges || [])
+          .map((e: any) => ({ target: e.target, type: e.type || "relates_to", weight: e.weight ?? 0.5 }))
+          .filter((e: any) => e.target),
         anti_edges: (fm.anti_edges || [])
           .map((e: any) => ({ target: e.target, reason: e.reason || "" }))
           .filter((e: any) => e.target),

@@ -1,45 +1,72 @@
 # Graph Memory Skill
 
-You have persistent memory powered by a knowledge graph. This memory grows automatically from your conversations.
+You have persistent memory powered by a knowledge graph. This memory grows automatically from your conversations via a background scribe agent, and can be written to directly.
 
 ## How Memory Works
 
 Your memory is a collection of **nodes** — markdown files organized by topic — connected by **edges**. A compressed index called the **MAP** gives you an overview of everything you know. **PRIORS** are behavioral guidelines learned from patterns across sessions.
 
-## What to Do
+## Core Actions
 
-### At Conversation Start
-Read the MAP resource (`graph://map`) to load your current knowledge index. This shows all topics you know about with one-line summaries and connections.
+### Remember — Write memory directly
+When you discover important user preferences, project patterns, decisions, or corrections:
+```
+graph_memory(action="remember", path="category/node_name", gist="One-sentence summary",
+  content="Details...", tags=["tag1"], confidence=0.7,
+  edges=[{target: "related/node", type: "relates_to", weight: 0.7}],
+  soma={valence: "positive", intensity: 0.6, marker: "User gets excited"})
+```
+Do this naturally without announcing it. The scribe catches implicit signals; `remember` handles explicit ones.
 
-### During Conversation
-When the user mentions something that might be in your memory:
-1. **Search** — `graph_memory(action="search", query="relevant keywords")`
-2. **Read** — `graph_memory(action="read_node", path="category/node_name")` for full details
-3. **Follow edges** — `graph_memory(action="list_edges", path="category/node_name")` to discover related knowledge
+### Recall — Search with edge traversal
+```
+graph_memory(action="recall", query="relevant keywords", depth=1)
+```
+Returns matching nodes + connected nodes (1 hop). More comprehensive than basic search.
 
-Don't wait to be asked. If you recognize a topic from the MAP, proactively recall relevant details.
+### Search — Basic keyword search
+```
+graph_memory(action="search", query="keywords")
+```
 
-### Saving Notes
-If the user shares something important you want to capture immediately:
-- `graph_memory(action="write_note", note="Brief observation about what was shared")`
+### Read Node — Full details
+```
+graph_memory(action="read_node", path="category/node_name")
+```
 
-Notes are processed into proper graph nodes during consolidation.
+### List Edges — Follow connections
+```
+graph_memory(action="list_edges", path="category/node_name")
+```
 
-### Session End (if hooks aren't active)
-If you sense the conversation is ending and you're not sure hooks will run:
-- `graph_memory(action="consolidate")` triggers the full memory pipeline
+## Graph Structure
 
-This processes all buffered conversations through the scribe → librarian → dreamer pipeline and updates the graph.
+Nodes have YAML frontmatter with:
+- **confidence** (0-1): How certain this knowledge is
+- **edges**: Connections to other nodes (21+ types: relates_to, contradicts, supports, derives_from, pattern_transfer, etc.)
+- **anti_edges**: Rejected connections
+- **soma**: Emotional markers {valence, intensity, marker}
+- **dream_refs**: Creative connections from the dreamer pipeline
+- **tags/keywords**: For search indexing
 
-## What NOT to Do
+## When to Use
 
-- Don't mention the memory system unless the user asks about it
-- Don't read every node at the start — just scan the MAP
-- Don't create nodes manually — the pipeline handles that automatically
-- Don't worry about forgetting — the system handles decay and archival
+- **Recall proactively**: When the user mentions something that might be in memory, use `recall` before responding.
+- **Remember naturally**: When you learn something worth remembering, use `remember` without announcing it.
+- **Follow edges**: When a search finds a node, use `list_edges` to discover related knowledge.
+- **Soma markers**: Record emotional signals — user excitement, frustration, or emphasis indicates importance.
+- **Never mention the system**: Don't tell the user about memory operations unless they explicitly ask.
 
-## Progressive Disclosure
+## Subagent Dispatch
 
-- **New users**: Memory will be sparse. Focus on learning from conversations.
-- **Established users**: Memory will be rich. Lean heavily on search and edge traversal.
-- **Power users**: May ask about dreams, confidence scores, or pipeline details. Use `graph_memory(action="status")` and `graph_memory(action="read_dream")` to answer.
+When session context mentions these signals, dispatch the appropriate agent in background:
+- "scribe pending" → dispatch memory-scribe agent
+- "consolidation pending" → dispatch memory-librarian agent, then memory-dreamer
+
+## Status & Management
+
+- `graph_memory(action="status")` — Check system health
+- `graph_memory(action="history")` — View git commit history
+- `graph_memory(action="revert", path="<commit_hash>")` — Roll back
+- `graph_memory(action="consolidate")` — Process pending deltas mechanically
+- `graph_memory(action="read_dream")` — Browse dream fragments

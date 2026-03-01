@@ -79,7 +79,7 @@ function createConfig() {
 
   return {
     session: {
-      scribeInterval: 5,
+      scribeInterval: 10,
       idleTimeoutMs: 120_000,
       maxSessionMessages: 200,
       minSessionMessages: 3,

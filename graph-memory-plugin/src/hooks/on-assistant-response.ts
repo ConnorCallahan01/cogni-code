@@ -74,8 +74,7 @@ async function main() {
   const messageCount = bufferLines.length;
 
   // Rotate and create scribe-pending marker every N messages
-  const threshold = CONFIG.session.scribeInterval * 2;
-  if (messageCount >= threshold) {
+  if (messageCount >= CONFIG.session.scribeInterval) {
     // Rotate: save snapshot, clear buffer
     const snapshotName = `snapshot_${Date.now()}.jsonl`;
     const snapshotPath = path.join(bufferDir, snapshotName);

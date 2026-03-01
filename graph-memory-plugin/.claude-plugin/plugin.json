@@ -1,11 +1,11 @@
 {
   "name": "graph-memory",
-  "version": "1.0.0",
-  "description": "Persistent, self-evolving memory for AI agents. Gives any agent a knowledge graph that grows from conversations.",
+  "version": "2.0.0",
+  "description": "Persistent, self-evolving memory for AI agents. Gives any agent a knowledge graph that grows from conversations. No API key required.",
   "author": "graph-memory",
   "mcpServers": {
     "graph-memory": {
-      "command": "bin/mcp-server.sh",
+      "command": "${CLAUDE_PLUGIN_ROOT}/bin/mcp-server.sh",
       "args": []
     }
   },
@@ -13,34 +13,47 @@
     {
       "name": "memory-onboard",
       "description": "Set up graph memory for the first time — choose storage location and seed initial memory",
-      "file": "commands/memory-onboard.md"
+      "file": "./commands/memory-onboard.md"
     },
     {
       "name": "memory-status",
-      "description": "Check memory system health — node count, pipeline mode, warnings",
-      "file": "commands/memory-status.md"
+      "description": "Check memory system health — node count, warnings, pending operations",
+      "file": "./commands/memory-status.md"
     },
     {
       "name": "memory-search",
       "description": "Search the knowledge graph by keyword",
-      "file": "commands/memory-search.md"
+      "file": "./commands/memory-search.md"
     }
   ],
   "agents": [
     {
       "name": "memory-onboarder",
       "description": "Guided onboarding flow for new graph-memory installations",
-      "file": "agents/memory-onboarder.md"
+      "file": "./agents/memory-onboarder.md"
+    },
+    {
+      "name": "memory-scribe",
+      "description": "Extract knowledge deltas from conversation snapshots. Dispatch in background when scribe-pending signal appears.",
+      "file": "./agents/memory-scribe.md"
+    },
+    {
+      "name": "memory-librarian",
+      "description": "Optimize knowledge graph topology — merge nodes, archive stale data, detect contradictions, update PRIORS. Dispatch in background when consolidation-pending signal appears.",
+      "file": "./agents/memory-librarian.md"
+    },
+    {
+      "name": "memory-dreamer",
+      "description": "Creative recombination — find surprising connections between knowledge nodes. Dispatch in background after librarian consolidation.",
+      "file": "./agents/memory-dreamer.md"
     }
   ],
   "skills": [
     {
       "name": "graph-memory",
-      "description": "How to use the persistent memory system",
-      "path": "skills/graph-memory"
+      "description": "How to use the persistent memory system — remember, recall, search, edges, soma markers",
+      "path": "./skills/graph-memory"
     }
   ],
-  "hooks": {
-    "file": "hooks/hooks.json"
-  }
+  "hooks": "./hooks/hooks.json"
 }

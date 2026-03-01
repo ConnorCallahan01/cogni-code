@@ -50,6 +50,14 @@ export function countFiles(dir: string, ext: string): number {
 }
 
 /**
+ * Get the depth of a node path (number of directory separators).
+ * "user/food_preferences" → 1, "user/preferences/legible_complexity/work" → 3
+ */
+export function getNodeDepth(nodePath: string): number {
+  return nodePath.split("/").length - 1;
+}
+
+/**
  * Extract the first paragraph of markdown content (after removing heading).
  */
 export function extractFirstParagraph(content: string): string {

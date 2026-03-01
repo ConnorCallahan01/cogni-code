@@ -229,7 +229,9 @@ function updateIndexEntry(nodePath: string, fm: any) {
       gist: (fm.gist || "").slice(0, 200),
       tags: fm.tags || [],
       keywords: fm.keywords || [],
-      edges: (fm.edges || []).map((e: any) => e.target).filter(Boolean),
+      edges: (fm.edges || [])
+        .map((e: any) => ({ target: e.target, type: e.type || "relates_to", weight: e.weight ?? 0.5 }))
+        .filter((e: any) => e.target),
       anti_edges: (fm.anti_edges || [])
         .map((e: any) => ({ target: e.target, reason: e.reason || "" }))
         .filter((e: any) => e.target),
@@ -315,8 +317,9 @@ function recallGraph(query?: string, depth?: number): { content: Array<{ type: "
     const nextFrontier = new Set<string>();
     for (const nodePath of frontier) {
       const entry = index.find((e: any) => e.path === nodePath);
-      for (const edgeTarget of entry?.edges || []) {
-        if (!visited.has(edgeTarget)) {
+      for (const edge of entry?.edges || []) {
+        const edgeTarget = typeof edge === 'string' ? edge : edge.target;
+        if (edgeTarget && !visited.has(edgeTarget)) {
           visited.add(edgeTarget);
           nextFrontier.add(edgeTarget);
         }

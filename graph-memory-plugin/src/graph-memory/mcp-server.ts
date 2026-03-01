@@ -2,8 +2,6 @@
 /**
  * MCP server for graph-memory plugin.
  * Exposes the graph_memory tool and graph://map, graph://priors resources over stdio.
- *
- * Usage: node dist/graph-memory/mcp-server.mjs
  */
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
@@ -20,23 +18,29 @@ if (isGraphInitialized() || process.env.GRAPH_MEMORY_ROOT) {
 
 const server = new McpServer({
   name: "graph-memory",
-  version: "1.0.0",
+  version: "2.0.0",
 });
 
 // Main tool
 server.tool(
   "graph_memory",
-  `Access the persistent knowledge graph. Actions: read_node, search, list_edges, read_dream, write_note, status, history, revert, consolidate, log_exchange, initialize.
+  `Access the persistent knowledge graph. Actions: read_node, search, recall, list_edges, read_dream, write_note, remember, status, history, revert, consolidate, initialize.
+
+MEMORY ACTIONS:
+- remember: Create or update a graph node directly. Provide path, gist, and optionally content, tags, edges, soma markers.
+- recall: Combined search + edge traversal. Returns matching nodes plus connected nodes (1 hop).
+- search: Keyword search on the index (gist, tags, keywords).
+- read_node: Read full node content including frontmatter.
+- list_edges: Show all connections from a node.
 
 RETRIEVAL GUIDANCE — follow these steps proactively:
-1. At conversation start, read the MAP resource (graph://map) to see all known topics and their connections.
-2. When the user mentions personal details, preferences, past events, or recurring topics, use the "search" action with relevant keywords to find matching nodes.
-3. When a relevant node is found, use "list_edges" on that node to discover related nodes — birthdays link to people, preferences link to projects, etc.
-4. Combine MAP overview + targeted search + edge traversal for comprehensive recall.
+1. At conversation start, the MAP and PRIORS are loaded via hooks. Use them to understand what you already know.
+2. When the user mentions personal details, preferences, past events, or recurring topics, use "recall" with relevant keywords.
+3. When a relevant node is found, use "list_edges" to discover related nodes.
+4. When you learn something worth remembering, use "remember" to record it as a proper graph node with edges and tags.
 
-PIPELINE ACTIONS:
-- consolidate: Run the full memory pipeline (scribe → librarian → dreamer → git commit). Call at session end.
-- log_exchange: Buffer a user/assistant message pair for later processing. Use when hooks aren't available.
+PIPELINE:
+- consolidate: Run mechanical delta processing (apply scribe deltas, rebuild MAP, decay, git commit).
 
 SETUP:
 - initialize: First-time setup. Pass graphRoot to choose storage location (defaults to ~/.graph-memory/).`,
