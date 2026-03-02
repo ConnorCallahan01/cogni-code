@@ -80,6 +80,7 @@ function createConfig() {
   return {
     session: {
       scribeInterval: 10,
+      librarianDeltaThreshold: 20,
       idleTimeoutMs: 120_000,
       maxSessionMessages: 200,
       minSessionMessages: 3,

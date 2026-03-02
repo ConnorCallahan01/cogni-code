@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 /**
  * UserPromptSubmit hook — captures each user message to the buffer.
- * Also dispatches pending scribes mid-session (Stop hook stdout is invisible
- * to the agent, so we dispatch here where stdout reaches the agent context).
+ * Also dispatches pending scribes and librarian mid-session (Stop hook stdout
+ * is invisible to the agent, so we dispatch here where stdout reaches the agent).
  *
  * Receives JSON on stdin with:
  *   - prompt: the user's message text
@@ -69,7 +69,7 @@ async function main() {
   const sessionId = input.session_id || `session_${Date.now()}`;
   markDirty(sessionId);
 
-  // Dispatch pending scribe mid-session.
+  // --- Mid-session scribe dispatch ---
   // The Stop hook writes .scribe-pending but its stdout is invisible to the agent.
   // UserPromptSubmit stdout IS visible, so we dispatch here.
   if (fs.existsSync(CONFIG.paths.scribePending)) {
@@ -90,6 +90,36 @@ async function main() {
     } catch {
       // Unreadable marker — remove it
       try { fs.unlinkSync(CONFIG.paths.scribePending); } catch { /* ignore */ }
+    }
+  }
+
+  // --- Mid-session librarian dispatch ---
+  // Fires when accumulated deltas reach threshold, independent of session boundaries.
+  // Checks: enough deltas AND no consolidation lock (librarian not already running).
+  const lockPath = path.join(CONFIG.paths.graphRoot, ".consolidation.lock");
+  if (fs.existsSync(CONFIG.paths.deltas) && !fs.existsSync(lockPath)) {
+    try {
+      const deltaFiles = fs.readdirSync(CONFIG.paths.deltas).filter(f => f.endsWith(".json"));
+      if (deltaFiles.length > 0) {
+        let totalDeltas = 0;
+        for (const f of deltaFiles) {
+          try {
+            const data = JSON.parse(fs.readFileSync(path.join(CONFIG.paths.deltas, f), "utf-8"));
+            for (const scribe of data.scribes || []) {
+              totalDeltas += (scribe.deltas || []).length;
+            }
+          } catch { /* skip unreadable files */ }
+        }
+        if (totalDeltas >= CONFIG.session.librarianDeltaThreshold) {
+          const librarianPath = path.join(AGENTS_DIR, "memory-librarian.md");
+          const dreamerPath = path.join(AGENTS_DIR, "memory-dreamer.md");
+          const graphRoot = CONFIG.paths.graphRoot;
+          console.error(`[graph-memory] ${totalDeltas} deltas accumulated (threshold: ${CONFIG.session.librarianDeltaThreshold}). Dispatching librarian.`);
+          console.log(`<graph-memory-action>LIBRARIAN THRESHOLD REACHED (${totalDeltas} deltas): Use the Task tool with subagent_type="general-purpose", model="sonnet", and run_in_background=true. Prompt: "Read the librarian instructions at ${librarianPath}, then follow them. Graph root: ${graphRoot}. After librarian completes, read ${dreamerPath} and follow those instructions for the same graph root."</graph-memory-action>`);
+        }
+      }
+    } catch {
+      // Delta counting failed — not critical, will retry next message
     }
   }
 }
