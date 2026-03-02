@@ -28,7 +28,7 @@ Before doing anything else, prevent concurrent librarian runs:
    ```bash
    rm -f {graphRoot}/.consolidation-pending
    ```
-5. Log the start event to the activity log:
+5. Log the start event. **You MUST use the Bash tool for this** (not Write/Edit) so the `$(date)` evaluates to a real timestamp:
    ```bash
    echo '{"type":"librarian:start","message":"Librarian consolidation started","timestamp":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'"}' >> {graphRoot}/.logs/activity.jsonl
    ```
@@ -54,7 +54,7 @@ Read delta files from `.deltas/` to understand what changed in the most recent s
 
 ### 3. Read PRIORS.md
 
-Read the current behavioral priors. Consider whether new patterns from recent sessions warrant new priors, or whether existing priors are no longer supported by evidence.
+Read the current cognitive model. PRIORS.md is NOT a flat list of rules — it's a structured document with sections (System Operations, Decision-Making Model, Engineering Philosophy, Working Style, Cognitive Fingerprint, Using the Knowledge Graph). Consider whether new patterns from recent sessions should be integrated into existing sections, whether existing descriptions need sharpening based on new evidence, or whether a genuinely new behavioral pattern warrants a new entry.
 
 ### 4. Deep Graph Analysis
 
@@ -79,10 +79,23 @@ Work through these checks systematically:
 - **Confidence calibration**: Are confidence scores reasonable? A node confirmed across 5 sessions should be > 0.8. A speculative note from one conversation should be 0.3-0.5.
 - **Decay validation**: Are any nodes below the archive threshold (0.15) that should be archived?
 
-#### D. Behavioral Patterns
-- **New priors**: Look for patterns that appear across multiple sessions. Not one-off preferences, but consistent behaviors: "User always prefers X over Y", "User's debugging approach is Z", "User values A in technical decisions."
-- **Stale priors**: Are any existing priors contradicted by recent behavior? Remove them.
-- **Prior quality**: Priors should be actionable behavioral instructions, not facts. "When discussing architecture, present the simplest option first" is a good prior. "User uses React" is not — that's a fact (node).
+#### D. Cognitive Model Refinement (PRIORS.md)
+
+PRIORS.md is a structured cognitive model of the user — how they think, decide, and work. It has these sections:
+- **System Operations** — Mechanical instructions for memory tool usage. Rarely changes.
+- **Decision-Making Model** — How the user evaluates tradeoffs and picks between options.
+- **Engineering Philosophy** — Deeper architectural instincts and design beliefs.
+- **Working Style** — Communication patterns, pacing, collaboration preferences.
+- **Cognitive Fingerprint** — Cross-domain meta-patterns (the "why" behind the behaviors). Often informed by dreamer insights.
+- **Using the Knowledge Graph** — Instructions for how the agent should use recall vs. PRIORS.
+
+When analyzing recent sessions, look for:
+- **Refinements to existing descriptions** — A pattern described loosely that now has a sharper example. Update the language, don't add a duplicate.
+- **New behavioral patterns** — Consistent across 2+ sessions, not one-offs. Add to the appropriate section.
+- **Contradicted patterns** — If the user's behavior has shifted, update or remove the stale description.
+- **Dreamer insights worth promoting** — High-confidence dream fragments that reveal the "why" behind existing patterns belong in Cognitive Fingerprint.
+
+**Quality bar**: Every entry should be an actionable instruction that changes how the agent behaves. "Present the simpler approach first" is good. "User uses React" is not — that's a fact (belongs in a node). Keep the total document under 2500 tokens — it's loaded into every conversation. Prefer sharpening existing entries over adding new ones.
 
 ### 5. Apply Changes
 
@@ -102,9 +115,11 @@ For each operation, make the changes directly:
 #### Archive Operations
 - **archive**: Move node file from `nodes/` to `archive/` (create subdirs as needed). Only archive nodes with confidence < 0.15 that haven't been accessed recently and are genuinely superseded.
 
-#### Behavioral Operations
-- **new priors**: Add to PRIORS.md. Number them sequentially. Max 30 total. Format: `N. **Pattern name** — Actionable instruction derived from cross-session observation.`
-- **remove priors**: Edit PRIORS.md to remove the prior. Renumber remaining priors.
+#### Cognitive Model Operations
+- **refine prior**: Edit an existing entry in PRIORS.md to sharpen its language, add a concrete example, or integrate new evidence. This is the most common operation — prefer refinement over addition.
+- **add prior**: Add a new entry to the appropriate section of PRIORS.md. Must be a genuinely new pattern, not a restatement of something already captured.
+- **remove prior**: Remove an entry that is contradicted by recent behavior or no longer accurate.
+- **promote dream**: Move a high-confidence dreamer insight into the Cognitive Fingerprint section of PRIORS.md. Strip the dream framing and rewrite as a direct observation.
 
 ### 6. Rebuild MAP and Index
 
@@ -121,7 +136,7 @@ If that doesn't work, find the compiled `graph-ops.js` in the dist directory and
 cd {graphRoot} && git add -A && git commit -m "memory: librarian consolidation"
 ```
 
-After the commit, log completion:
+After the commit, log completion. **You MUST use the Bash tool for this** (not Write/Edit) so the `$(date)` evaluates to a real timestamp:
 ```bash
 echo '{"type":"librarian:complete","message":"Librarian consolidation complete","timestamp":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'"}' >> {graphRoot}/.logs/activity.jsonl
 ```
@@ -186,7 +201,7 @@ Use specific edge types — `relates_to` is a fallback:
 2. **Be thorough but conservative** — Check everything, but only change what clearly needs changing. An empty pass is better than bad restructuring.
 3. **Never delete** — Always archive. Deletion is irreversible.
 4. **Merge carefully** — Only merge nodes that truly overlap. The canonical node should be enriched, not just have the other node stapled on.
-5. **Priors are behavioral** — They shape HOW Claude responds, not WHAT it knows. "Present options concisely" is a prior. "User prefers React" is a fact (node).
+5. **PRIORS.md is a cognitive model** — It shapes HOW the agent thinks, not WHAT it knows. Entries must be actionable behavioral instructions. Facts belong in nodes. Prefer sharpening existing entries over adding new ones. Keep it under 2500 tokens.
 6. **Gist accuracy is critical** — MAP.md is loaded into every conversation. If gists are wrong, Claude's memory is wrong. Fix drifted gists.
 7. **Edges are the graph's power** — A well-connected graph surfaces relevant context automatically. Invest time in finding missing connections and using precise edge types.
 8. **Confidence should be evidence-based** — Multiple sessions confirming something → high confidence. Single mention → moderate. Speculative → low. Contradicted → lowered.
