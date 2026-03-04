@@ -125,7 +125,6 @@ interface MapEntry {
   nodePath: string;
   line: string;
   confidence: number;
-  somaMarker?: string;
   project?: string;
 }
 
@@ -151,16 +150,13 @@ export function fullRegenerateMAP(currentProject?: string) {
         .filter(Boolean);
       const antiEdgeStr = antiEdges.length > 0 ? ` ⊘ [${antiEdges.join(", ")}]` : "";
       const confidence = typeof parsed.data.confidence === "number" ? parsed.data.confidence : 0.5;
-      const somaMarker = parsed.data.soma?.marker;
-      const somaStr = somaMarker ? ` ⚡${somaMarker}` : "";
 
       const nodeProject = parsed.data.project as string | undefined;
 
       allEntries.push({
         nodePath,
-        line: `- **${nodePath}** — ${gist}${edgeStr}${antiEdgeStr}${somaStr}`,
+        line: `- **${nodePath}** — ${gist}${edgeStr}${antiEdgeStr}`,
         confidence,
-        somaMarker,
         project: nodeProject,
       });
     } catch {
@@ -189,7 +185,7 @@ export function fullRegenerateMAP(currentProject?: string) {
     allEntries.push(...remaining);
   }
 
-  const header = `# MAP — Knowledge Graph Index\n\n> Auto-generated. Each entry: path | gist | edges\n> ~50-80 tokens per entry. This is the agent's "hippocampus."\n`;
+  const header = `# MAP — Knowledge Graph Index\n\n> Auto-generated. Purely declarative. Soma in SOMA.md, dreams in DREAMS.md.\n> Each entry: path | gist | edges. ~50-80 tokens per entry.\n`;
   const headerTokens = estimateTokens(header);
 
   // Resolve current project for ordering: explicit param > active project
@@ -233,25 +229,6 @@ export function fullRegenerateMAP(currentProject?: string) {
     newMAP += entryLines.join("\n") + "\n";
   }
 
-  // Dream summary: single line instead of inlining all dreams
-  const pendingDir = path.join(CONFIG.paths.dreams, "pending");
-  if (fs.existsSync(pendingDir)) {
-    const dreamFiles = fs.readdirSync(pendingDir).filter(f => f.endsWith(".json"));
-    if (dreamFiles.length > 0) {
-      // Count unique referenced nodes across all dreams
-      const referencedNodes = new Set<string>();
-      for (const f of dreamFiles) {
-        try {
-          const dream = JSON.parse(fs.readFileSync(path.join(pendingDir, f), "utf-8"));
-          for (const ref of dream.nodes_referenced || []) {
-            referencedNodes.add(ref);
-          }
-        } catch { /* skip */ }
-      }
-      newMAP += `\n## Pending Dreams\n\n${dreamFiles.length} fragments across ${referencedNodes.size} nodes. Query via \`recall\` with related topics to surface.\n`;
-    }
-  }
-
   if (categories.size === 0) {
     newMAP += `\n_No nodes yet. The graph will grow as conversations happen._\n`;
   }
@@ -259,6 +236,205 @@ export function fullRegenerateMAP(currentProject?: string) {
   fs.writeFileSync(CONFIG.paths.map, newMAP);
 
   activityBus.log("graph:map_regenerated", `MAP rebuilt: ${includedEntries.length} entries, ~${estimateTokens(newMAP)} tokens`);
+}
+
+// --- SOMA.md generation ---
+
+export function generateSOMA() {
+  const nodesDir = CONFIG.paths.nodes;
+  if (!fs.existsSync(nodesDir)) {
+    fs.writeFileSync(CONFIG.paths.soma, "# SOMA — Emotional Engagement Map\n\n_No soma markers yet._\n");
+    return;
+  }
+
+  const high: string[] = [];
+  const moderate: string[] = [];
+  const caution: string[] = [];
+
+  for (const { nodePath, filePath } of walkNodes(nodesDir)) {
+    try {
+      const raw = fs.readFileSync(filePath, "utf-8");
+      const parsed = matter(raw);
+      const soma = parsed.data.soma;
+      if (!soma || !soma.marker) continue;
+
+      const intensity = soma.intensity ?? 0.5;
+      const valence = soma.valence || "neutral";
+      const line = `- **${nodePath}** — ${soma.marker} (${valence}, ${intensity})`;
+
+      if (intensity > 0.7) {
+        high.push(line);
+      } else if (intensity >= 0.4) {
+        moderate.push(line);
+      } else if (valence === "negative" || valence === "cautious") {
+        caution.push(line);
+      }
+    } catch { /* skip */ }
+  }
+
+  let content = `# SOMA — Emotional Engagement Map\n\n> Soma markers extracted from nodes. Calibrates engagement intensity.\n`;
+
+  if (high.length > 0) {
+    content += `\n## High Intensity (>0.7)\n\n${high.join("\n")}\n`;
+  }
+  if (moderate.length > 0) {
+    content += `\n## Moderate (0.4-0.7)\n\n${moderate.join("\n")}\n`;
+  }
+  if (caution.length > 0) {
+    content += `\n## Caution (<0.4, negative)\n\n${caution.join("\n")}\n`;
+  }
+
+  if (high.length === 0 && moderate.length === 0 && caution.length === 0) {
+    content += `\n_No soma markers yet._\n`;
+  }
+
+  // Enforce token budget
+  if (estimateTokens(content) > CONFIG.graph.maxSomaTokens) {
+    // Trim moderate section first, then caution
+    const lines = content.split("\n");
+    while (estimateTokens(lines.join("\n")) > CONFIG.graph.maxSomaTokens && lines.length > 5) {
+      lines.pop();
+    }
+    content = lines.join("\n") + "\n";
+  }
+
+  fs.writeFileSync(CONFIG.paths.soma, content);
+  activityBus.log("graph:soma_generated", `SOMA.md rebuilt: ${high.length} high, ${moderate.length} moderate, ${caution.length} caution`);
+}
+
+// --- WORKING.md generation ---
+
+export function generateWORKING() {
+  const deltasDir = CONFIG.paths.deltas;
+
+  let content = `# WORKING — Volatile Working Memory\n\n> Recent session context. Auto-generated from latest deltas.\n`;
+
+  if (!fs.existsSync(deltasDir)) {
+    content += `\n_No recent activity._\n`;
+    fs.writeFileSync(CONFIG.paths.working, content);
+    return;
+  }
+
+  // Read last 3 delta files (most recent)
+  const deltaFiles = fs.readdirSync(deltasDir)
+    .filter(f => f.endsWith(".json"))
+    .sort()
+    .slice(-3);
+
+  const activeTopics: string[] = [];
+  const recentDecisions: string[] = [];
+
+  for (const f of deltaFiles) {
+    try {
+      const data = JSON.parse(fs.readFileSync(path.join(deltasDir, f), "utf-8"));
+      for (const scribe of data.scribes || []) {
+        if (scribe.summary) {
+          activeTopics.push(scribe.summary);
+        }
+        for (const delta of scribe.deltas || []) {
+          const action = delta.type || delta.action;
+          if (action === "update_stance" && delta.change) {
+            recentDecisions.push(`${delta.path}: ${delta.change}`);
+          }
+        }
+      }
+    } catch { /* skip */ }
+  }
+
+  if (activeTopics.length > 0) {
+    content += `\n## Active Topics\n\n`;
+    for (const topic of activeTopics.slice(-5)) {
+      content += `- ${topic}\n`;
+    }
+  }
+
+  if (recentDecisions.length > 0) {
+    content += `\n## Recent Decisions\n\n`;
+    for (const decision of recentDecisions.slice(-5)) {
+      content += `- ${decision}\n`;
+    }
+  }
+
+  if (activeTopics.length === 0 && recentDecisions.length === 0) {
+    content += `\n_No recent activity._\n`;
+  }
+
+  // Enforce token budget
+  if (estimateTokens(content) > CONFIG.graph.maxWorkingTokens) {
+    const lines = content.split("\n");
+    while (estimateTokens(lines.join("\n")) > CONFIG.graph.maxWorkingTokens && lines.length > 5) {
+      lines.pop();
+    }
+    content = lines.join("\n") + "\n";
+  }
+
+  fs.writeFileSync(CONFIG.paths.working, content);
+  activityBus.log("graph:working_generated", `WORKING.md rebuilt: ${activeTopics.length} topics, ${recentDecisions.length} decisions`);
+}
+
+// --- DREAMS.md generation ---
+
+export function generateDREAMS() {
+  const pendingDir = path.join(CONFIG.paths.dreams, "pending");
+
+  let content = `# DREAMS — Speculative Fragments\n\n> Pending dream fragments from creative recombination. Sorted by confidence.\n`;
+
+  if (!fs.existsSync(pendingDir)) {
+    content += `\n_No pending dreams._\n`;
+    fs.writeFileSync(CONFIG.paths.dreamsContext, content);
+    return;
+  }
+
+  const dreamFiles = fs.readdirSync(pendingDir).filter(f => f.endsWith(".json"));
+  if (dreamFiles.length === 0) {
+    content += `\n_No pending dreams._\n`;
+    fs.writeFileSync(CONFIG.paths.dreamsContext, content);
+    return;
+  }
+
+  const dreams: Array<{ type: string; confidence: number; fragment: string; refs: string[] }> = [];
+
+  for (const f of dreamFiles) {
+    try {
+      const dream = JSON.parse(fs.readFileSync(path.join(pendingDir, f), "utf-8"));
+      dreams.push({
+        type: dream.type || "connection",
+        confidence: dream.confidence ?? 0.3,
+        fragment: dream.fragment || "",
+        refs: dream.nodes_referenced || [],
+      });
+    } catch { /* skip */ }
+  }
+
+  // Sort by confidence descending
+  dreams.sort((a, b) => b.confidence - a.confidence);
+
+  content += `\n`;
+  for (const dream of dreams) {
+    content += `- **${dream.type}** (${dream.confidence}): ${dream.fragment} → [${dream.refs.join(", ")}]\n`;
+  }
+
+  // Enforce token budget
+  if (estimateTokens(content) > CONFIG.graph.maxDreamsContextTokens) {
+    const lines = content.split("\n");
+    while (estimateTokens(lines.join("\n")) > CONFIG.graph.maxDreamsContextTokens && lines.length > 5) {
+      lines.pop();
+    }
+    content = lines.join("\n") + "\n";
+  }
+
+  fs.writeFileSync(CONFIG.paths.dreamsContext, content);
+  activityBus.log("graph:dreams_generated", `DREAMS.md rebuilt: ${dreams.length} fragments`);
+}
+
+// --- Regenerate all five context files ---
+
+export function regenerateAllContextFiles(currentProject?: string) {
+  fullRegenerateMAP(currentProject);
+  rebuildIndex();
+  generateSOMA();
+  generateWORKING();
+  generateDREAMS();
 }
 
 // --- Index rebuild (with dream_refs) ---

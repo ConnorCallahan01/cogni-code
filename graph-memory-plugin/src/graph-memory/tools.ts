@@ -11,7 +11,7 @@ import { somaBoost } from "./soma.js";
 import { applyDeltas } from "./pipeline/mechanical-apply.js";
 import { buildLibrarianInput } from "./pipeline/librarian.js";
 import { buildDreamerInput } from "./pipeline/dreamer.js";
-import { fullRegenerateMAP, rebuildIndex, validateEdgeType } from "./pipeline/graph-ops.js";
+import { fullRegenerateMAP, rebuildIndex, regenerateAllContextFiles, validateEdgeType } from "./pipeline/graph-ops.js";
 import { runDecay } from "./pipeline/decay.js";
 import { updateManifest } from "./manifest.js";
 import { clearConsolidationPending } from "./dirty-state.js";
@@ -399,10 +399,9 @@ async function runConsolidation(): Promise<{ content: Array<{ type: "text"; text
     allErrors.push(`Decay failed: ${err.message}`);
   }
 
-  // Rebuild MAP and index
+  // Rebuild all context files
   try {
-    fullRegenerateMAP();
-    rebuildIndex();
+    regenerateAllContextFiles();
   } catch (err: any) {
     allErrors.push(`Rebuild failed: ${err.message}`);
   }

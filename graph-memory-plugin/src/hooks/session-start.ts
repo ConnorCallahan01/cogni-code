@@ -12,7 +12,8 @@ import { fileURLToPath } from "url";
 import { CONFIG, isGraphInitialized } from "../graph-memory/config.js";
 import { isDirty, clearDirty, markDirty, setConsolidationPending, isConsolidationPending } from "../graph-memory/dirty-state.js";
 import { applyDeltas } from "../graph-memory/pipeline/mechanical-apply.js";
-import { fullRegenerateMAP, rebuildIndex } from "../graph-memory/pipeline/graph-ops.js";
+import { regenerateAllContextFiles } from "../graph-memory/pipeline/graph-ops.js";
+import { generatePreflightReport } from "../graph-memory/pipeline/preflight.js";
 import { detectProject, writeActiveProject, cleanActiveProjects } from "../graph-memory/project.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -72,8 +73,7 @@ async function main() {
           } catch { /* best effort */ }
         }
       }
-      fullRegenerateMAP();
-      rebuildIndex();
+      regenerateAllContextFiles();
       clearDirty();
       setConsolidationPending("crash recovery");
       console.error("[graph-memory] Crash recovery complete. Consolidation pending.");
@@ -104,27 +104,88 @@ async function main() {
     }
   }
 
-  // 3. Check for consolidation-pending
-  const consolidation = isConsolidationPending();
-  if (consolidation.pending) {
-    const librarianPath = path.join(AGENTS_DIR, "memory-librarian.md");
-    const dreamerPath = path.join(AGENTS_DIR, "memory-dreamer.md");
-    parts.push(`<graph-memory-action>CONSOLIDATION PENDING (${consolidation.summary || "session end"}): Use the Task tool with subagent_type="general-purpose", model="sonnet", and run_in_background=true. Prompt: "Read the librarian instructions at ${librarianPath}, then follow them. Graph root: ${graphRoot}. After librarian completes, read ${dreamerPath} and follow those instructions for the same graph root."</graph-memory-action>`);
-  }
-
-  // 4. Load PRIORS (behavioral guidelines — loaded first to shape thinking)
-  if (fs.existsSync(CONFIG.paths.priors)) {
-    const priors = fs.readFileSync(CONFIG.paths.priors, "utf-8").trim();
-    if (priors && !priors.includes("No priors yet")) {
-      parts.push(priors);
+  // 3. Check for librarian-pending (written by auditor after triage)
+  if (fs.existsSync(CONFIG.paths.librarianPending)) {
+    try {
+      const stat = fs.statSync(CONFIG.paths.librarianPending);
+      const ageMs = Date.now() - stat.mtimeMs;
+      if (ageMs > 3600_000) {
+        console.error("[graph-memory] Removing stale librarian-pending marker (>1 hour old).");
+        fs.unlinkSync(CONFIG.paths.librarianPending);
+      } else {
+        const librarianPath = path.join(AGENTS_DIR, "memory-librarian.md");
+        parts.push(`<graph-memory-action>LIBRARIAN PENDING (post-audit): Use the Task tool with subagent_type="general-purpose", model="sonnet", and run_in_background=true. Prompt: "Read the librarian instructions at ${librarianPath}, then follow them. Graph root: ${graphRoot}. Read the audit brief at ${CONFIG.paths.auditBrief} and audit report at ${CONFIG.paths.auditReport} first — the auditor has already triaged mechanical fixes and prepared recommendations for you."</graph-memory-action>`);
+      }
+    } catch {
+      try { fs.unlinkSync(CONFIG.paths.librarianPending); } catch { /* ignore */ }
     }
   }
 
-  // 5. Load MAP (knowledge index)
-  if (fs.existsSync(CONFIG.paths.map)) {
-    const map = fs.readFileSync(CONFIG.paths.map, "utf-8").trim();
-    if (map && !map.includes("No nodes yet")) {
-      parts.push(map);
+  // 4. Check for dreamer-pending (written by librarian after its commit)
+  if (fs.existsSync(CONFIG.paths.dreamerPending)) {
+    try {
+      const stat = fs.statSync(CONFIG.paths.dreamerPending);
+      const ageMs = Date.now() - stat.mtimeMs;
+      if (ageMs > 3600_000) {
+        console.error("[graph-memory] Removing stale dreamer-pending marker (>1 hour old).");
+        fs.unlinkSync(CONFIG.paths.dreamerPending);
+      } else {
+        const dreamerPath = path.join(AGENTS_DIR, "memory-dreamer.md");
+        parts.push(`<graph-memory-action>DREAMER PENDING: Use the Task tool with subagent_type="general-purpose", model="sonnet", and run_in_background=true. Prompt: "Read the dreamer instructions at ${dreamerPath}, then follow them. Graph root: ${graphRoot}."</graph-memory-action>`);
+      }
+    } catch {
+      try { fs.unlinkSync(CONFIG.paths.dreamerPending); } catch { /* ignore */ }
+    }
+  }
+
+  // 5. Check for consolidation-pending (dispatches auditor, not librarian directly)
+  const consolidation = isConsolidationPending();
+  if (consolidation.pending) {
+    const lockPath = path.join(graphRoot, ".consolidation.lock");
+    let lockHeld = false;
+    if (fs.existsSync(lockPath)) {
+      try {
+        const lockData = JSON.parse(fs.readFileSync(lockPath, "utf-8"));
+        const lockAgeSec = Math.floor(Date.now() / 1000) - (lockData.pid_time || 0);
+        if (lockAgeSec < 600) {
+          lockHeld = true;
+          console.error(`[graph-memory] Consolidation lock held (${lockAgeSec}s old). Skipping auditor dispatch.`);
+        } else {
+          console.error(`[graph-memory] Removing stale consolidation lock (${lockAgeSec}s old).`);
+          fs.unlinkSync(lockPath);
+        }
+      } catch {
+        try { fs.unlinkSync(lockPath); } catch { /* ignore */ }
+      }
+    }
+    if (!lockHeld) {
+      const auditorPath = path.join(AGENTS_DIR, "memory-auditor.md");
+      // Run preflight report before dispatching auditor
+      try {
+        generatePreflightReport();
+        console.error(`[graph-memory] Preflight report generated at ${CONFIG.paths.preflightReport}`);
+      } catch (err: any) {
+        console.error(`[graph-memory] Preflight report failed: ${err.message}`);
+      }
+      parts.push(`<graph-memory-action>CONSOLIDATION PENDING (${consolidation.summary || "session end"}): Use the Task tool with subagent_type="general-purpose", model="sonnet", and run_in_background=true. Prompt: "Read the auditor instructions at ${auditorPath}, then follow them. Graph root: ${graphRoot}. Read the preflight report at ${CONFIG.paths.preflightReport} first — it contains the full node manifest and flagged issues with their file contents included."</graph-memory-action>`);
+    }
+  }
+
+  // 6. Load context files in cognitive order
+  const contextFiles: Array<{ path: string; emptyMarker: string }> = [
+    { path: CONFIG.paths.priors, emptyMarker: "No priors yet" },
+    { path: CONFIG.paths.soma, emptyMarker: "No soma markers yet" },
+    { path: CONFIG.paths.map, emptyMarker: "No nodes yet" },
+    { path: CONFIG.paths.working, emptyMarker: "No recent activity" },
+    { path: CONFIG.paths.dreamsContext, emptyMarker: "No pending dreams" },
+  ];
+
+  for (const { path: filePath, emptyMarker } of contextFiles) {
+    if (fs.existsSync(filePath)) {
+      const content = fs.readFileSync(filePath, "utf-8").trim();
+      if (content && !content.includes(emptyMarker)) {
+        parts.push(content);
+      }
     }
   }
 
@@ -137,7 +198,7 @@ async function main() {
     console.log(parts.join("\n\n---\n\n"));
   }
 
-  // 6. Mark dirty for this session
+  // 8. Mark dirty for this session
   markDirty(sessionId);
 }
 

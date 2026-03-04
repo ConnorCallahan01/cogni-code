@@ -12,7 +12,7 @@ import path from "path";
 import { CONFIG, isGraphInitialized } from "../graph-memory/config.js";
 import { initializeGraph } from "../graph-memory/index.js";
 import { applyDeltas } from "../graph-memory/pipeline/mechanical-apply.js";
-import { fullRegenerateMAP, rebuildIndex } from "../graph-memory/pipeline/graph-ops.js";
+import { regenerateAllContextFiles } from "../graph-memory/pipeline/graph-ops.js";
 import { runDecay } from "../graph-memory/pipeline/decay.js";
 import { updateManifest } from "../graph-memory/manifest.js";
 import { autoCommit } from "../graph-memory/git.js";
@@ -195,12 +195,11 @@ async function main() {
     console.error(`[graph-memory] Decay failed: ${err.message}`);
   }
 
-  // Rebuild MAP and index
+  // Rebuild all context files
   try {
-    fullRegenerateMAP();
-    rebuildIndex();
+    regenerateAllContextFiles();
   } catch (err: any) {
-    console.error(`[graph-memory] Rebuild failed: ${err.message}`);
+    console.error(`[graph-memory] Context file rebuild failed: ${err.message}`);
   }
 
   // Clean up active-project file for this session (after MAP rebuild so ordering is correct)

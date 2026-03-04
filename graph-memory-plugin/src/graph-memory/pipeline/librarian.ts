@@ -19,8 +19,7 @@ import { safePath, walkNodes, getNodeDepth } from "../utils.js";
 import {
   validateEdgeType,
   updatePriors,
-  fullRegenerateMAP,
-  rebuildIndex,
+  regenerateAllContextFiles,
 } from "./graph-ops.js";
 
 // --- LibrarianResult interface (graph reasoning only) ---
@@ -45,8 +44,8 @@ export interface LibrarianResult {
 }
 
 /**
- * Build librarian input from current MAP state (post-Phase-1).
- * Reads session summary chain from delta files if available.
+ * Build librarian input from audit context + five context files.
+ * Post-auditor: the librarian receives pre-digested recommendations, not raw deltas.
  */
 export function buildLibrarianInput(sessionId?: string): string | null {
   let map = "_Empty graph._";
@@ -54,38 +53,49 @@ export function buildLibrarianInput(sessionId?: string): string | null {
     map = fs.readFileSync(CONFIG.paths.map, "utf-8");
   }
 
-  // If map is empty, nothing for the librarian to reason about
   if (map === "_Empty graph._") return null;
 
-  // Session summary chain from delta file (if sessionId provided)
-  let summaryChain = "";
-  if (sessionId) {
-    const deltaFile = path.join(CONFIG.paths.deltas, `${sessionId}.json`);
-    if (fs.existsSync(deltaFile)) {
-      try {
-        const data = JSON.parse(fs.readFileSync(deltaFile, "utf-8"));
-        const summaries = (data.scribes || []).map((s: any) => s.summary).filter(Boolean);
-        if (summaries.length > 0) {
-          summaryChain = summaries.map((s: string, i: number) => `${i + 1}. ${s}`).join("\n");
-        }
-      } catch { /* skip */ }
-    }
-  }
-
-  // If no session context and graph is trivially small, skip
-  if (!summaryChain) {
-    // Still check if there are enough nodes to warrant reasoning
-    const nodesDir = CONFIG.paths.nodes;
-    let nodeCount = 0;
-    if (fs.existsSync(nodesDir)) {
-      for (const _ of walkNodes(nodesDir)) nodeCount++;
-    }
-    if (nodeCount < 3) return null;
-  }
-
-  // List nodes beyond maxMapDepth for structural context
-  const deepNodes: string[] = [];
+  // Still check if there are enough nodes to warrant reasoning
   const nodesDir = CONFIG.paths.nodes;
+  let nodeCount = 0;
+  if (fs.existsSync(nodesDir)) {
+    for (const _ of walkNodes(nodesDir)) nodeCount++;
+  }
+  if (nodeCount < 3) return null;
+
+  let input = "";
+
+  // Audit brief (primary input — pre-digested by auditor)
+  if (fs.existsSync(CONFIG.paths.auditBrief)) {
+    input += `## Audit Brief\n\n${fs.readFileSync(CONFIG.paths.auditBrief, "utf-8")}\n\n`;
+  }
+
+  // Audit report (structured data)
+  if (fs.existsSync(CONFIG.paths.auditReport)) {
+    input += `## Audit Report (JSON)\n\n\`\`\`json\n${fs.readFileSync(CONFIG.paths.auditReport, "utf-8")}\n\`\`\`\n\n`;
+  }
+
+  // Five context files
+  input += `## Current MAP\n\n${map}\n\n`;
+
+  if (fs.existsSync(CONFIG.paths.priors)) {
+    input += `## Current PRIORS\n\n${fs.readFileSync(CONFIG.paths.priors, "utf-8")}\n\n`;
+  }
+
+  if (fs.existsSync(CONFIG.paths.soma)) {
+    input += `## Current SOMA\n\n${fs.readFileSync(CONFIG.paths.soma, "utf-8")}\n\n`;
+  }
+
+  if (fs.existsSync(CONFIG.paths.working)) {
+    input += `## Current WORKING\n\n${fs.readFileSync(CONFIG.paths.working, "utf-8")}\n\n`;
+  }
+
+  if (fs.existsSync(CONFIG.paths.dreamsContext)) {
+    input += `## Current DREAMS\n\n${fs.readFileSync(CONFIG.paths.dreamsContext, "utf-8")}\n\n`;
+  }
+
+  // Deep nodes for structural context
+  const deepNodes: string[] = [];
   if (fs.existsSync(nodesDir)) {
     for (const { nodePath, filePath } of walkNodes(nodesDir)) {
       if (getNodeDepth(nodePath) > CONFIG.graph.maxMapDepth) {
@@ -99,14 +109,8 @@ export function buildLibrarianInput(sessionId?: string): string | null {
     }
   }
 
-  let input = `## Current MAP\n\n${map}`;
-
-  if (summaryChain) {
-    input += `\n\n## Session Summary\n\n${summaryChain}`;
-  }
-
   if (deepNodes.length > 0) {
-    input += `\n\n## Deep Nodes (not in MAP)\n\n${deepNodes.join("\n")}`;
+    input += `## Deep Nodes (not in MAP)\n\n${deepNodes.join("\n")}`;
   }
 
   return input;
@@ -208,17 +212,11 @@ export async function applyLibrarianResult(result: LibrarianResult) {
     activityBus.log("system:error", `Parent confidence recalc failed: ${err.message}`);
   }
 
-  // 8. Rebuild MAP and index
+  // 8. Rebuild all context files
   try {
-    fullRegenerateMAP();
+    regenerateAllContextFiles();
   } catch (err: any) {
-    activityBus.log("system:error", `MAP rebuild failed: ${err.message}`);
-  }
-
-  try {
-    rebuildIndex();
-  } catch (err: any) {
-    activityBus.log("system:error", `Index rebuild failed: ${err.message}`);
+    activityBus.log("system:error", `Context file rebuild failed: ${err.message}`);
   }
 }
 

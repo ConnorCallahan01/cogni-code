@@ -17,7 +17,7 @@ import matter from "gray-matter";
 import { CONFIG } from "../config.js";
 import { activityBus } from "../events.js";
 import { safePath } from "../utils.js";
-import { validateEdgeType, fullRegenerateMAP, rebuildIndex } from "./graph-ops.js";
+import { validateEdgeType, regenerateAllContextFiles } from "./graph-ops.js";
 
 /** Internal normalized delta — after translating scribe field names */
 interface NormalizedDelta {
@@ -202,7 +202,9 @@ function handleUpdateStance(delta: NormalizedDelta, errors: string[]): boolean {
       parsed.data.confidence = delta.confidence;
     }
     if (delta.content) {
-      parsed.content = parsed.content.trimEnd() + `\n\n_Stance update:_ ${delta.content}`;
+      // Replace previous stance update (not accumulate)
+      const base = parsed.content.split('\n\n_Stance update:_')[0];
+      parsed.content = base.trimEnd() + `\n\n_Stance update:_ ${delta.content}`;
     }
     parsed.data.updated = new Date().toISOString().slice(0, 10);
     fs.writeFileSync(filePath, matter.stringify(parsed.content, parsed.data));
@@ -355,17 +357,11 @@ export async function applyDeltas(sessionId: string): Promise<{ appliedCount: nu
     }
   }
 
-  // After all deltas applied, rebuild MAP and index
+  // After all deltas applied, rebuild all context files
   try {
-    fullRegenerateMAP();
+    regenerateAllContextFiles();
   } catch (err: any) {
-    errors.push(`MAP regeneration failed: ${err.message}`);
-  }
-
-  try {
-    rebuildIndex();
-  } catch (err: any) {
-    errors.push(`Index rebuild failed: ${err.message}`);
+    errors.push(`Context file regeneration failed: ${err.message}`);
   }
 
   activityBus.log("mechanical:complete", `Mechanical apply done: ${appliedCount} applied, ${errors.length} errors`, {

@@ -16,6 +16,7 @@ import { fileURLToPath } from "url";
 import { CONFIG, isGraphInitialized } from "../graph-memory/config.js";
 import { markDirty } from "../graph-memory/dirty-state.js";
 import { detectProject } from "../graph-memory/project.js";
+import { generatePreflightReport } from "../graph-memory/pipeline/preflight.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const AGENTS_DIR = path.resolve(__dirname, "../../agents");
@@ -93,11 +94,46 @@ async function main() {
     }
   }
 
-  // --- Mid-session librarian dispatch ---
-  // Fires when accumulated deltas reach threshold, independent of session boundaries.
-  // Checks: enough deltas AND no consolidation lock (librarian not already running).
+  // --- Mid-session dreamer dispatch ---
+  // Fires when .dreamer-pending exists (written by librarian after its git commit).
+  // Dreamer runs as a separate subagent with a clean context window.
+  if (fs.existsSync(CONFIG.paths.dreamerPending)) {
+    try {
+      const stat = fs.statSync(CONFIG.paths.dreamerPending);
+      const ageMs = Date.now() - stat.mtimeMs;
+      if (ageMs > 3600_000) {
+        console.error("[graph-memory] Removing stale dreamer-pending marker (>1 hour old).");
+        fs.unlinkSync(CONFIG.paths.dreamerPending);
+      } else {
+        const dreamerPath = path.join(AGENTS_DIR, "memory-dreamer.md");
+        const graphRoot = CONFIG.paths.graphRoot;
+        console.log(`<graph-memory-action>DREAMER PENDING: Use the Task tool with subagent_type="general-purpose", model="sonnet", and run_in_background=true. Prompt: "Read the dreamer instructions at ${dreamerPath}, then follow them. Graph root: ${graphRoot}."</graph-memory-action>`);
+      }
+    } catch {
+      try { fs.unlinkSync(CONFIG.paths.dreamerPending); } catch { /* ignore */ }
+    }
+  }
+
+  // --- Mid-session auditor dispatch ---
+  // Fires when accumulated deltas reach threshold. Auditor triages, then writes
+  // .librarian-pending so the librarian fires next (at next session start or message).
   const lockPath = path.join(CONFIG.paths.graphRoot, ".consolidation.lock");
-  if (fs.existsSync(CONFIG.paths.deltas) && !fs.existsSync(lockPath)) {
+  let lockActive = false;
+  if (fs.existsSync(lockPath)) {
+    try {
+      const lockData = JSON.parse(fs.readFileSync(lockPath, "utf-8"));
+      const lockAgeSec = Math.floor(Date.now() / 1000) - (lockData.pid_time || 0);
+      if (lockAgeSec < 600) {
+        lockActive = true;
+      } else {
+        console.error(`[graph-memory] Removing stale consolidation lock (${lockAgeSec}s old).`);
+        fs.unlinkSync(lockPath);
+      }
+    } catch {
+      try { fs.unlinkSync(lockPath); } catch { /* ignore */ }
+    }
+  }
+  if (fs.existsSync(CONFIG.paths.deltas) && !lockActive) {
     try {
       const deltaFiles = fs.readdirSync(CONFIG.paths.deltas).filter(f => f.endsWith(".json"));
       if (deltaFiles.length > 0) {
@@ -111,15 +147,40 @@ async function main() {
           } catch { /* skip unreadable files */ }
         }
         if (totalDeltas >= CONFIG.session.librarianDeltaThreshold) {
-          const librarianPath = path.join(AGENTS_DIR, "memory-librarian.md");
-          const dreamerPath = path.join(AGENTS_DIR, "memory-dreamer.md");
+          const auditorPath = path.join(AGENTS_DIR, "memory-auditor.md");
           const graphRoot = CONFIG.paths.graphRoot;
-          console.error(`[graph-memory] ${totalDeltas} deltas accumulated (threshold: ${CONFIG.session.librarianDeltaThreshold}). Dispatching librarian.`);
-          console.log(`<graph-memory-action>LIBRARIAN THRESHOLD REACHED (${totalDeltas} deltas): Use the Task tool with subagent_type="general-purpose", model="sonnet", and run_in_background=true. Prompt: "Read the librarian instructions at ${librarianPath}, then follow them. Graph root: ${graphRoot}. After librarian completes, read ${dreamerPath} and follow those instructions for the same graph root."</graph-memory-action>`);
+          // Run preflight report before dispatching auditor
+          try {
+            generatePreflightReport();
+            console.error(`[graph-memory] Preflight report generated at ${CONFIG.paths.preflightReport}`);
+          } catch (err: any) {
+            console.error(`[graph-memory] Preflight report failed: ${err.message}`);
+          }
+          console.error(`[graph-memory] ${totalDeltas} deltas accumulated (threshold: ${CONFIG.session.librarianDeltaThreshold}). Dispatching auditor.`);
+          console.log(`<graph-memory-action>AUDITOR THRESHOLD REACHED (${totalDeltas} deltas): Use the Task tool with subagent_type="general-purpose", model="sonnet", and run_in_background=true. Prompt: "Read the auditor instructions at ${auditorPath}, then follow them. Graph root: ${graphRoot}. Read the preflight report at ${CONFIG.paths.preflightReport} first — it contains the full node manifest and flagged issues with their file contents included."</graph-memory-action>`);
         }
       }
     } catch {
       // Delta counting failed — not critical, will retry next message
+    }
+  }
+
+  // --- Mid-session librarian dispatch ---
+  // Fires when .librarian-pending exists (written by auditor after triage).
+  if (fs.existsSync(CONFIG.paths.librarianPending)) {
+    try {
+      const stat = fs.statSync(CONFIG.paths.librarianPending);
+      const ageMs = Date.now() - stat.mtimeMs;
+      if (ageMs > 3600_000) {
+        console.error("[graph-memory] Removing stale librarian-pending marker (>1 hour old).");
+        fs.unlinkSync(CONFIG.paths.librarianPending);
+      } else if (!lockActive) {
+        const librarianPath = path.join(AGENTS_DIR, "memory-librarian.md");
+        const graphRoot = CONFIG.paths.graphRoot;
+        console.log(`<graph-memory-action>LIBRARIAN PENDING (post-audit): Use the Task tool with subagent_type="general-purpose", model="sonnet", and run_in_background=true. Prompt: "Read the librarian instructions at ${librarianPath}, then follow them. Graph root: ${graphRoot}. Read the audit brief at ${CONFIG.paths.auditBrief} and audit report at ${CONFIG.paths.auditReport} first — the auditor has already triaged mechanical fixes and prepared recommendations for you."</graph-memory-action>`);
+      }
+    } catch {
+      try { fs.unlinkSync(CONFIG.paths.librarianPending); } catch { /* ignore */ }
     }
   }
 }

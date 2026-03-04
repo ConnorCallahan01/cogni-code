@@ -89,8 +89,11 @@ function createConfig() {
 
     graph: {
       maxMapTokens: 5000,
+      maxSomaTokens: 800,
+      maxWorkingTokens: 200,
+      maxDreamsContextTokens: 400,
       maxPriors: 30,
-      maxNodesBeforePrune: 80,
+      maxNodesBeforePrune: 200,
       decayHalfLifeDays: 30,
       decayArchiveThreshold: 0.15,
       decayHotNodeThreshold: 0.6,
@@ -117,6 +120,15 @@ function createConfig() {
       dirtyState: path.join(graphRoot, ".dirty-session"),
       consolidationPending: path.join(graphRoot, ".consolidation-pending"),
       scribePending: path.join(graphRoot, ".scribe-pending"),
+      dreamerPending: path.join(graphRoot, ".dreamer-pending"),
+      librarianPending: path.join(graphRoot, ".librarian-pending"),
+      preflightReport: path.join(graphRoot, ".preflight-report.json"),
+      auditReport: path.join(graphRoot, ".audit-report.json"),
+      auditBrief: path.join(graphRoot, ".audit-brief.md"),
+      soma: path.join(graphRoot, "SOMA.md"),
+      working: path.join(graphRoot, "WORKING.md"),
+      dreamsContext: path.join(graphRoot, "DREAMS.md"),
+      deltasAudited: path.join(graphRoot, ".deltas/audited"),
       activeProjects: path.join(graphRoot, ".active-projects"),
       // Prompts are bundled relative to dist/ (or src/ in dev)
       prompts: path.resolve(__dirname, "prompts"),
