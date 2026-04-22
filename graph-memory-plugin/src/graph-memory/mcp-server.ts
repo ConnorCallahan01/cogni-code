@@ -24,7 +24,7 @@ const server = new McpServer({
 // Main tool
 server.tool(
   "graph_memory",
-  `Access the persistent knowledge graph. Actions: read_node, search, recall, list_edges, read_dream, write_note, remember, status, history, revert, consolidate, initialize.
+  `Access the persistent knowledge graph. Actions: initialize, configure_runtime, status, remember, write_note, search, recall, read_node, list_edges, read_dream, consolidate, history, revert, resurface.
 
 MEMORY ACTIONS:
 - remember: Create or update a graph node directly. Provide path, gist, and optionally content, tags, edges, soma markers.
@@ -43,7 +43,8 @@ PIPELINE:
 - consolidate: Run mechanical delta processing (apply scribe deltas, rebuild MAP, decay, git commit).
 
 SETUP:
-- initialize: First-time setup. Pass graphRoot to choose storage location (defaults to ~/.graph-memory/).`,
+- initialize: First-time setup. Pass graphRoot to choose storage location (defaults to ~/.graph-memory/).
+- configure_runtime: Set manual or Docker runtime configuration for the current graph root.`,
   graphMemorySchema,
   async (args) => {
     return handleGraphMemory(args);
@@ -57,7 +58,7 @@ server.resource(
   async (uri) => {
     const content = fs.existsSync(CONFIG.paths.map)
       ? fs.readFileSync(CONFIG.paths.map, "utf-8")
-      : "_No MAP loaded. Run /graph-memory:memory-onboard to set up memory._";
+      : "_No MAP loaded. Run /memory-onboard to set up memory._";
     return {
       contents: [{ uri: uri.href, mimeType: "text/markdown", text: content }],
     };

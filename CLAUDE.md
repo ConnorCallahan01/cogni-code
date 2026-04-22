@@ -1,49 +1,107 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to Claude Code when working with code in this repository.
 
 ## What This Is
 
-This repository contains a single-file React component (`memory_implementation`) that serves as an interactive specification and implementation guide for **graph-memory** — a persistent, self-evolving memory system for AI agents. The file is not a runnable app; it's a rich documentation artifact rendered as a tabbed React UI.
+This repository contains **graph-memory** — a persistent, self-evolving knowledge graph memory system for AI agents.
 
-## Architecture of the Specification
+Active surfaces:
 
-The `memory_implementation` file is a React component with inline styles (no external CSS) organized into 7+ tabs:
+- **`graph-memory-plugin/`** — The current plugin. MCP server, hooks, runtime helpers, slash commands, skills, and agents.
+- **`memory-dashboard/`** — Optional inspection UI for graph state, logs, jobs, and briefs.
 
-- **Tab 0 (VisionTab)**: Problem statement, design philosophy, three divergences (implicit memory, dreaming, embodied experience)
-- **Tab 1 (ProjectStructureTab)**: Full project layout for `graph-memory/`, package.json, and `src/config.ts`
-- **Tab 2 (SessionLifecycleTab)**: Session boundary detection, MessageBuffer, scribe triggering, lifecycle diagrams, edge cases
-- **Tab 3 (GraphRetrievalTab)**: MCP tool definition (`graph_memory`), three retrieval pathways (direct, edge traversal, semantic search), index structure
-- **Tab 4 (GitTab)**: Auto-commit strategy, commit message format, recovery/rollback patterns
-- **Tab 5 (ParallelScribesTab)**: Concurrency model, delta file structure, scribe-to-librarian handoff, API cost estimates
-- **Tab 6 (ImplementationTab)**: Phased build plan (6 phases over ~10 days)
+Legacy/reference material:
 
-Helper components: `Code`, `Note`, `Label`, `P`, `B`, `I`, `M` — all inline-styled with a dark theme color palette defined in the `C` constant.
+- root **`src/`**, **`tests/`**, **`public/`**, and root **`package.json`** — earlier prototype path, not the current install surface
+- **`memory_implementation`** — original interactive specification artifact
+- **`GRAPH_MEMORY_*.md`**, **`NOTES.md`**, **`PHASE_*.md`**, **`BLOG.md`** — design and writing artifacts
 
-## The System Being Specified
+## Repository Structure
 
-The graph-memory system has 5 core components:
+```text
+graph-memory-plugin/
+  src/graph-memory/       # Core graph logic, runtime, inputs, pipeline
+    pipeline/             # daemon, queue, graph ops, librarian, dreamer, preflight
+  src/hooks/              # Claude Code hooks
+  agents/                 # Background agent instruction files
+  commands/               # Slash command specs
+  skills/                 # Memory skill + /recall
+  bin/                    # Install, runtime, Docker, and hook shell wrappers
 
-1. **The Graph** — Markdown files as knowledge nodes with YAML frontmatter (confidence, edges, somatic markers, decay). Filesystem IS the database.
-2. **MAP.md** — Compressed index of all nodes (~50-80 tokens each). Always loaded into agent context. Acts as the "hippocampus."
-3. **PRIORS.md** — Behavioral instructions derived from cross-session patterns. Loaded before MAP to shape agent behavior implicitly.
-4. **Scribe Pipeline** — Background Haiku agents that extract deltas every 5 messages. Fire-and-forget, never block conversation.
-5. **Consolidation Pipeline** — Post-session: Librarian (reconcile deltas, update graph), Dreamer (temp=1.0 creative recombination), Git auto-commit.
+memory-dashboard/
+  server.ts               # Express API server (port 3001)
+  src/                    # React frontend (Vite, port 5173)
+    components/           # Graph, jobs, logs, briefs, and context viewers
+    lib/api.ts            # Typed API client
 
-Key design decisions:
-- No vector databases or embeddings — keyword search on curated gists is sufficient for 50-100 node graphs
-- Node paths map directly to filesystem paths (`acellus/ace` → `graph/nodes/acellus/ace.md`)
-- Session boundaries detected by idle gaps (5 min), not explicit commands
-- `simple-git` for version control, `@anthropic-ai/sdk` for API calls, `gray-matter` for frontmatter parsing
-- Scribe uses Haiku (cheap, fast), Librarian and Dreamer use Sonnet
-- Dreamer runs at temperature 1.0; dream fragments incubate across sessions
+~/.graph-memory/          # The actual graph data (outside this repo)
+  nodes/                  # Active knowledge nodes
+  archive/                # Archived nodes
+  dreams/                 # pending/, integrated/, archived/
+  briefs/                 # Daily brief outputs
+  .deltas/                # Scribe output
+  .jobs/                  # Background queue state
+  .pipeline-logs/         # Worker logs
+  MAP.md, PRIORS.md, SOMA.md, WORKING.md, DREAMS.md  # Context files
+```
 
-## Tech Stack (of the specified system, not this file)
+## Build & Verify
 
-- Node.js + TypeScript (ESM)
-- `tsx` for execution
-- `@anthropic-ai/sdk` for Claude API calls
-- `simple-git` for git automation
-- `gray-matter` + `js-yaml` for markdown frontmatter
-- `chokidar` for file watching
-- No framework, no vector DB, no external infrastructure
+```bash
+cd graph-memory-plugin && npm run build
+cd graph-memory-plugin && npx tsc --noEmit
+cd memory-dashboard && npx tsc --noEmit
+```
+
+## Pipeline Architecture
+
+The memory system runs automatically via Claude Code hooks:
+
+1. **Session hooks** capture startup context, user prompts, assistant responses, and tool traces.
+2. **Scribe** extracts deltas from buffered session state.
+3. **Auditor** does mechanical triage and produces structured recommendations.
+4. **Librarian** applies judgment-heavy graph updates and regenerates context files.
+5. **Dreamer** creates speculative cross-node fragments.
+6. **Git** records graph history for rollback.
+
+Context files loaded at session start:
+
+- **PRIORS.md** — Cognitive model (how the agent should think)
+- **SOMA.md** — Emotional engagement calibration
+- **MAP.md** — Compressed knowledge index
+- **WORKING.md** — Volatile working memory
+- **DREAMS.md** — Pending dream fragments
+
+## Using The Memory System
+
+The `graph_memory` MCP tool is available in Claude Code sessions after installation. Common actions:
+
+### Recall
+
+```text
+graph_memory(action="recall", query="oliver provisioning", depth=1)
+```
+
+### Remember
+
+```text
+graph_memory(action="remember", path="patterns/new-pattern", gist="One-sentence summary", content="Full details...", tags=["tag1"], confidence=0.7, edges=[{target: "other/node", type: "supports"}])
+```
+
+### Other Actions
+
+- `read_node`
+- `search`
+- `list_edges`
+- `status`
+- `history` / `revert`
+- `initialize` / `configure_runtime`
+- `consolidate`
+
+## Key Design Decisions
+
+- **Filesystem is the database** — markdown files with YAML frontmatter
+- **Keyword retrieval over curated gists** — simple and inspectable
+- **Archive with recall, not delete** — stale nodes can be resurfaced
+- **Git tracks changes** — every consolidation is recoverable

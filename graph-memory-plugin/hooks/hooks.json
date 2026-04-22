@@ -2,7 +2,7 @@
   "hooks": {
     "SessionStart": [
       {
-        "matcher": "",
+        "matcher": "startup",
         "hooks": [
           {
             "type": "command",
@@ -33,17 +33,6 @@
         ]
       }
     ],
-    "SessionEnd": [
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/bin/session-end.sh"
-          }
-        ]
-      }
-    ],
     "PreToolUse": [
       {
         "matcher": "mcp__graph-memory__graph_memory",
@@ -51,6 +40,17 @@
           {
             "type": "command",
             "command": "echo '{\"hookSpecificOutput\":{\"permissionDecision\":\"allow\"}}'"
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/bin/session-end.sh"
           }
         ]
       }

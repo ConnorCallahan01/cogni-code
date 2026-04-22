@@ -1,126 +1,113 @@
-# graph-memory-plugin
+# graph-memory plugin
 
-Persistent, self-evolving memory for AI agents. Install this plugin to give any Claude Code agent a knowledge graph that grows from conversations.
+Persistent, graph-backed memory for Claude Code and compatible agent workflows.
+
+This directory is the active plugin surface in the repository. If you cloned the repo, install from here rather than from the legacy root prototype.
 
 ## What It Does
 
-- **Remembers** across sessions — names, preferences, project context, decisions
-- **Learns** behavioral patterns — extracts priors that shape how the agent thinks
-- **Dreams** — creative recombination finds surprising connections between topics
-- **Decays** — unused knowledge fades naturally, keeping memory fresh and relevant
-- **Versions** — full git history of every memory change, with easy rollback
+- remembers preferences, decisions, project context, and recurring patterns across sessions
+- exposes a `graph_memory` MCP tool for search, recall, remember, inspection, and maintenance
+- loads compact context artifacts like `MAP.md` and `PRIORS.md` into new sessions
+- optionally runs a background `scribe -> auditor -> librarian -> dreamer` pipeline in Docker
+- keeps git history for memory changes so you can inspect or revert them
 
-## Install
+## Install From This Repository
 
-### Claude Code
+From the repository root:
 
 ```bash
-# Clone the plugin
-git clone https://github.com/you/graph-memory-plugin ~/.claude/plugins/graph-memory
-
-# Install and build
-cd ~/.claude/plugins/graph-memory
-npm install
-npm run build
-
-# (Optional) Set API key for dedicated pipeline mode
-export ANTHROPIC_API_KEY=sk-...
-
-# Start Claude Code — plugin loads automatically
-claude
-
-# Run onboarding
-> /graph-memory:memory-onboard
+cd graph-memory-plugin
+./bin/install.sh
 ```
 
-### Agent SDK
+Then start Claude Code and run:
 
-```typescript
-import { query } from "@anthropic-ai/claude-agent-sdk";
-
-for await (const msg of query({
-  prompt: "Hello",
-  options: {
-    plugins: [{ type: "local", path: "./node_modules/graph-memory-plugin" }],
-    allowedTools: ["mcp__graph-memory__*"]
-  }
-})) { ... }
-
-// At session end:
-await graph_memory({ action: "consolidate" });
+```text
+/memory-onboard
 ```
 
-## How It Works
+Detailed clone-to-first-run instructions are in [../docs/setup-from-clone.md](../docs/setup-from-clone.md).
 
-### The Graph
-Memory is stored as markdown files with YAML frontmatter — the filesystem IS the database. Each node has a confidence score, edges to related nodes, somatic markers (emotional weighting), and decay rate.
+## Runtime Model
 
-### The Pipeline
-1. **Scribe** (Haiku) — Every 5 messages, a background agent extracts structured deltas
-2. **Librarian** (Sonnet) — At session end, reconciles all deltas into graph updates
-3. **Dreamer** (Sonnet, temp=1.0) — Creative recombination finds non-obvious connections
-4. **Git** — Auto-commits all changes with structured messages
+### Manual mode
 
-### Two Pipeline Modes
+- MCP tool and graph storage only
+- no daemon container
+- useful for lightweight local testing
 
-**Piggyback mode** (default, no API key):
-The pipeline runs through the host agent's own capabilities. No extra cost configuration needed.
+### Docker daemon mode
 
-**Dedicated mode** (set `ANTHROPIC_API_KEY`):
-The MCP server makes direct API calls. Faster, uses less context, costs ~$0.02-0.05/session.
+- recommended for normal use
+- Claude Code stays on the host
+- graph root stays on the host
+- daemon and bounded workers run in Docker against the mounted graph root
+
+Useful helpers:
+
+- `bin/docker-bootstrap.sh`
+- `bin/docker-doctor.sh`
+- `bin/docker-auth-check.sh`
+- `bin/docker-codex-import-host-auth.sh`
+- `bin/docker-codex-login.sh`
+- `bin/docker-codex-login-api-key.sh`
+- `bin/docker-stop.sh`
 
 ## Commands
 
+Installed slash commands:
+
 | Command | Description |
 |---------|-------------|
-| `/graph-memory:memory-onboard` | First-time setup — choose storage, seed memory |
-| `/graph-memory:memory-status` | Check system health, node count, warnings |
-| `/graph-memory:memory-search <query>` | Search the knowledge graph |
+| `/memory-onboard` | Initialize storage, choose runtime mode, and seed first memory nodes |
+| `/memory-status` | Report graph health, runtime state, counts, and warnings |
+| `/memory-search <query>` | Search the graph index |
+| `/memory-morning-kickoff` | Turn the latest brief into a focused daily kickoff |
 
-## MCP Tools
+Compatibility aliases are also installed under `/graph-memory:<command>`.
 
-The `graph_memory` tool supports these actions:
+## MCP Tool
+
+The plugin exposes one MCP tool: `graph_memory`.
+
+Supported actions:
 
 | Action | Description |
 |--------|-------------|
+| `initialize` | Create the graph structure and global pointer file |
+| `configure_runtime` | Choose manual or Docker runtime and write runtime config |
+| `status` | Report initialization state, runtime, counts, and warnings |
+| `remember` | Create or update a durable graph node |
+| `write_note` | Save a working note into the buffer |
+| `search` | Keyword search over the graph index |
+| `recall` | Search plus edge traversal |
 | `read_node` | Read a node by path |
-| `search` | Keyword search across all nodes |
-| `list_edges` | Get connections for a node |
+| `list_edges` | Inspect node connections |
 | `read_dream` | Read dream fragments |
-| `write_note` | Save a working note |
-| `status` | System health check |
-| `history` | Recent git commits |
-| `revert` | Rollback to a commit |
-| `consolidate` | Run full pipeline |
-| `log_exchange` | Buffer messages for processing |
+| `consolidate` | Run the consolidation path manually |
+| `history` | Show recent git history |
+| `revert` | Roll the graph back to an earlier commit |
+| `resurface` | Move an archived node back into the active graph |
 
-## MCP Resources
+Resources:
 
 | Resource | Description |
 |----------|-------------|
-| `graph://map` | Knowledge graph index (~5000 tokens) |
-| `graph://priors` | Behavioral guidelines |
+| `graph://map` | compressed knowledge map |
+| `graph://priors` | learned behavioral priors |
 
 ## Configuration
 
-| Config | Required? | Source | Default |
-|--------|-----------|--------|---------|
-| `ANTHROPIC_API_KEY` | No | Env var | Piggyback mode |
-| Graph storage path | Set during onboarding | `~/.graph-memory-config.yml` | `~/.graph-memory/` |
-| Model preferences | No | `config.yml` in graph root | Haiku/Sonnet |
-| Git auto-commit | No | `config.yml` in graph root | Enabled |
-| Git auto-push | No | `config.yml` in graph root | Disabled |
+| Config | Source | Default |
+|--------|--------|---------|
+| graph root pointer | `~/.graph-memory-config.yml` | `~/.graph-memory/` |
+| per-graph settings | `<graphRoot>/config.yml` | git enabled |
+| runtime config | `<graphRoot>/.runtime-config.json` | `manual` |
 
-## Architecture
+## Development Notes
 
-```
-Conversation → BufferWatcher → Scribe (every 5 msgs)
-                                  ↓
-                              Deltas (.deltas/)
-                                  ↓
-Session End → Librarian → Graph Updates (nodes/, MAP.md, PRIORS.md)
-                ↓
-              Dreamer → Dream Fragments (dreams/)
-                ↓
-              Git Commit → Full History
-```
+- build: `npm run build`
+- type-check: `npx tsc --noEmit`
+- plugin manifest: [`.claude-plugin/plugin.json`](./.claude-plugin/plugin.json)
+- examples: [`../examples/`](../examples/)

@@ -1,7 +1,7 @@
 {
   "name": "graph-memory",
   "version": "2.0.0",
-  "description": "Persistent, self-evolving memory for AI agents. Gives any agent a knowledge graph that grows from conversations. No API key required.",
+  "description": "Persistent, self-evolving memory for AI agents. Gives any agent a knowledge graph that grows from conversations.",
   "author": "graph-memory",
   "mcpServers": {
     "graph-memory": {
@@ -24,6 +24,11 @@
       "name": "memory-search",
       "description": "Search the knowledge graph by keyword",
       "file": "./commands/memory-search.md"
+    },
+    {
+      "name": "memory-morning-kickoff",
+      "description": "Turn the latest brief into a focused repo-specific morning kickoff",
+      "file": "./commands/memory-morning-kickoff.md"
     }
   ],
   "agents": [
@@ -38,6 +43,11 @@
       "file": "./agents/memory-scribe.md"
     },
     {
+      "name": "memory-auditor",
+      "description": "Mechanical triage for pending deltas before librarian consolidation.",
+      "file": "./agents/memory-auditor.md"
+    },
+    {
       "name": "memory-librarian",
       "description": "Optimize knowledge graph topology — merge nodes, archive stale data, detect contradictions, update PRIORS. Dispatch in background when consolidation-pending signal appears.",
       "file": "./agents/memory-librarian.md"
@@ -46,6 +56,16 @@
       "name": "memory-dreamer",
       "description": "Creative recombination — find surprising connections between knowledge nodes. Dispatch in background after librarian consolidation.",
       "file": "./agents/memory-dreamer.md"
+    },
+    {
+      "name": "memory-analysis",
+      "description": "Daily brief synthesis and analysis for the current project context.",
+      "file": "./agents/memory-analysis.md"
+    },
+    {
+      "name": "memory-morning-kickoff",
+      "description": "Turn the latest brief into a concrete kickoff plan for the active repository.",
+      "file": "./agents/memory-morning-kickoff.md"
     }
   ],
   "skills": [
