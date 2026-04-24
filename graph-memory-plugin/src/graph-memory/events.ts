@@ -1,9 +1,9 @@
 import { EventEmitter } from "events";
 import { appendFileSync, mkdirSync } from "fs";
 import { join } from "path";
-import { homedir } from "os";
+import { CONFIG } from "./config.js";
 
-const ACTIVITY_LOG = join(homedir(), ".graph-memory", ".logs", "activity.jsonl");
+const ACTIVITY_LOG = join(CONFIG.paths.logs, "activity.jsonl");
 let logDirReady = false;
 
 export type ActivityEventType =
@@ -46,6 +46,8 @@ export type ActivityEventType =
   | "graph:node_compacted"
   | "graph:dream_linked"
   | "graph:dream_capped"
+  | "graph:archive_index_rebuilt"
+  | "graph:node_resurfaced"
   | "system:init"
   | "system:info"
   | "system:error";
@@ -79,7 +81,7 @@ class ActivityBus extends EventEmitter {
     // Append to JSONL log for dashboard consumption
     try {
       if (!logDirReady) {
-        mkdirSync(join(homedir(), ".graph-memory", ".logs"), { recursive: true });
+        mkdirSync(CONFIG.paths.logs, { recursive: true });
         logDirReady = true;
       }
       appendFileSync(ACTIVITY_LOG, JSON.stringify(event) + "\n");

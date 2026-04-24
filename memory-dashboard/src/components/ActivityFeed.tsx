@@ -4,6 +4,7 @@ const TYPE_COLORS: Record<string, string> = {
   session: '#34d399',
   buffer: '#34d399',
   scribe: '#a78bfa',
+  auditor: '#2dd4bf',
   librarian: '#4b82f0',
   mechanical: '#4b82f0',
   dreamer: '#f472b6',

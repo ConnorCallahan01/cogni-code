@@ -29,6 +29,16 @@
       "name": "memory-morning-kickoff",
       "description": "Turn the latest brief into a focused repo-specific morning kickoff",
       "file": "./commands/memory-morning-kickoff.md"
+    },
+    {
+      "name": "memory-connect-inputs",
+      "description": "Set up host-side external inputs for briefs and context enrichment",
+      "file": "./commands/memory-connect-inputs.md"
+    },
+    {
+      "name": "memory-input-refresh",
+      "description": "Refresh configured external input sources and ingest new data",
+      "file": "./commands/memory-input-refresh.md"
     }
   ],
   "agents": [

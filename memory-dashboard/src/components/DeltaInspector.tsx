@@ -4,6 +4,8 @@ import { DeltaSummary, DreamEntry, DreamsData, fetchDeltaDetail } from '../lib/a
 interface Props {
   deltas: DeltaSummary[]
   dreams: DreamsData | null
+  auditedDeltas: DeltaSummary[]
+  auditBrief: string | null
 }
 
 const DREAM_BUCKET_COLORS: Record<string, string> = {
@@ -74,19 +76,20 @@ interface ParsedDeltaData {
   }>
 }
 
-export default function DeltaInspector({ deltas, dreams }: Props) {
+export default function DeltaInspector({ deltas, dreams, auditedDeltas, auditBrief }: Props) {
   const [expandedDelta, setExpandedDelta] = useState<string | null>(null)
   const [deltaDetail, setDeltaDetail] = useState<ParsedDeltaData | null>(null)
 
-  const handleToggle = async (sessionId: string) => {
-    if (expandedDelta === sessionId) {
+  const handleToggle = async (sessionId: string, audited = false) => {
+    const key = audited ? `audited:${sessionId}` : sessionId
+    if (expandedDelta === key) {
       setExpandedDelta(null)
       setDeltaDetail(null)
       return
     }
-    setExpandedDelta(sessionId)
+    setExpandedDelta(key)
     try {
-      const data = await fetchDeltaDetail(sessionId)
+      const data = await fetchDeltaDetail(sessionId, audited)
       setDeltaDetail(data)
     } catch {
       setDeltaDetail(null)
@@ -146,23 +149,55 @@ export default function DeltaInspector({ deltas, dreams }: Props) {
 
   return (
     <div className="delta-inspector">
+      {auditBrief && (
+        <>
+          <div className="delta-section-title">Audit Brief</div>
+          <div className="audit-brief">{auditBrief}</div>
+        </>
+      )}
+
       <div className="delta-section-title">Delta Files ({deltas.length})</div>
       {deltas.length === 0 ? (
         <div className="empty-section">No delta files yet</div>
       ) : (
-        deltas.map((d) => (
-          <div key={d.filename} className="delta-file" onClick={() => handleToggle(d.sessionId)}>
-            <div className="delta-file-header">
-              <span className="delta-file-id">{d.sessionId.slice(0, 8)}...</span>
-              <span className="delta-file-count">{d.deltas} delta{d.deltas !== 1 ? 's' : ''}</span>
-            </div>
-            {expandedDelta === d.sessionId && deltaDetail && (
-              <div className="delta-file-expanded" onClick={(e) => e.stopPropagation()}>
-                {(deltaDetail.scribes || []).map(renderScribe)}
+        deltas.map((d) => {
+          const key = d.sessionId
+          return (
+            <div key={d.filename} className="delta-file" onClick={() => handleToggle(d.sessionId)}>
+              <div className="delta-file-header">
+                <span className="delta-file-id">{d.sessionId.slice(0, 8)}...</span>
+                <span className="delta-file-count">{d.deltas} delta{d.deltas !== 1 ? 's' : ''}</span>
               </div>
-            )}
-          </div>
-        ))
+              {expandedDelta === key && deltaDetail && (
+                <div className="delta-file-expanded" onClick={(e) => e.stopPropagation()}>
+                  {(deltaDetail.scribes || []).map(renderScribe)}
+                </div>
+              )}
+            </div>
+          )
+        })
+      )}
+
+      {auditedDeltas.length > 0 && (
+        <>
+          <div className="delta-section-title">Audited Deltas ({auditedDeltas.length})</div>
+          {auditedDeltas.map((d) => {
+            const key = `audited:${d.sessionId}`
+            return (
+              <div key={d.filename} className="delta-file audited" onClick={() => handleToggle(d.sessionId, true)}>
+                <div className="delta-file-header">
+                  <span className="delta-file-id">{d.sessionId.slice(0, 8)}...</span>
+                  <span className="delta-file-count">{d.deltas} delta{d.deltas !== 1 ? 's' : ''}</span>
+                </div>
+                {expandedDelta === key && deltaDetail && (
+                  <div className="delta-file-expanded" onClick={(e) => e.stopPropagation()}>
+                    {(deltaDetail.scribes || []).map(renderScribe)}
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </>
       )}
 
       {dreams && (

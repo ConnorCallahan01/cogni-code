@@ -8,22 +8,83 @@
  */
 import fs from "fs";
 import path from "path";
-import { fileURLToPath } from "url";
+import matter from "gray-matter";
 import { CONFIG, isGraphInitialized } from "../graph-memory/config.js";
-import { isDirty, clearDirty, markDirty, setConsolidationPending, isConsolidationPending } from "../graph-memory/dirty-state.js";
-import { applyDeltas } from "../graph-memory/pipeline/mechanical-apply.js";
-import { regenerateAllContextFiles } from "../graph-memory/pipeline/graph-ops.js";
-import { generatePreflightReport } from "../graph-memory/pipeline/preflight.js";
+import { writeSessionContextState } from "../graph-memory/context-refresh.js";
+import { isDirty, markDirty } from "../graph-memory/dirty-state.js";
 import { detectProject, writeActiveProject, cleanActiveProjects } from "../graph-memory/project.js";
+import { ensureProjectWorkingFile } from "../graph-memory/project-working.js";
+import { walkNodes } from "../graph-memory/utils.js";
+import { getWorkingInjectionPaths } from "../graph-memory/working-files.js";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-// Plugin root: dist/hooks/ -> ../../agents/
-const AGENTS_DIR = path.resolve(__dirname, "../../agents");
+interface PinnedNodePayload {
+  path: string;
+  title: string;
+  content: string;
+  raw: string;
+}
+
+function loadPinnedNodesForProject(projectName: string): PinnedNodePayload[] {
+  const pinnedFromIndex: PinnedNodePayload[] = [];
+
+  try {
+    const indexPath = CONFIG.paths.index;
+    if (fs.existsSync(indexPath)) {
+      const index = JSON.parse(fs.readFileSync(indexPath, "utf-8"));
+      for (const entry of index) {
+        if (!entry?.pinned) continue;
+        if (entry.project && entry.project !== projectName) continue;
+
+        const nodePath = path.join(CONFIG.paths.nodes, `${entry.path}.md`);
+        if (!fs.existsSync(nodePath)) continue;
+
+        const raw = fs.readFileSync(nodePath, "utf-8");
+        const parsed = matter(raw);
+        pinnedFromIndex.push({
+          path: entry.path,
+          title: parsed.data.title || entry.path,
+          content: parsed.content.trim(),
+          raw,
+        });
+      }
+    }
+  } catch {
+    // Fall back to direct node scan below.
+  }
+
+  if (pinnedFromIndex.length > 0) {
+    return pinnedFromIndex;
+  }
+
+  const pinnedFromNodes: PinnedNodePayload[] = [];
+  for (const { nodePath, filePath } of walkNodes(CONFIG.paths.nodes)) {
+    try {
+      const raw = fs.readFileSync(filePath, "utf-8");
+      const parsed = matter(raw);
+      if (parsed.data.pinned !== true) continue;
+      if (parsed.data.project && parsed.data.project !== projectName) continue;
+      pinnedFromNodes.push({
+        path: nodePath,
+        title: parsed.data.title || nodePath,
+        content: parsed.content.trim(),
+        raw,
+      });
+    } catch {
+      // Skip malformed node files.
+    }
+  }
+
+  return pinnedFromNodes;
+}
 
 async function main() {
+  if (process.env.GRAPH_MEMORY_PIPELINE_CHILD === "1" || process.env.GRAPH_MEMORY_WORKER === "1") {
+    return;
+  }
+
   if (!isGraphInitialized()) {
     console.log(
-      "[graph-memory] Memory not initialized. Run /graph-memory:memory-onboard to set up."
+      "[graph-memory] Memory not initialized. Run /memory-onboard to set up."
     );
     return;
   }
@@ -57,126 +118,22 @@ async function main() {
     parts.push(`[graph-memory] Active project: ${project.name} (auto-detected)`);
   }
 
-  // 1. Crash recovery: check dirty state from previous session
+  // 1. Surface crash state, but leave recovery to the background daemon.
   const dirtyCheck = isDirty();
   if (dirtyCheck.dirty) {
-    console.error("[graph-memory] Dirty state detected — previous session didn't exit cleanly. Recovering...");
-    try {
-      // Process any orphaned deltas
-      const deltasDir = CONFIG.paths.deltas;
-      if (fs.existsSync(deltasDir)) {
-        const deltaFiles = fs.readdirSync(deltasDir).filter(f => f.endsWith(".json"));
-        for (const f of deltaFiles) {
-          const sessionId = f.replace(".json", "");
-          try {
-            await applyDeltas(sessionId);
-          } catch { /* best effort */ }
-        }
-      }
-      regenerateAllContextFiles();
-      clearDirty();
-      setConsolidationPending("crash recovery");
-      console.error("[graph-memory] Crash recovery complete. Consolidation pending.");
-    } catch (err: any) {
-      console.error(`[graph-memory] Crash recovery failed: ${err.message}`);
-      clearDirty();
-    }
+    console.error("[graph-memory] Dirty state detected from a previous session. Background daemon should reconcile queued memory work.");
   }
 
-  // 2. Check for scribe-pending marker (with staleness check)
-  if (fs.existsSync(CONFIG.paths.scribePending)) {
-    try {
-      const stat = fs.statSync(CONFIG.paths.scribePending);
-      const ageMs = Date.now() - stat.mtimeMs;
-      if (ageMs > 3600_000) {
-        // Stale marker (>1 hour) — clean up
-        console.error("[graph-memory] Removing stale scribe-pending marker (>1 hour old).");
-        fs.unlinkSync(CONFIG.paths.scribePending);
-      } else {
-        const marker = JSON.parse(fs.readFileSync(CONFIG.paths.scribePending, "utf-8"));
-        const scribePromptPath = path.join(AGENTS_DIR, "memory-scribe.md");
-        const projectCtx = marker.project ? ` Current project: ${marker.project} (use this for classifying deltas as global vs project-scoped).` : "";
-        parts.push(`<graph-memory-action>SCRIBE PENDING: Use the Task tool with subagent_type="general-purpose", model="sonnet", and run_in_background=true. Prompt: "Read the scribe instructions at ${scribePromptPath}, then follow them. Snapshot file: ${marker.snapshotPath}, session ID: ${marker.sessionId}, graph root: ${graphRoot}.${projectCtx} Read the snapshot, read MAP.md, then read only the 2-5 existing nodes most relevant to the conversation for context. Extract deltas, write to .deltas/ directory, then remove .scribe-pending marker."</graph-memory-action>`);
-      }
-    } catch {
-      // Unreadable marker — remove it
-      try { fs.unlinkSync(CONFIG.paths.scribePending); } catch { /* ignore */ }
-    }
-  }
+  // 2. Ensure the persistent per-project WORKING file exists before loading context
+  try {
+    ensureProjectWorkingFile(project.name);
+  } catch { /* best effort — fall back to existing WORKING artifacts */ }
 
-  // 3. Check for librarian-pending (written by auditor after triage)
-  if (fs.existsSync(CONFIG.paths.librarianPending)) {
-    try {
-      const stat = fs.statSync(CONFIG.paths.librarianPending);
-      const ageMs = Date.now() - stat.mtimeMs;
-      if (ageMs > 3600_000) {
-        console.error("[graph-memory] Removing stale librarian-pending marker (>1 hour old).");
-        fs.unlinkSync(CONFIG.paths.librarianPending);
-      } else {
-        const librarianPath = path.join(AGENTS_DIR, "memory-librarian.md");
-        parts.push(`<graph-memory-action>LIBRARIAN PENDING (post-audit): Use the Task tool with subagent_type="general-purpose", model="sonnet", and run_in_background=true. Prompt: "Read the librarian instructions at ${librarianPath}, then follow them. Graph root: ${graphRoot}. Read the audit brief at ${CONFIG.paths.auditBrief} and audit report at ${CONFIG.paths.auditReport} first — the auditor has already triaged mechanical fixes and prepared recommendations for you."</graph-memory-action>`);
-      }
-    } catch {
-      try { fs.unlinkSync(CONFIG.paths.librarianPending); } catch { /* ignore */ }
-    }
-  }
-
-  // 4. Check for dreamer-pending (written by librarian after its commit)
-  if (fs.existsSync(CONFIG.paths.dreamerPending)) {
-    try {
-      const stat = fs.statSync(CONFIG.paths.dreamerPending);
-      const ageMs = Date.now() - stat.mtimeMs;
-      if (ageMs > 3600_000) {
-        console.error("[graph-memory] Removing stale dreamer-pending marker (>1 hour old).");
-        fs.unlinkSync(CONFIG.paths.dreamerPending);
-      } else {
-        const dreamerPath = path.join(AGENTS_DIR, "memory-dreamer.md");
-        parts.push(`<graph-memory-action>DREAMER PENDING: Use the Task tool with subagent_type="general-purpose", model="sonnet", and run_in_background=true. Prompt: "Read the dreamer instructions at ${dreamerPath}, then follow them. Graph root: ${graphRoot}."</graph-memory-action>`);
-      }
-    } catch {
-      try { fs.unlinkSync(CONFIG.paths.dreamerPending); } catch { /* ignore */ }
-    }
-  }
-
-  // 5. Check for consolidation-pending (dispatches auditor, not librarian directly)
-  const consolidation = isConsolidationPending();
-  if (consolidation.pending) {
-    const lockPath = path.join(graphRoot, ".consolidation.lock");
-    let lockHeld = false;
-    if (fs.existsSync(lockPath)) {
-      try {
-        const lockData = JSON.parse(fs.readFileSync(lockPath, "utf-8"));
-        const lockAgeSec = Math.floor(Date.now() / 1000) - (lockData.pid_time || 0);
-        if (lockAgeSec < 600) {
-          lockHeld = true;
-          console.error(`[graph-memory] Consolidation lock held (${lockAgeSec}s old). Skipping auditor dispatch.`);
-        } else {
-          console.error(`[graph-memory] Removing stale consolidation lock (${lockAgeSec}s old).`);
-          fs.unlinkSync(lockPath);
-        }
-      } catch {
-        try { fs.unlinkSync(lockPath); } catch { /* ignore */ }
-      }
-    }
-    if (!lockHeld) {
-      const auditorPath = path.join(AGENTS_DIR, "memory-auditor.md");
-      // Run preflight report before dispatching auditor
-      try {
-        generatePreflightReport();
-        console.error(`[graph-memory] Preflight report generated at ${CONFIG.paths.preflightReport}`);
-      } catch (err: any) {
-        console.error(`[graph-memory] Preflight report failed: ${err.message}`);
-      }
-      parts.push(`<graph-memory-action>CONSOLIDATION PENDING (${consolidation.summary || "session end"}): Use the Task tool with subagent_type="general-purpose", model="sonnet", and run_in_background=true. Prompt: "Read the auditor instructions at ${auditorPath}, then follow them. Graph root: ${graphRoot}. Read the preflight report at ${CONFIG.paths.preflightReport} first — it contains the full node manifest and flagged issues with their file contents included."</graph-memory-action>`);
-    }
-  }
-
-  // 6. Load context files in cognitive order
+  // 3. Load context files in cognitive order
   const contextFiles: Array<{ path: string; emptyMarker: string }> = [
     { path: CONFIG.paths.priors, emptyMarker: "No priors yet" },
     { path: CONFIG.paths.soma, emptyMarker: "No soma markers yet" },
     { path: CONFIG.paths.map, emptyMarker: "No nodes yet" },
-    { path: CONFIG.paths.working, emptyMarker: "No recent activity" },
     { path: CONFIG.paths.dreamsContext, emptyMarker: "No pending dreams" },
   ];
 
@@ -189,6 +146,40 @@ async function main() {
     }
   }
 
+  for (const filePath of getWorkingInjectionPaths(project.name)) {
+    if (fs.existsSync(filePath)) {
+      const content = fs.readFileSync(filePath, "utf-8").trim();
+      if (
+        content &&
+        !content.includes("No recent activity") &&
+        !content.includes("No session handoff captured yet")
+      ) {
+        parts.push(content);
+      }
+    }
+  }
+
+  // 3b. Load pinned nodes for current project
+  try {
+    const pinnedEntries = loadPinnedNodesForProject(project.name);
+    if (pinnedEntries.length > 0) {
+      const sections: string[] = [];
+      let totalTokens = 0;
+      const maxTokens = CONFIG.graph.maxPinnedTokens;
+
+      for (const entry of pinnedEntries) {
+        const nodeTokens = Math.ceil(entry.raw.length / 4);
+        if (totalTokens + nodeTokens > maxTokens) continue;
+        totalTokens += nodeTokens;
+        sections.push(`### ${entry.title}\n\n${entry.content}`);
+      }
+
+      if (sections.length > 0) {
+        parts.push(`# PINNED — Durable Procedural Memory\n\n> Auto-loaded pinned nodes for this project. Follow these procedures exactly.\n\n${sections.join("\n\n---\n\n")}`);
+      }
+    }
+  } catch { /* non-critical */ }
+
   if (parts.length === 0) {
     console.log(
       "[graph-memory] Memory initialized but empty. It will grow from your conversations."
@@ -198,8 +189,9 @@ async function main() {
     console.log(parts.join("\n\n---\n\n"));
   }
 
-  // 8. Mark dirty for this session
+  // 4. Mark dirty for this session
   markDirty(sessionId);
+  writeSessionContextState(sessionId, project.name);
 }
 
 main().catch((err) => {

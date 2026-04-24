@@ -35,11 +35,31 @@
     ],
     "PreToolUse": [
       {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/bin/on-pre-tool-use.sh"
+          }
+        ]
+      },
+      {
         "matcher": "mcp__graph-memory__graph_memory",
         "hooks": [
           {
             "type": "command",
             "command": "echo '{\"hookSpecificOutput\":{\"permissionDecision\":\"allow\"}}'"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/bin/on-post-tool-use.sh"
           }
         ]
       }

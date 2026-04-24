@@ -23,6 +23,9 @@ interface GraphMemoryLocalConfig {
     enabled?: boolean;
     autoPush?: boolean;
   };
+  externalInputs?: {
+    enabled?: boolean;
+  };
 }
 
 /**
@@ -76,33 +79,55 @@ function loadLocalConfig(graphRoot: string): GraphMemoryLocalConfig {
 function createConfig() {
   const graphRoot = resolveGraphRoot();
   const local = loadLocalConfig(graphRoot);
+  const inferredTimeZone = process.env.TZ || Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
 
   return {
     session: {
       scribeInterval: 10,
       librarianDeltaThreshold: 20,
+      auditScribeFileThreshold: 5,
       idleTimeoutMs: 120_000,
+      workerTimeoutMs: 300_000,
       maxSessionMessages: 200,
       minSessionMessages: 3,
       pipelineCooldownMs: 300_000,
+      daemonPollMs: 30_000,
+      dailyAnalysisHourLocal: 7,
+      dailyAnalysisTimeZone: inferredTimeZone,
     },
 
     graph: {
-      maxMapTokens: 5000,
-      maxSomaTokens: 800,
-      maxWorkingTokens: 200,
-      maxDreamsContextTokens: 400,
+      maxMapTokens: 12000,
+      maxSomaTokens: 1200,
+      maxWorkingTokens: 3200,
+      maxDreamsContextTokens: 600,
       maxPriors: 30,
-      maxNodesBeforePrune: 200,
-      decayHalfLifeDays: 30,
-      decayArchiveThreshold: 0.15,
+      maxNodesBeforePrune: 750,
+      decayHalfLifeDays: 90,
+      decayArchiveThreshold: 0.10,
       decayHotNodeThreshold: 0.6,
+      decayRecentAccessGraceDays: 7,
+      decayRecentAccessArchiveProtectionDays: 45,
+      decayAccessCountArchiveProtection: 3,
+      decayProtectedCategories: [
+        "preferences",
+        "patterns",
+        "decisions",
+        "meta",
+        "architecture",
+        "concepts",
+        "people",
+        "projects",
+        "tools",
+      ],
       dreamPendingMaxSessions: 5,
       dreamMinConfidence: 0.2,
       dreamPromoteConfidence: 0.5,
       maxMapDepth: 2,
+      maxMapEntriesPerCategory: 8,
       maxPendingDreams: 20,
       maxDreamsPerSession: 5,
+      maxPinnedTokens: 3000,
     },
 
     paths: {
@@ -116,6 +141,7 @@ function createConfig() {
       map: path.join(graphRoot, "MAP.md"),
       priors: path.join(graphRoot, "PRIORS.md"),
       index: path.join(graphRoot, ".index.json"),
+      archiveIndex: path.join(graphRoot, ".archive-index.json"),
       manifest: path.join(graphRoot, "manifest.yml"),
       dirtyState: path.join(graphRoot, ".dirty-session"),
       consolidationPending: path.join(graphRoot, ".consolidation-pending"),
@@ -127,9 +153,33 @@ function createConfig() {
       auditBrief: path.join(graphRoot, ".audit-brief.md"),
       soma: path.join(graphRoot, "SOMA.md"),
       working: path.join(graphRoot, "WORKING.md"),
+      workingRoot: path.join(graphRoot, "working"),
+      workingGlobal: path.join(graphRoot, "working/global.md"),
+      workingProjects: path.join(graphRoot, "working/projects"),
       dreamsContext: path.join(graphRoot, "DREAMS.md"),
       deltasAudited: path.join(graphRoot, ".deltas/audited"),
       activeProjects: path.join(graphRoot, ".active-projects"),
+      sessions: path.join(graphRoot, ".sessions"),
+      briefs: path.join(graphRoot, "briefs"),
+      dailyBriefs: path.join(graphRoot, "briefs/daily"),
+      inputsRoot: path.join(graphRoot, ".inputs"),
+      inputsConfig: path.join(graphRoot, ".inputs/config.json"),
+      inputsGmailRaw: path.join(graphRoot, ".inputs/gmail/raw"),
+      inputsCalendarRaw: path.join(graphRoot, ".inputs/calendar/raw"),
+      inputsSlackRaw: path.join(graphRoot, ".inputs/slack/raw"),
+      inputsNormalized: path.join(graphRoot, ".inputs/normalized"),
+      inputsClassified: path.join(graphRoot, ".inputs/classified"),
+      logs: path.join(graphRoot, ".logs"),
+      sessionContext: path.join(graphRoot, ".session-context"),
+      pipelineLogs: path.join(graphRoot, ".pipeline-logs"),
+      jobsRoot: path.join(graphRoot, ".jobs"),
+      jobsQueued: path.join(graphRoot, ".jobs/queued"),
+      jobsRunning: path.join(graphRoot, ".jobs/running"),
+      jobsDone: path.join(graphRoot, ".jobs/done"),
+      jobsFailed: path.join(graphRoot, ".jobs/failed"),
+      daemonLock: path.join(graphRoot, ".jobs/daemon.lock"),
+      daemonState: path.join(graphRoot, ".jobs/daemon-state.json"),
+      runtimeConfig: path.join(graphRoot, ".runtime-config.json"),
       // Prompts are bundled relative to dist/ (or src/ in dev)
       prompts: path.resolve(__dirname, "prompts"),
     },
@@ -140,6 +190,10 @@ function createConfig() {
       branch: "main",
       autoPush: local.git?.autoPush || false,
       commitPrefix: "memory:",
+    },
+
+    externalInputs: {
+      enabled: local.externalInputs?.enabled ?? true,
     },
 
     /** Path to the global config pointer file */

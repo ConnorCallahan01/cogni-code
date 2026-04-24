@@ -23,4 +23,4 @@ Launch the `memory-morning-kickoff` agent to run a focused morning-start workflo
 7. If the repo context is ambiguous, ask one short clarification question instead of guessing wrong
 8. Present the final kickoff in a clean ASCII terminal layout that is easy to scan in Claude Code
 
-Use the Task tool to launch the `memory-morning-kickoff` agent with the plugin's morning kickoff agent prompt.
+Use the `memory-morning-kickoff` agent prompt directly to generate the kickoff from the latest brief and current active project context.

@@ -55,7 +55,12 @@ export async function autoCommit(summary?: string): Promise<void> {
       "dreams/",
       "MAP.md",
       "PRIORS.md",
+      "SOMA.md",
+      "WORKING.md",
+      "DREAMS.md",
+      "working/",
       ".index.json",
+      ".archive-index.json",
       "manifest.yml",
     ]);
 

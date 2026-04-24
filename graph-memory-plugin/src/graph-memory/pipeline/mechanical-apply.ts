@@ -17,7 +17,7 @@ import matter from "gray-matter";
 import { CONFIG } from "../config.js";
 import { activityBus } from "../events.js";
 import { safePath } from "../utils.js";
-import { validateEdgeType, regenerateAllContextFiles } from "./graph-ops.js";
+import { validateEdgeType, rebuildArchiveIndex, rebuildIndex } from "./graph-ops.js";
 
 /** Internal normalized delta — after translating scribe field names */
 interface NormalizedDelta {
@@ -40,6 +40,7 @@ interface NormalizedDelta {
   intensity?: number;
   marker?: string;
   project?: string;
+  pinned?: boolean;
 }
 
 /**
@@ -107,6 +108,12 @@ function handleCreateNode(delta: NormalizedDelta, errors: string[]): boolean {
 
       parsed.data.tags = [...new Set([...(parsed.data.tags || []), ...(delta.tags || [])])];
       parsed.data.keywords = [...new Set([...(parsed.data.keywords || []), ...(delta.keywords || [])])];
+      if (delta.project && !parsed.data.project) {
+        parsed.data.project = delta.project;
+      }
+      if (delta.pinned !== undefined) {
+        parsed.data.pinned = delta.pinned;
+      }
 
       if (delta.content && !parsed.content.includes(delta.content.slice(0, 100))) {
         parsed.content = parsed.content.trimEnd() + `\n\n---\n\n${delta.content}`;
@@ -153,6 +160,9 @@ function handleCreateNode(delta: NormalizedDelta, errors: string[]): boolean {
   }
   if (delta.project) {
     frontmatterData.project = delta.project;
+  }
+  if (delta.pinned === true) {
+    frontmatterData.pinned = true;
   }
 
   const title = delta.title || delta.path.split("/").pop() || delta.path;
@@ -357,11 +367,13 @@ export async function applyDeltas(sessionId: string): Promise<{ appliedCount: nu
     }
   }
 
-  // After all deltas applied, rebuild all context files
+  // After all deltas applied, rebuild indexes only.
+  // The librarian owns MAP / SOMA / PRIORS / WORKING refresh.
   try {
-    regenerateAllContextFiles();
+    rebuildIndex();
+    rebuildArchiveIndex();
   } catch (err: any) {
-    errors.push(`Context file regeneration failed: ${err.message}`);
+    errors.push(`Index regeneration failed: ${err.message}`);
   }
 
   activityBus.log("mechanical:complete", `Mechanical apply done: ${appliedCount} applied, ${errors.length} errors`, {

@@ -1,6 +1,9 @@
 import { CONFIG, isGraphInitialized } from "./config.js";
 import { activityBus } from "./events.js";
 import { createManifestIfMissing } from "./manifest.js";
+import { ensureRuntimeConfig } from "./runtime.js";
+import { ensureWorkingDirectories } from "./working-files.js";
+import { ensureExternalInputsConfig } from "./external-inputs.js";
 import fs from "fs";
 
 export { activityBus } from "./events.js";
@@ -15,6 +18,25 @@ export function initializeGraph() {
     CONFIG.paths.deltas,
     CONFIG.paths.buffer,
     CONFIG.paths.dreams,
+    CONFIG.paths.sessions,
+    CONFIG.paths.briefs,
+    CONFIG.paths.dailyBriefs,
+    CONFIG.paths.inputsRoot,
+    CONFIG.paths.inputsGmailRaw,
+    CONFIG.paths.inputsCalendarRaw,
+    CONFIG.paths.inputsSlackRaw,
+    CONFIG.paths.inputsNormalized,
+    CONFIG.paths.inputsClassified,
+    CONFIG.paths.logs,
+    CONFIG.paths.sessionContext,
+    CONFIG.paths.pipelineLogs,
+    CONFIG.paths.workingRoot,
+    CONFIG.paths.workingProjects,
+    CONFIG.paths.jobsRoot,
+    CONFIG.paths.jobsQueued,
+    CONFIG.paths.jobsRunning,
+    CONFIG.paths.jobsDone,
+    CONFIG.paths.jobsFailed,
     `${CONFIG.paths.dreams}/pending`,
     `${CONFIG.paths.dreams}/integrated`,
     `${CONFIG.paths.dreams}/archived`,
@@ -47,7 +69,25 @@ export function initializeGraph() {
     fs.writeFileSync(CONFIG.paths.index, "[]");
   }
 
+  ensureWorkingDirectories();
+
+  if (!fs.existsSync(CONFIG.paths.working)) {
+    fs.writeFileSync(
+      CONFIG.paths.working,
+      `# WORKING — Volatile Working Memory\n\n> Recent session context across active projects. Auto-generated from latest deltas.\n\n_No recent activity._\n`
+    );
+  }
+
+  if (!fs.existsSync(CONFIG.paths.workingGlobal)) {
+    fs.writeFileSync(
+      CONFIG.paths.workingGlobal,
+      `# WORKING — Global Track\n\n> Cross-project carryover and global working memory.\n\n_No recent activity._\n`
+    );
+  }
+
   createManifestIfMissing();
+  ensureRuntimeConfig();
+  ensureExternalInputsConfig();
 
   activityBus.log("system:init", "Graph directory initialized", {
     graphRoot: CONFIG.paths.graphRoot,

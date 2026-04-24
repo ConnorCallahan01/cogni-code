@@ -10,16 +10,15 @@
 import fs from "fs";
 import path from "path";
 import { CONFIG, isGraphInitialized } from "../graph-memory/config.js";
+import { clearSessionContextState } from "../graph-memory/context-refresh.js";
 import { initializeGraph } from "../graph-memory/index.js";
-import { applyDeltas } from "../graph-memory/pipeline/mechanical-apply.js";
-import { regenerateAllContextFiles } from "../graph-memory/pipeline/graph-ops.js";
-import { runDecay } from "../graph-memory/pipeline/decay.js";
-import { updateManifest } from "../graph-memory/manifest.js";
-import { autoCommit } from "../graph-memory/git.js";
-import { setConsolidationPending, clearDirty } from "../graph-memory/dirty-state.js";
-import { removeActiveProject } from "../graph-memory/project.js";
+import { clearDirty } from "../graph-memory/dirty-state.js";
+import { readActiveProject, removeActiveProject } from "../graph-memory/project.js";
+import { enqueueJob, hasActiveJob } from "../graph-memory/pipeline/job-queue.js";
+import { getAssistantTracePath, getToolTracePath } from "../graph-memory/session-trace.js";
 
 async function main() {
+  if (process.env.GRAPH_MEMORY_PIPELINE_CHILD === "1" || process.env.GRAPH_MEMORY_WORKER === "1") return;
   if (!isGraphInitialized()) return;
 
   // Read stdin for session_id to clean up active-project
@@ -36,29 +35,8 @@ async function main() {
     }
   } catch { /* ignore */ }
 
-  // Lockfile prevents duplicate runs (SessionEnd can fire twice)
-  const lockPath = path.join(CONFIG.paths.graphRoot, ".consolidation.lock");
-  if (fs.existsSync(lockPath)) {
-    try {
-      const lockData = JSON.parse(fs.readFileSync(lockPath, "utf-8"));
-      const lockAge = Date.now() - lockData.pid_time;
-      if (lockAge < 300_000) {
-        console.error("[graph-memory] Consolidation already running (lockfile exists). Skipping.");
-        return;
-      }
-      console.error("[graph-memory] Removing stale lockfile.");
-    } catch {
-      // Malformed lock — remove and proceed
-    }
-  }
-  fs.writeFileSync(lockPath, JSON.stringify({ pid: process.pid, pid_time: Date.now() }));
-
-  const removeLock = () => { try { fs.unlinkSync(lockPath); } catch {} };
-  process.on("exit", removeLock);
-  process.on("SIGTERM", () => { removeLock(); process.exit(0); });
-  process.on("SIGINT", () => { removeLock(); process.exit(0); });
-
   initializeGraph();
+  const activeProject = readActiveProject(sessionId);
 
   // Flush any remaining buffer to snapshot and mark for scribe
   const logPath = CONFIG.paths.conversationLog;
@@ -67,187 +45,49 @@ async function main() {
     if (bufferContent) {
       fs.writeFileSync(logPath, "");
 
-      if (fs.existsSync(CONFIG.paths.scribePending)) {
-        // Scribe marker already exists — append to its snapshot so nothing is orphaned
-        try {
-          const marker = JSON.parse(fs.readFileSync(CONFIG.paths.scribePending, "utf-8"));
-          if (marker.snapshotPath && fs.existsSync(marker.snapshotPath)) {
-            fs.appendFileSync(marker.snapshotPath, bufferContent + "\n");
-            console.error("[graph-memory] Final buffer appended to existing scribe snapshot.");
-          } else {
-            // Snapshot gone — write a new one and update the marker
-            const snapshotName = `snapshot_${Date.now()}.jsonl`;
-            const snapshotPath = path.join(CONFIG.paths.buffer, snapshotName);
-            fs.writeFileSync(snapshotPath, bufferContent + "\n");
-            marker.snapshotPath = snapshotPath;
-            fs.writeFileSync(CONFIG.paths.scribePending, JSON.stringify(marker));
-            console.error("[graph-memory] Final buffer flushed to new snapshot (previous snapshot missing).");
-          }
-        } catch {
-          // Unreadable marker — overwrite with fresh one
-          const snapshotName = `snapshot_${Date.now()}.jsonl`;
-          const snapshotPath = path.join(CONFIG.paths.buffer, snapshotName);
-          fs.writeFileSync(snapshotPath, bufferContent + "\n");
-          const marker = {
-            snapshotPath,
-            sessionId: sessionId || `end_${Date.now()}`,
-            graphRoot: CONFIG.paths.graphRoot,
-            createdAt: new Date().toISOString(),
-          };
-          fs.writeFileSync(CONFIG.paths.scribePending, JSON.stringify(marker));
-          console.error("[graph-memory] Final buffer flushed (replaced unreadable scribe marker).");
-        }
-      } else {
-        // No existing marker — create snapshot and marker
-        const snapshotName = `snapshot_${Date.now()}.jsonl`;
-        const snapshotPath = path.join(CONFIG.paths.buffer, snapshotName);
-        fs.writeFileSync(snapshotPath, bufferContent + "\n");
-        const marker: Record<string, any> = {
+      const snapshotName = `snapshot_${Date.now()}.jsonl`;
+      const snapshotPath = path.join(CONFIG.paths.buffer, snapshotName);
+      fs.writeFileSync(snapshotPath, bufferContent + "\n");
+      const resolvedSessionId = sessionId || `end_${Date.now()}`;
+      const assistantTracePath = getAssistantTracePath(resolvedSessionId);
+      const toolTracePath = getToolTracePath(resolvedSessionId);
+      const queued = enqueueJob({
+        type: "scribe",
+        payload: {
           snapshotPath,
-          sessionId: sessionId || `end_${Date.now()}`,
-          graphRoot: CONFIG.paths.graphRoot,
-          createdAt: new Date().toISOString(),
-        };
-        fs.writeFileSync(CONFIG.paths.scribePending, JSON.stringify(marker));
-        console.error("[graph-memory] Final buffer flushed to snapshot. Scribe-pending marker written.");
-      }
+          sessionId: resolvedSessionId,
+          ...(fs.existsSync(assistantTracePath) ? { assistantTracePath } : {}),
+          ...(fs.existsSync(toolTracePath) ? { toolTracePath } : {}),
+          ...(activeProject?.name && activeProject.name !== "global" ? { project: activeProject.name } : {}),
+        },
+        triggerSource: "hook:session-end",
+        idempotencyKey: `scribe:${snapshotPath}`,
+      });
+      console.error(`[graph-memory] Final buffer flushed to snapshot. ${queued.created ? "Scribe job queued." : "Scribe job already queued."}`);
     }
-  }
-
-  // Find ALL unprocessed delta files
-  const deltasDir = CONFIG.paths.deltas;
-  if (!fs.existsSync(deltasDir)) {
-    console.error("[graph-memory] No deltas directory. Nothing to consolidate.");
-    clearDirty();
-    return;
-  }
-
-  const deltaFiles = fs.readdirSync(deltasDir)
-    .filter(f => f.endsWith(".json"))
-    .sort();
-
-  // --- Phase 1: Mechanical apply (no LLM) ---
-  const processed: string[] = [];
-
-  for (const deltaFile of deltaFiles) {
-    const sessionId = deltaFile.replace(".json", "");
-
-    // Sanity check: does it have scribes?
-    const deltaPath = path.join(deltasDir, deltaFile);
-    try {
-      const raw = fs.readFileSync(deltaPath, "utf-8").trim();
-      if (!raw) {
-        console.error(`[graph-memory] Removing ${deltaFile}: empty file.`);
-        try { fs.unlinkSync(deltaPath); } catch {}
-        continue;
-      }
-      const data = JSON.parse(raw);
-      const scribes = data.scribes || [];
-      if (scribes.length === 0) {
-        console.error(`[graph-memory] Removing ${deltaFile}: no scribes.`);
-        try { fs.unlinkSync(deltaPath); } catch {}
-        continue;
-      }
-    } catch {
-      try {
-        const stat = fs.statSync(deltaPath);
-        const ageMs = Date.now() - stat.mtimeMs;
-        if (ageMs > 24 * 60 * 60 * 1000) {
-          console.error(`[graph-memory] Removing ${deltaFile}: unreadable and older than 24h.`);
-          fs.unlinkSync(deltaPath);
-        } else {
-          console.error(`[graph-memory] Skipping ${deltaFile}: unreadable (keeping, < 24h old).`);
-        }
-      } catch {
-        console.error(`[graph-memory] Skipping ${deltaFile}: unreadable.`);
-      }
-      continue;
-    }
-
-    console.error(`[graph-memory] Phase 1: Mechanical apply for ${sessionId}...`);
-
-    try {
-      const result = await applyDeltas(sessionId);
-      // Mark as processed even if appliedCount is 0 (all deltas attempted)
-      processed.push(deltaFile);
-      if (result.errors.length > 0) {
-        console.error(`[graph-memory] Phase 1 errors for ${sessionId}: ${result.errors.join("; ")}`);
-      }
-      console.error(`[graph-memory] Phase 1 complete for ${sessionId}: ${result.appliedCount} applied.`);
-    } catch (err: any) {
-      console.error(`[graph-memory] Phase 1 failed for ${sessionId}: ${err.message}`);
-      // Age-based cleanup: remove delta files older than 7 days that keep failing
-      try {
-        const stat = fs.statSync(deltaPath);
-        const ageMs = Date.now() - stat.mtimeMs;
-        if (ageMs > 7 * 24 * 60 * 60 * 1000) {
-          console.error(`[graph-memory] Removing ${deltaFile}: failed processing and older than 7 days.`);
-          processed.push(deltaFile);
-        }
-      } catch { /* skip */ }
-    }
-  }
-
-  // Run decay
-  try {
-    runDecay();
-  } catch (err: any) {
-    console.error(`[graph-memory] Decay failed: ${err.message}`);
-  }
-
-  // Rebuild all context files
-  try {
-    regenerateAllContextFiles();
-  } catch (err: any) {
-    console.error(`[graph-memory] Context file rebuild failed: ${err.message}`);
   }
 
   // Clean up active-project file for this session (after MAP rebuild so ordering is correct)
   if (sessionId) {
     removeActiveProject(sessionId);
-  }
-
-  // Clean up processed deltas
-  for (const f of processed) {
-    try { fs.unlinkSync(path.join(deltasDir, f)); } catch {}
-  }
-  if (processed.length > 0) {
-    console.error(`[graph-memory] Cleaned up ${processed.length} processed delta(s).`);
-  }
-
-  // Clean up buffer snapshots older than 24 hours (safety net — scribes should delete their own)
-  const bufferDir = CONFIG.paths.buffer;
-  if (fs.existsSync(bufferDir)) {
-    const cutoff = Date.now() - 24 * 60 * 60 * 1000;
-    for (const f of fs.readdirSync(bufferDir)) {
-      if (!f.startsWith("snapshot_")) continue;
-      const filePath = path.join(bufferDir, f);
-      try {
-        const stat = fs.statSync(filePath);
-        if (stat.mtimeMs < cutoff) {
-          fs.unlinkSync(filePath);
-          console.error(`[graph-memory] Removed stale snapshot: ${f}`);
-        }
-      } catch {}
-    }
-  }
-
-  // Update manifest and commit
-  try {
-    updateManifest();
-    await autoCommit("session end");
-    console.error("[graph-memory] Manifest updated, changes committed.");
-  } catch (err: any) {
-    console.error(`[graph-memory] Post-consolidation failed: ${err.message}`);
-  }
-
-  // Signal that librarian/dreamer should run at next session start
-  if (processed.length > 0) {
-    setConsolidationPending("session end");
+    clearSessionContextState(sessionId);
   }
 
   // Clear dirty state
   clearDirty();
+
+  // If enough delta files already exist and no audit job is active, let the daemon pick it up.
+  if (fs.existsSync(CONFIG.paths.deltas)) {
+    const deltaFileCount = fs.readdirSync(CONFIG.paths.deltas).filter((file) => file.endsWith(".json")).length;
+    if (deltaFileCount >= CONFIG.session.auditScribeFileThreshold && !hasActiveJob("auditor")) {
+      enqueueJob({
+        type: "auditor",
+        payload: { reason: `session end saw ${deltaFileCount} active delta files` },
+        triggerSource: "hook:session-end-threshold",
+        idempotencyKey: `auditor:session-end:${deltaFileCount}`,
+      });
+    }
+  }
 }
 
 main().catch((err) => {

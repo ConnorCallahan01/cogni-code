@@ -1,18 +1,24 @@
 #!/usr/bin/env node
 /**
- * Stop hook — captures each assistant response and appends to the buffer.
+ * Stop hook — captures each final assistant response into the canonical buffer.
+ * Also syncs visible intermediary assistant text from Claude's local session log
+ * into a separate assistant trace for scribe/morning-analysis context.
  *
  * Receives JSON on stdin with:
  *   - last_assistant_message: the assistant's response text
  *   - session_id: Claude Code session ID
  *
  * Appends directly to conversation.jsonl. When buffer reaches threshold,
- * rotates to snapshot and writes .scribe-pending marker for subagent dispatch.
+ * rotates to a snapshot and queues a scribe job.
  */
 import fs from "fs";
 import path from "path";
 import { CONFIG, isGraphInitialized } from "../graph-memory/config.js";
+import { collectVisibleAssistantTrace } from "../graph-memory/claude-transcript.js";
+import { clearMemoryGateState } from "../graph-memory/memory-gate.js";
 import { detectProject } from "../graph-memory/project.js";
+import { enqueueJob } from "../graph-memory/pipeline/job-queue.js";
+import { appendAssistantTraceEvents, getAssistantTracePath, getToolTracePath } from "../graph-memory/session-trace.js";
 
 interface StopHookInput {
   session_id: string;
@@ -25,9 +31,13 @@ interface BufferEntry {
   role: "user" | "assistant";
   content: string;
   timestamp: string;
+  source?: "user_submit" | "stop_hook";
+  final?: boolean;
+  project?: string;
 }
 
 async function main() {
+  if (process.env.GRAPH_MEMORY_PIPELINE_CHILD === "1" || process.env.GRAPH_MEMORY_WORKER === "1") return;
   if (!isGraphInitialized()) return;
 
   // Read hook input from stdin
@@ -51,6 +61,32 @@ async function main() {
   const truncate = (s: string) =>
     s.length > maxLen ? s.slice(0, maxLen) + "..." : s;
 
+  const sessionId = input.session_id || `hook_${Date.now()}`;
+  const cwd = input.cwd || process.cwd();
+  const project = detectProject(cwd);
+
+  const transcript = collectVisibleAssistantTrace(sessionId, cwd, {
+    project: project.name,
+    cwd,
+  });
+  const assistantTraceEvents = transcript.events.length > 0
+    ? transcript.events
+    : [{
+        type: "assistant_text" as const,
+        timestamp: new Date().toISOString(),
+        sessionId,
+        project: project.name,
+        cwd,
+        kind: "final" as const,
+        text: input.last_assistant_message,
+        source: "stop_hook" as const,
+        transcriptPath: null,
+      }];
+  const transcriptResult = appendAssistantTraceEvents(sessionId, assistantTraceEvents);
+  const latestTranscriptFinal = [...transcript.events]
+    .reverse()
+    .find((event) => event.kind === "final");
+
   // Ensure buffer directory exists
   const bufferDir = CONFIG.paths.buffer;
   if (!fs.existsSync(bufferDir)) {
@@ -58,10 +94,17 @@ async function main() {
   }
 
   const logPath = CONFIG.paths.conversationLog;
-  const now = new Date().toISOString();
+  const now = latestTranscriptFinal?.timestamp || new Date().toISOString();
 
   // Append assistant message
-  const assistantEntry: BufferEntry = { role: "assistant", content: truncate(input.last_assistant_message), timestamp: now };
+  const assistantEntry: BufferEntry = {
+    role: "assistant",
+    content: truncate(input.last_assistant_message),
+    timestamp: now,
+    source: "stop_hook",
+    final: true,
+    ...(project.name !== "global" ? { project: project.name } : {}),
+  };
   fs.appendFileSync(logPath, JSON.stringify(assistantEntry) + "\n");
 
   // Check if we've hit the scribe threshold
@@ -69,36 +112,34 @@ async function main() {
   const bufferLines = bufferContent.split("\n").filter(Boolean);
   const messageCount = bufferLines.length;
 
-  // Rotate and create scribe-pending marker every N messages.
-  // Skip rotation if a scribe is already pending — let the buffer keep accumulating
-  // until the current scribe finishes and clears the marker.
-  if (messageCount >= CONFIG.session.scribeInterval && !fs.existsSync(CONFIG.paths.scribePending)) {
+  // Rotate and queue a scribe job every N messages.
+  if (messageCount >= CONFIG.session.scribeInterval) {
     // Rotate: save snapshot, clear buffer
     const snapshotName = `snapshot_${Date.now()}.jsonl`;
     const snapshotPath = path.join(bufferDir, snapshotName);
     fs.writeFileSync(snapshotPath, bufferContent + "\n");
     fs.writeFileSync(logPath, "");
 
-    const sessionId = input.session_id || `hook_${Date.now()}`;
+    const assistantTracePath = getAssistantTracePath(sessionId);
+    const toolTracePath = getToolTracePath(sessionId);
 
-    // Detect project for scribe context
-    const cwd = input.cwd || process.cwd();
-    const project = detectProject(cwd);
+    const { created } = enqueueJob({
+      type: "scribe",
+      payload: {
+        snapshotPath,
+        sessionId,
+        ...(fs.existsSync(assistantTracePath) ? { assistantTracePath } : {}),
+        ...(fs.existsSync(toolTracePath) ? { toolTracePath } : {}),
+        ...(project.name !== "global" ? { project: project.name } : {}),
+      },
+      triggerSource: "hook:stop-threshold",
+      idempotencyKey: `scribe:${snapshotPath}`,
+    });
 
-    // Write .scribe-pending marker — dispatched by UserPromptSubmit hook (not here;
-    // Stop hook stdout is not visible to the agent).
-    const marker: Record<string, any> = {
-      snapshotPath,
-      sessionId,
-      graphRoot: CONFIG.paths.graphRoot,
-      createdAt: new Date().toISOString(),
-    };
-    if (project.name !== "global") {
-      marker.project = project.name;
-    }
-    fs.writeFileSync(CONFIG.paths.scribePending, JSON.stringify(marker));
-    console.error(`[graph-memory] Buffer rotated (${messageCount} messages). Scribe marker written — dispatch on next user message.`);
+    console.error(`[graph-memory] Buffer rotated (${messageCount} messages). ${created ? "Scribe job queued." : "Scribe job already queued."}${transcriptResult.appended > 0 ? ` Synced ${transcriptResult.appended} assistant trace events.` : ""}`);
   }
+
+  clearMemoryGateState(sessionId);
 }
 
 main().catch((err) => {

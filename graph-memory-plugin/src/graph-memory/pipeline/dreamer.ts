@@ -13,6 +13,7 @@ import matter from "gray-matter";
 import { CONFIG } from "../config.js";
 import { activityBus } from "../events.js";
 import { safePath } from "../utils.js";
+import { regenerateDreamContext } from "./graph-ops.js";
 
 export interface DreamFragment {
   fragment: string;
@@ -161,6 +162,7 @@ export function applyDreamerResult(result: DreamerResult, sessionId: string) {
 
   // Final enforcement pass in case promotions freed slots or counts drifted
   enforceHardCap();
+  regenerateDreamContext();
 }
 
 /**

@@ -2,6 +2,7 @@ import fs from "fs";
 import path from "path";
 import { CONFIG } from "./config.js";
 import { activityBus } from "./events.js";
+import { enqueueJob } from "./pipeline/job-queue.js";
 
 export interface ConversationEntry {
   role: "user" | "assistant";
@@ -13,13 +14,12 @@ export interface ConversationEntry {
 /**
  * Simplified BufferWatcher for v2 plugin context.
  *
- * No scribe firing — scribe runs as a background subagent triggered by
- * .scribe-pending marker files. This class only buffers and rotates.
+ * No direct scribe firing from hooks. This class only buffers, rotates, and queues.
  *
  * Core responsibilities:
  * - Buffer messages to conversation log
  * - Rotate buffer to snapshot when threshold reached
- * - Write .scribe-pending marker for subagent dispatch
+ * - Queue scribe jobs for the background daemon
  */
 export class BufferWatcher {
   private messageCount = 0;
@@ -74,8 +74,8 @@ export class BufferWatcher {
     const snapshotPath = this.rotateBuffer(content);
     if (!snapshotPath) return;
 
-    // Write .scribe-pending marker for subagent dispatch
-    this.writeScribePending(snapshotPath);
+    // Queue a scribe job for the background daemon
+    this.queueScribe(snapshotPath);
   }
 
   private rotateBuffer(content?: string): string | null {
@@ -103,15 +103,17 @@ export class BufferWatcher {
     }
   }
 
-  private writeScribePending(snapshotPath: string) {
-    const marker = {
-      snapshotPath,
-      sessionId: this.sessionId,
-      graphRoot: CONFIG.paths.graphRoot,
-      createdAt: new Date().toISOString(),
-    };
-    fs.writeFileSync(CONFIG.paths.scribePending, JSON.stringify(marker));
-    activityBus.log("scribe:pending", `Scribe pending marker written for ${snapshotPath}`);
+  private queueScribe(snapshotPath: string) {
+    const { created } = enqueueJob({
+      type: "scribe",
+      payload: {
+        snapshotPath,
+        sessionId: this.sessionId,
+      },
+      triggerSource: "buffer-watcher:threshold",
+      idempotencyKey: `scribe:${snapshotPath}`,
+    });
+    activityBus.log("scribe:pending", `${created ? "Queued" : "Skipped duplicate"} scribe job for ${snapshotPath}`);
   }
 
   startSession() {
@@ -135,7 +137,7 @@ export class BufferWatcher {
       if (content) {
         const snapshotPath = this.rotateBuffer(content);
         if (snapshotPath) {
-          this.writeScribePending(snapshotPath);
+          this.queueScribe(snapshotPath);
         }
         return snapshotPath;
       }

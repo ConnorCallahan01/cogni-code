@@ -1,6 +1,6 @@
 # /memory-onboard
 
-First-time setup for graph memory. Guides the user through choosing a storage location, checking API key configuration, and seeding initial memory.
+First-time setup for graph memory. Guides the user through choosing a storage location, configuring the background runtime, connecting worker auth for the container, and seeding initial memory.
 
 ## Instructions
 
@@ -10,8 +10,26 @@ Launch the `memory-onboarder` agent to handle the guided onboarding flow. This a
 2. If already initialized, show current status and ask if they want to re-initialize
 3. If not initialized, guide through:
    - Choosing a storage location
-   - Checking ANTHROPIC_API_KEY
-   - Seeding initial memory nodes
-   - Running first consolidation
+   - Selecting runtime mode, with Docker daemon mode as the recommended default
+   - Creating or connecting the bind-mounted memory storage
+   - Configuring worker auth for the container runtime, preferably by importing existing host Codex auth
+   - Running healthchecks to verify queue, storage, and worker connectivity
+   - Running a short interview to seed initial memory nodes and priors
+   - Starting the background daemon if Docker mode is enabled
 
-Use the Task tool to launch the `memory-onboarder` agent with subagent_type that matches the plugin's onboarding agent.
+Open the onboarding with this exact ASCII banner once, in a fenced `text` block:
+
+```text
+      o----o----o
+     / \  / \    \
+    o---oo---o----o
+     \  / \  |   /
+      o----o-o--o
+            \  /
+             o
+
+      C O G N I - C O D E
+      graph-memory onboarding
+```
+
+Use the `memory-onboarder` agent prompt to run the onboarding flow directly. Follow its sequence: inspect current status, initialize the graph root, configure runtime, explain Docker worker auth/bootstrap, seed initial memory, and end with concrete next steps.

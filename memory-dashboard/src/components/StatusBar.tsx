@@ -5,41 +5,46 @@ interface Props {
 }
 
 export default function StatusBar({ status }: Props) {
+  const docker = status?.runtime.docker
+  const dockerRunning = docker?.state?.Running === true
+  const dockerHealthy = docker?.state?.Health?.Status === 'healthy'
+  const codexReady = docker?.codexAuth?.ready === true
+  const warningCount = status?.warnings.length ?? 0
+
   return (
     <div className="status-bar">
-      <span className="status-title">Memory Dashboard</span>
-
-      <div className="status-item">
-        <span className="status-indicator" style={{ background: '#34d399' }} />
-        <span>Nodes: {status?.nodeCount ?? '—'}</span>
-      </div>
+      <span className="status-title">Memory Cockpit</span>
 
       <div className="status-item">
         <span
-          className={`status-indicator${status?.dirty ? ' active' : ''}`}
-          style={{ background: status?.dirty ? '#34d399' : '#333' }}
+          className={`status-indicator${dockerRunning ? ' active' : ''}`}
+          style={{ background: dockerRunning ? '#34d399' : '#444' }}
         />
-        <span>Dirty: {status?.dirty ? 'yes' : 'no'}</span>
+        <span>{dockerRunning ? (dockerHealthy ? 'Healthy' : 'Running') : 'Stopped'}</span>
       </div>
 
       <div className="status-item">
-        <span
-          className={`status-indicator${status?.scribePending ? ' active' : ''}`}
-          style={{ background: status?.scribePending ? '#a78bfa' : '#333' }}
-        />
-        <span>Scribe: {status?.scribePending ?? 0}</span>
+        <span>Project: {status?.activeProject ?? '—'}</span>
       </div>
 
       <div className="status-item">
-        <span
-          className={`status-indicator${status?.consolidationPending ? ' active' : ''}`}
-          style={{ background: status?.consolidationPending ? '#f59e0b' : '#333' }}
-        />
-        <span>Consolidation: {status?.consolidationPending ? 'pending' : 'idle'}</span>
+        <span>Runtime: {status?.runtime.mode ?? '—'}</span>
       </div>
 
       <div className="status-item">
-        <span>Buffer: {status?.bufferCount ?? 0}/10</span>
+        <span>Jobs: {status?.runningJobs ?? 0} running / {status?.failedJobs ?? 0} failed</span>
+      </div>
+
+      <div className="status-item">
+        <span>Dreams: {status?.pendingDreams ?? 0}</span>
+      </div>
+
+      <div className={`status-item${warningCount > 0 ? ' warning' : ''}`}>
+        <span>Warnings: {warningCount}</span>
+      </div>
+
+      <div className={`status-item${codexReady ? '' : ' warning'}`}>
+        <span>Codex: {codexReady ? 'ready' : 'not ready'}</span>
       </div>
     </div>
   )

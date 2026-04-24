@@ -12,6 +12,8 @@
     "chokidar": "^4.0.3",
     "cors": "^2.8.5",
     "cytoscape": "^3.31.0",
+    "cytoscape-cise": "^2.0.1",
+    "cytoscape-fcose": "^2.2.0",
     "express": "^4.21.2",
     "gray-matter": "^4.0.3",
     "react": "^19.0.0",

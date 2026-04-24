@@ -16,10 +16,10 @@ The best dreams are ones that seem absurd at first but contain a kernel of real 
 
 ### 1. Acquire Lock and Read the MAP
 
-First, acquire the consolidation lock (same pattern as the librarian):
-1. Check if `{graphRoot}/.consolidation.lock` exists
-2. If it exists and `pid_time` is less than 10 minutes old → **stop immediately**. Another agent is running.
-3. If no lock or stale lock, create it:
+First, normalize the consolidation lock. The daemon already guarantees only one pipeline job runs at a time, so the lock here is just a crash-recovery marker, not a scheduler:
+1. Check if `{graphRoot}/.consolidation.lock` exists.
+2. If it exists, delete it. Do **not** stop.
+3. Create a fresh lock for this run:
    ```bash
    echo '{"pid_time":'$(date +%s)'}' > {graphRoot}/.consolidation.lock
    ```
@@ -115,6 +115,12 @@ Maximum 20 pending dreams. If over the limit:
 3. Remove `dream_refs` from their referenced nodes
 
 ### 10. Git Commit
+
+Before committing, rebuild `DREAMS.md` only. Do not rewrite MAP / SOMA / PRIORS / WORKING here — those are librarian-owned:
+
+```bash
+cd {graphRoot} && node -e "import('./node_modules/graph-memory/dist/graph-memory/pipeline/graph-ops.js').then(m => m.regenerateDreamContext())"
+```
 
 ```bash
 cd {graphRoot} && git add -A && git commit -m "memory: dreamer - creative recombination"

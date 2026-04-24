@@ -9,6 +9,7 @@ import { CONFIG } from "../config.js";
 import { activityBus } from "../events.js";
 import { walkNodes, extractFirstParagraph, getNodeDepth } from "../utils.js";
 import { readActiveProject } from "../project.js";
+import { ensureWorkingDirectories } from "../working-files.js";
 
 // --- Edge validation ---
 
@@ -123,9 +124,48 @@ export function updatePriors(newPriors: string[], decayedPriors: string[]) {
 
 interface MapEntry {
   nodePath: string;
+  category: string;
   line: string;
   confidence: number;
   project?: string;
+  pinned: boolean;
+  lastAccessedAt: number;
+}
+
+const MAP_CATEGORY_PRIORITY = new Map<string, number>([
+  ["preferences", 0],
+  ["patterns", 1],
+  ["decisions", 2],
+  ["architecture", 3],
+  ["concepts", 4],
+  ["meta", 5],
+  ["people", 6],
+  ["facts", 7],
+  ["projects", 8],
+  ["tools", 9],
+]);
+
+function truncate(text: string, maxChars: number): string {
+  const normalized = text.replace(/\s+/g, " ").trim();
+  if (normalized.length <= maxChars) return normalized;
+  return `${normalized.slice(0, Math.max(0, maxChars - 1)).trimEnd()}…`;
+}
+
+function mapCategoryPriority(category: string): number {
+  return MAP_CATEGORY_PRIORITY.get(category) ?? 20;
+}
+
+function mapCategoryCap(category: string): number {
+  const priority = mapCategoryPriority(category);
+  if (priority <= 3) return CONFIG.graph.maxMapEntriesPerCategory;
+  if (priority <= 6) return Math.max(3, CONFIG.graph.maxMapEntriesPerCategory - 2);
+  return Math.max(2, CONFIG.graph.maxMapEntriesPerCategory - 4);
+}
+
+function defaultLastAccessedAt(frontmatter: Record<string, any>): number {
+  const raw = frontmatter.last_accessed || frontmatter.updated || frontmatter.created;
+  const parsed = raw ? Date.parse(String(raw)) : NaN;
+  return Number.isNaN(parsed) ? 0 : parsed;
 }
 
 export function fullRegenerateMAP(currentProject?: string) {
@@ -138,51 +178,45 @@ export function fullRegenerateMAP(currentProject?: string) {
   for (const { nodePath, filePath } of walkNodes(nodesDir)) {
     // Depth filter: only include nodes at depth ≤ maxMapDepth
     if (getNodeDepth(nodePath) > maxDepth) continue;
+    const category = nodePath.split("/")[0];
+    if (category.startsWith(".")) continue;
+    if (category === "archive") continue;
 
     try {
       const raw = fs.readFileSync(filePath, "utf-8");
       const parsed = matter(raw);
-      const gist = parsed.data.gist || extractFirstParagraph(parsed.content);
-      const edges: string[] = (parsed.data.edges || []).map((e: any) => e.target).filter(Boolean);
+      const gist = truncate(parsed.data.gist || extractFirstParagraph(parsed.content), 150);
+      const edges: string[] = (parsed.data.edges || []).map((e: any) => e.target).filter(Boolean).slice(0, 3);
       const edgeStr = edges.length > 0 ? ` → [${edges.join(", ")}]` : "";
       const antiEdges: string[] = (parsed.data.anti_edges || [])
         .map((e: any) => e.reason ? `${e.target} (${e.reason})` : e.target)
         .filter(Boolean);
-      const antiEdgeStr = antiEdges.length > 0 ? ` ⊘ [${antiEdges.join(", ")}]` : "";
+      const limitedAntiEdges = antiEdges.slice(0, 2);
+      const antiEdgeStr = limitedAntiEdges.length > 0 ? ` ⊘ [${limitedAntiEdges.join(", ")}]` : "";
       const confidence = typeof parsed.data.confidence === "number" ? parsed.data.confidence : 0.5;
 
       const nodeProject = parsed.data.project as string | undefined;
+      const pinStr = parsed.data.pinned ? " [pinned]" : "";
 
       allEntries.push({
         nodePath,
-        line: `- **${nodePath}** — ${gist}${edgeStr}${antiEdgeStr}`,
+        category,
+        line: `- **${nodePath}**${pinStr} — ${gist}${edgeStr}${antiEdgeStr}`,
         confidence,
         project: nodeProject,
+        pinned: parsed.data.pinned === true,
+        lastAccessedAt: defaultLastAccessedAt(parsed.data),
       });
     } catch {
       // Skip
     }
   }
 
-  // Enforce maxNodesBeforePrune
   if (allEntries.length > CONFIG.graph.maxNodesBeforePrune) {
-    const sorted = [...allEntries].sort((a, b) => a.confidence - b.confidence);
-    const toArchive = sorted.slice(0, allEntries.length - CONFIG.graph.maxNodesBeforePrune);
-
-    for (const entry of toArchive) {
-      try {
-        const srcPath = path.join(CONFIG.paths.nodes, `${entry.nodePath}.md`);
-        const destPath = path.join(CONFIG.paths.archive, `${entry.nodePath}.md`);
-        const destDir = path.dirname(destPath);
-        if (!fs.existsSync(destDir)) fs.mkdirSync(destDir, { recursive: true });
-        fs.renameSync(srcPath, destPath);
-      } catch { /* skip */ }
-    }
-
-    const prunedPaths = new Set(toArchive.map(e => e.nodePath));
-    const remaining = allEntries.filter(e => !prunedPaths.has(e.nodePath));
-    allEntries.length = 0;
-    allEntries.push(...remaining);
+    activityBus.log(
+      "system:info",
+      `Active node count ${allEntries.length} exceeds soft MAP prune threshold ${CONFIG.graph.maxNodesBeforePrune}; skipping automatic archival during MAP generation.`,
+    );
   }
 
   const header = `# MAP — Knowledge Graph Index\n\n> Auto-generated. Purely declarative. Soma in SOMA.md, dreams in DREAMS.md.\n> Each entry: path | gist | edges. ~50-80 tokens per entry.\n`;
@@ -200,18 +234,65 @@ export function fullRegenerateMAP(currentProject?: string) {
   }
 
   allEntries.sort((a, b) => {
+    if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
     const orderDiff = projectOrder(a) - projectOrder(b);
     if (orderDiff !== 0) return orderDiff;
+    const categoryDiff = mapCategoryPriority(a.category) - mapCategoryPriority(b.category);
+    if (categoryDiff !== 0) return categoryDiff;
     return b.confidence - a.confidence;
   });
 
-  let tokenBudget = CONFIG.graph.maxMapTokens - headerTokens;
-  const includedEntries: MapEntry[] = [];
-
+  // Group by category first, then allocate per-category budgets
+  const categoryEntries = new Map<string, MapEntry[]>();
   for (const entry of allEntries) {
+    const cat = entry.nodePath.split("/")[0];
+    if (!categoryEntries.has(cat)) categoryEntries.set(cat, []);
+    categoryEntries.get(cat)!.push(entry);
+  }
+
+  const totalBudget = CONFIG.graph.maxMapTokens - headerTokens;
+  const reserveTokens = 240;
+
+  const includedEntries: MapEntry[] = [];
+  const overflow: MapEntry[] = [];
+  let usedTokens = 0;
+
+  const orderedCategories = [...categoryEntries.entries()].sort((a, b) => {
+    const catDiff = mapCategoryPriority(a[0]) - mapCategoryPriority(b[0]);
+    if (catDiff !== 0) return catDiff;
+    return b[1].length - a[1].length;
+  });
+
+  for (const [category, entries] of orderedCategories) {
+    const categoryCap = mapCategoryCap(category);
+    const guaranteed = entries.slice(0, categoryCap);
+    const rest = entries.slice(categoryCap);
+    for (const entry of guaranteed) {
+      const entryTokens = estimateTokens(entry.line + "\n");
+      if (usedTokens + entryTokens > totalBudget - reserveTokens) {
+        overflow.push(entry);
+        continue;
+      }
+      usedTokens += entryTokens;
+      includedEntries.push(entry);
+    }
+    overflow.push(...rest);
+  }
+
+  overflow.sort((a, b) => {
+    if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
+    const orderDiff = projectOrder(a) - projectOrder(b);
+    if (orderDiff !== 0) return orderDiff;
+    const categoryDiff = mapCategoryPriority(a.category) - mapCategoryPriority(b.category);
+    if (categoryDiff !== 0) return categoryDiff;
+    if (b.lastAccessedAt !== a.lastAccessedAt) return b.lastAccessedAt - a.lastAccessedAt;
+    return b.confidence - a.confidence;
+  });
+
+  for (const entry of overflow) {
     const entryTokens = estimateTokens(entry.line + "\n");
-    if (tokenBudget - entryTokens < 200 && includedEntries.length > 0) continue;
-    tokenBudget -= entryTokens;
+    if (usedTokens + entryTokens > totalBudget - reserveTokens) continue;
+    usedTokens += entryTokens;
     includedEntries.push(entry);
   }
 
@@ -304,72 +385,260 @@ export function generateSOMA() {
 
 // --- WORKING.md generation ---
 
-export function generateWORKING() {
-  const deltasDir = CONFIG.paths.deltas;
+interface WorkingBucket {
+  topics: string[];
+  decisions: string[];
+  lastTouched: number;
+}
 
-  let content = `# WORKING — Volatile Working Memory\n\n> Recent session context. Auto-generated from latest deltas.\n`;
+interface WorkingRenderResult {
+  content: string;
+  topicCount: number;
+  projectCount: number;
+}
 
-  if (!fs.existsSync(deltasDir)) {
-    content += `\n_No recent activity._\n`;
-    fs.writeFileSync(CONFIG.paths.working, content);
-    return;
+interface WorkingCollection {
+  globalBucket: WorkingBucket;
+  projectBuckets: Array<[string, WorkingBucket]>;
+}
+
+function trimToTokenBudget(rendered: WorkingRenderResult, maxTokens: number): string {
+  let content = rendered.content;
+  if (estimateTokens(content) <= maxTokens) return content;
+
+  const lines = content.split("\n");
+  while (estimateTokens(lines.join("\n")) > maxTokens && lines.length > 6) {
+    lines.pop();
   }
+  content = lines.join("\n").trimEnd() + "\n";
+  return content;
+}
 
-  // Read last 3 delta files (most recent)
-  const deltaFiles = fs.readdirSync(deltasDir)
-    .filter(f => f.endsWith(".json"))
-    .sort()
-    .slice(-3);
+function pushUnique(items: string[], value: string, limit: number): void {
+  const normalized = value.trim();
+  if (!normalized) return;
+  if (!items.includes(normalized)) {
+    items.push(normalized);
+  }
+  if (items.length > limit) {
+    items.splice(limit);
+  }
+}
 
-  const activeTopics: string[] = [];
-  const recentDecisions: string[] = [];
+function getRecentDeltaFiles(limit = 12): Array<{ filepath: string; mtime: number }> {
+  const files: Array<{ filepath: string; mtime: number }> = [];
+  for (const dir of [CONFIG.paths.deltas, CONFIG.paths.deltasAudited]) {
+    if (!fs.existsSync(dir)) continue;
+    for (const file of fs.readdirSync(dir).filter((name) => name.endsWith(".json"))) {
+      const filepath = path.join(dir, file);
+      try {
+        files.push({ filepath, mtime: fs.statSync(filepath).mtimeMs });
+      } catch { /* skip */ }
+    }
+  }
+  files.sort((a, b) => b.mtime - a.mtime);
+  return files.slice(0, limit);
+}
 
-  for (const f of deltaFiles) {
+function getBucket(store: Map<string, WorkingBucket>, key: string): WorkingBucket {
+  let bucket = store.get(key);
+  if (!bucket) {
+    bucket = { topics: [], decisions: [], lastTouched: 0 };
+    store.set(key, bucket);
+  }
+  return bucket;
+}
+
+function renderWorkingSection(title: string, bucket: WorkingBucket): string {
+  let section = `\n## ${title}\n`;
+  if (bucket.topics.length > 0) {
+    section += `\n### Active Topics\n\n`;
+    for (const topic of bucket.topics) {
+      section += `- ${topic}\n`;
+    }
+  }
+  if (bucket.decisions.length > 0) {
+    section += `\n### Recent Decisions\n\n`;
+    for (const decision of bucket.decisions) {
+      section += `- ${decision}\n`;
+    }
+  }
+  return section;
+}
+
+function collectWorkingBuckets(): WorkingCollection {
+  const buckets = new Map<string, WorkingBucket>();
+  const deltaFiles = getRecentDeltaFiles();
+
+  for (const { filepath, mtime } of deltaFiles) {
     try {
-      const data = JSON.parse(fs.readFileSync(path.join(deltasDir, f), "utf-8"));
+      const data = JSON.parse(fs.readFileSync(filepath, "utf-8"));
       for (const scribe of data.scribes || []) {
-        if (scribe.summary) {
-          activeTopics.push(scribe.summary);
+        const explicitProjects = new Set<string>();
+        for (const delta of scribe.deltas || []) {
+          if (delta.project && delta.project !== "global") {
+            explicitProjects.add(delta.project);
+          }
         }
+
+        const summaryTargets = explicitProjects.size > 0 ? [...explicitProjects] : ["global"];
+        for (const target of summaryTargets) {
+          const bucket = getBucket(buckets, target);
+          if (scribe.summary) {
+            pushUnique(bucket.topics, scribe.summary, 4);
+            bucket.lastTouched = Math.max(bucket.lastTouched, mtime);
+          }
+        }
+
         for (const delta of scribe.deltas || []) {
           const action = delta.type || delta.action;
-          if (action === "update_stance" && delta.change) {
-            recentDecisions.push(`${delta.path}: ${delta.change}`);
-          }
+          if (action !== "update_stance" || !delta.change) continue;
+
+          const target = delta.project || "global";
+          const bucket = getBucket(buckets, target);
+          pushUnique(bucket.decisions, `${delta.path}: ${delta.change}`, 4);
+          bucket.lastTouched = Math.max(bucket.lastTouched, mtime);
         }
       }
     } catch { /* skip */ }
   }
 
-  if (activeTopics.length > 0) {
-    content += `\n## Active Topics\n\n`;
-    for (const topic of activeTopics.slice(-5)) {
-      content += `- ${topic}\n`;
+  return {
+    globalBucket: buckets.get("global") || { topics: [], decisions: [], lastTouched: 0 },
+    projectBuckets: [...buckets.entries()]
+      .filter(([project]) => project !== "global")
+      .sort((a, b) => b[1].lastTouched - a[1].lastTouched),
+  };
+}
+
+function buildAggregateWorkingContent(currentProject?: string): WorkingRenderResult {
+  const { globalBucket, projectBuckets } = collectWorkingBuckets();
+  const projectFilter = currentProject && currentProject !== "global" ? currentProject : null;
+
+  if (globalBucket.topics.length === 0 && globalBucket.decisions.length === 0 && projectBuckets.length === 0) {
+    return {
+      content: `# WORKING — Volatile Working Memory\n\n> Recent session context across active projects. Auto-generated from latest deltas.\n\n_No recent activity._\n`,
+      topicCount: 0,
+      projectCount: 0,
+    };
+  }
+
+  let content = `# WORKING — Volatile Working Memory\n\n> Recent session context across active projects. Auto-generated from latest deltas.\n`;
+  let topicCount = globalBucket.topics.length;
+
+  if (projectFilter) {
+    const currentBucket = projectBuckets.find(([project]) => project === projectFilter)?.[1] || {
+      topics: [],
+      decisions: [],
+      lastTouched: 0,
+    };
+    const mergedCurrent: WorkingBucket = {
+      topics: [...currentBucket.topics],
+      decisions: [...currentBucket.decisions],
+      lastTouched: Math.max(currentBucket.lastTouched, globalBucket.lastTouched),
+    };
+    for (const topic of globalBucket.topics) pushUnique(mergedCurrent.topics, topic, 6);
+    for (const decision of globalBucket.decisions) pushUnique(mergedCurrent.decisions, decision, 6);
+
+    if (mergedCurrent.topics.length > 0 || mergedCurrent.decisions.length > 0) {
+      content += renderWorkingSection(`Current Project — ${projectFilter}`, mergedCurrent);
+    }
+
+    const others = projectBuckets.filter(([project]) => project !== projectFilter).slice(0, 3);
+    if (others.length > 0) {
+      content += `\n## Other Active Projects\n`;
+      for (const [project, bucket] of others) {
+        content += `\n### ${project}\n`;
+        for (const topic of bucket.topics.slice(0, 2)) {
+          content += `- ${topic}\n`;
+        }
+        for (const decision of bucket.decisions.slice(0, 1)) {
+          content += `- ${decision}\n`;
+        }
+      }
+    }
+
+    topicCount += currentBucket.topics.length + others.reduce((count, [, bucket]) => count + bucket.topics.length, 0);
+  } else {
+    if (globalBucket.topics.length > 0 || globalBucket.decisions.length > 0) {
+      content += renderWorkingSection("Global", globalBucket);
+    }
+
+    const activeProjects = projectBuckets.slice(0, 4);
+    if (activeProjects.length > 0) {
+      content += `\n## Project Tracks\n`;
+      for (const [project, bucket] of activeProjects) {
+        content += renderWorkingSection(project, bucket);
+        topicCount += bucket.topics.length;
+      }
     }
   }
 
-  if (recentDecisions.length > 0) {
-    content += `\n## Recent Decisions\n\n`;
-    for (const decision of recentDecisions.slice(-5)) {
-      content += `- ${decision}\n`;
-    }
-  }
-
-  if (activeTopics.length === 0 && recentDecisions.length === 0) {
+  if (content.endsWith("Auto-generated from latest deltas.\n")) {
     content += `\n_No recent activity._\n`;
   }
 
-  // Enforce token budget
-  if (estimateTokens(content) > CONFIG.graph.maxWorkingTokens) {
-    const lines = content.split("\n");
-    while (estimateTokens(lines.join("\n")) > CONFIG.graph.maxWorkingTokens && lines.length > 5) {
-      lines.pop();
-    }
-    content = lines.join("\n") + "\n";
+  return {
+    content,
+    topicCount,
+    projectCount: projectBuckets.length + (globalBucket.topics.length > 0 || globalBucket.decisions.length > 0 ? 1 : 0),
+  };
+}
+
+function buildGlobalWorkingContent(globalBucket: WorkingBucket): string {
+  const rendered: WorkingRenderResult = {
+    content: `# WORKING — Global Track\n\n> Cross-project carryover and global working memory.\n`,
+    topicCount: globalBucket.topics.length,
+    projectCount: globalBucket.topics.length > 0 || globalBucket.decisions.length > 0 ? 1 : 0,
+  };
+
+  if (globalBucket.topics.length > 0 || globalBucket.decisions.length > 0) {
+    rendered.content += renderWorkingSection("Global Carryover", globalBucket);
+  } else {
+    rendered.content += `\n_No recent activity._\n`;
   }
 
-  fs.writeFileSync(CONFIG.paths.working, content);
-  activityBus.log("graph:working_generated", `WORKING.md rebuilt: ${activeTopics.length} topics, ${recentDecisions.length} decisions`);
+  return trimToTokenBudget(rendered, Math.max(800, Math.floor(CONFIG.graph.maxWorkingTokens * 0.35)));
+}
+
+function buildProjectWorkingContent(projectName: string, bucket?: WorkingBucket): string {
+  const rendered: WorkingRenderResult = {
+    content: `# WORKING — ${projectName}\n\n> Project-specific working memory for this Claude session.\n`,
+    topicCount: bucket?.topics.length || 0,
+    projectCount: bucket ? 1 : 0,
+  };
+
+  if (bucket && (bucket.topics.length > 0 || bucket.decisions.length > 0)) {
+    rendered.content += renderWorkingSection("Current Project", bucket);
+  } else {
+    rendered.content += `\n_No recent activity for this project._\n`;
+  }
+
+  return trimToTokenBudget(rendered, Math.max(1600, Math.floor(CONFIG.graph.maxWorkingTokens * 0.75)));
+}
+
+function writeWorkingArtifacts(currentProject?: string): WorkingRenderResult {
+  ensureWorkingDirectories();
+  const { globalBucket, projectBuckets } = collectWorkingBuckets();
+  const aggregate = buildAggregateWorkingContent(currentProject);
+  fs.writeFileSync(CONFIG.paths.working, trimToTokenBudget(aggregate, CONFIG.graph.maxWorkingTokens));
+  fs.writeFileSync(CONFIG.paths.workingGlobal, buildGlobalWorkingContent(globalBucket));
+
+  return aggregate;
+}
+
+export function generateWORKING() {
+  const working = writeWorkingArtifacts();
+  activityBus.log(
+    "graph:working_generated",
+    `WORKING.md rebuilt: ${working.topicCount} topics across ${working.projectCount} project buckets`
+  );
+}
+
+// --- Project-aware WORKING.md generation (session-start) ---
+
+export function generateProjectAwareWORKING(currentProject: string) {
+  writeWorkingArtifacts(currentProject);
 }
 
 // --- DREAMS.md generation ---
@@ -427,14 +696,27 @@ export function generateDREAMS() {
   activityBus.log("graph:dreams_generated", `DREAMS.md rebuilt: ${dreams.length} fragments`);
 }
 
+export function regenerateCoreContextFiles(currentProject?: string) {
+  fullRegenerateMAP(currentProject);
+  rebuildIndex();
+  rebuildArchiveIndex();
+  generateSOMA();
+  if (currentProject) {
+    generateProjectAwareWORKING(currentProject);
+  } else {
+    generateWORKING();
+  }
+}
+
+export function regenerateDreamContext() {
+  generateDREAMS();
+}
+
 // --- Regenerate all five context files ---
 
 export function regenerateAllContextFiles(currentProject?: string) {
-  fullRegenerateMAP(currentProject);
-  rebuildIndex();
-  generateSOMA();
-  generateWORKING();
-  generateDREAMS();
+  regenerateCoreContextFiles(currentProject);
+  regenerateDreamContext();
 }
 
 // --- Index rebuild (with dream_refs) ---
@@ -454,8 +736,8 @@ export function rebuildIndex() {
       const indexEntry: Record<string, any> = {
         path: nodePath,
         gist: ((fm.gist || extractFirstParagraph(parsed.content)) as string).slice(0, 200),
-        tags: fm.tags || [],
-        keywords: fm.keywords || [],
+        tags: (fm.tags || []).map((t: any) => String(t)),
+        keywords: (fm.keywords || []).map((k: any) => String(k)),
         edges: (fm.edges || [])
           .map((e: any) => ({ target: e.target, type: e.type || "relates_to", weight: e.weight ?? 0.5 }))
           .filter((e: any) => e.target),
@@ -465,12 +747,15 @@ export function rebuildIndex() {
         confidence: typeof fm.confidence === "number" ? fm.confidence : 0.5,
         soma_intensity: fm.soma?.intensity || 0,
         updated: fm.updated || fm.created || null,
-        last_accessed: fm.last_accessed || new Date().toISOString(),
+        last_accessed: fm.last_accessed || fm.updated || fm.created || new Date().toISOString(),
         access_count: fm.access_count || 0,
         dream_refs: fm.dream_refs || [],
       };
       if (fm.project) {
         indexEntry.project = fm.project;
+      }
+      if (fm.pinned) {
+        indexEntry.pinned = true;
       }
       index.push(indexEntry);
     } catch {
@@ -479,4 +764,36 @@ export function rebuildIndex() {
   }
 
   fs.writeFileSync(CONFIG.paths.index, JSON.stringify(index, null, 2));
+}
+
+// --- Archive index rebuild ---
+
+export function rebuildArchiveIndex() {
+  const archiveDir = CONFIG.paths.archive;
+  if (!fs.existsSync(archiveDir)) return;
+
+  const index: any[] = [];
+
+  for (const { nodePath, filePath } of walkNodes(archiveDir)) {
+    try {
+      const raw = fs.readFileSync(filePath, "utf-8");
+      const parsed = matter(raw);
+      const fm = parsed.data;
+
+      index.push({
+        path: nodePath,
+        gist: ((fm.gist || extractFirstParagraph(parsed.content)) as string).slice(0, 200),
+        tags: (fm.tags || []).map((t: any) => String(t)),
+        keywords: (fm.keywords || []).map((k: any) => String(k)),
+        confidence: typeof fm.confidence === "number" ? fm.confidence : 0.5,
+        archived_reason: fm.archived_reason || "unknown",
+        archived_date: fm.archived_date || null,
+      });
+    } catch {
+      // Skip
+    }
+  }
+
+  fs.writeFileSync(CONFIG.paths.archiveIndex, JSON.stringify(index, null, 2));
+  activityBus.log("graph:archive_index_rebuilt", `Archive index rebuilt: ${index.length} entries`);
 }

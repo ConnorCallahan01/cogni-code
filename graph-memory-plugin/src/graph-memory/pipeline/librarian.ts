@@ -19,7 +19,7 @@ import { safePath, walkNodes, getNodeDepth } from "../utils.js";
 import {
   validateEdgeType,
   updatePriors,
-  regenerateAllContextFiles,
+  regenerateCoreContextFiles,
 } from "./graph-ops.js";
 
 // --- LibrarianResult interface (graph reasoning only) ---
@@ -41,6 +41,8 @@ export interface LibrarianResult {
   new_priors: string[];
   remove_priors: string[];
   compact: Array<{ path: string; new_content: string }>;
+  pin: Array<{ path: string; reason: string }>;
+  unpin: Array<{ path: string; reason: string }>;
 }
 
 /**
@@ -205,16 +207,33 @@ export async function applyLibrarianResult(result: LibrarianResult) {
     }
   }
 
-  // 7. Recalculate parent confidence as weighted average of children
+  // 7. Pin / unpin durable procedure nodes
+  for (const op of result.pin) {
+    try {
+      setPinnedState(op.path, true, op.reason);
+    } catch (err: any) {
+      activityBus.log("system:error", `Pin ${op.path} failed: ${err.message}`);
+    }
+  }
+
+  for (const op of result.unpin) {
+    try {
+      setPinnedState(op.path, false, op.reason);
+    } catch (err: any) {
+      activityBus.log("system:error", `Unpin ${op.path} failed: ${err.message}`);
+    }
+  }
+
+  // 8. Recalculate parent confidence as weighted average of children
   try {
     recalcParentConfidence();
   } catch (err: any) {
     activityBus.log("system:error", `Parent confidence recalc failed: ${err.message}`);
   }
 
-  // 8. Rebuild all context files
+  // 9. Rebuild core context files. DREAMS.md is owned by the dreamer pass.
   try {
-    regenerateAllContextFiles();
+    regenerateCoreContextFiles();
   } catch (err: any) {
     activityBus.log("system:error", `Context file rebuild failed: ${err.message}`);
   }
@@ -419,6 +438,27 @@ function addContradictionEdge(pathA: string, pathB: string, resolution: string) 
   }
 
   activityBus.log("graph:node_updated", `Contradiction edge: ${pathA} ↔ ${pathB}: ${resolution}`);
+}
+
+function setPinnedState(nodePath: string, pinned: boolean, reason: string) {
+  const filePath = safePath(CONFIG.paths.nodes, nodePath, ".md");
+  if (!filePath || !fs.existsSync(filePath)) {
+    activityBus.log("system:error", `${pinned ? "Pin" : "Unpin"} target not found: ${nodePath}`);
+    return;
+  }
+
+  const raw = fs.readFileSync(filePath, "utf-8");
+  const parsed = matter(raw);
+
+  if (pinned) {
+    parsed.data.pinned = true;
+  } else {
+    delete parsed.data.pinned;
+  }
+  parsed.data.updated = new Date().toISOString().slice(0, 10);
+  fs.writeFileSync(filePath, matter.stringify(parsed.content, parsed.data));
+
+  activityBus.log("graph:node_updated", `${pinned ? "Pinned" : "Unpinned"} ${nodePath}: ${reason}`);
 }
 
 /**

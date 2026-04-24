@@ -1,58 +1,1068 @@
 import express from 'express'
 import cors from 'cors'
-import { readFileSync, existsSync, readdirSync } from 'fs'
-import { join, resolve } from 'path'
+import { existsSync, readFileSync, readdirSync, statSync } from 'fs'
+import { join, resolve, relative } from 'path'
 import { homedir } from 'os'
 import { watch } from 'chokidar'
 import matter from 'gray-matter'
+import { spawnSync } from 'child_process'
 
 const app = express()
-const PORT = 3001
-const GRAPH_ROOT = join(homedir(), '.graph-memory')
+const PORT = Number.parseInt(process.env.MEMORY_DASHBOARD_API_PORT || process.env.PORT || '3001', 10)
 
-app.use(cors({ origin: 'http://localhost:5173' }))
+type JobState = 'queued' | 'running' | 'done' | 'failed'
+type JobType = 'scribe' | 'working_update' | 'auditor' | 'librarian' | 'dreamer' | 'memory_analysis'
 
-// --- Helpers ---
-
-function readIndex() {
-  const indexPath = join(GRAPH_ROOT, '.index.json')
-  if (!existsSync(indexPath)) return []
-  try {
-    return JSON.parse(readFileSync(indexPath, 'utf-8'))
-  } catch {
-    return []
+interface RuntimeConfig {
+  mode?: 'manual' | 'docker'
+  graphRoot?: string
+  docker?: {
+    enabled?: boolean
+    workerProvider?: 'codex'
+    image?: string
+    containerName?: string
+    authVolume?: string
+    graphRootInContainer?: string
+    authPathInContainer?: string
+    memoryLimit?: string
+    cpuLimit?: string
+    repoMounts?: Array<{ hostPath: string; containerPath: string; mode: 'ro' | 'rw' }>
   }
 }
 
+type StartupLayerId = 'priors' | 'soma' | 'map' | 'working_global' | 'working_project' | 'dreams'
+
+interface JobRecord {
+  id: string
+  type: JobType
+  state: JobState
+  createdAt: string
+  updatedAt: string
+  startedAt?: string
+  completedAt?: string
+  attempt: number
+  maxAttempts: number
+  triggerSource: string
+  idempotencyKey: string
+  payload: Record<string, unknown>
+  logFile?: string
+  lastError?: string
+  workerPid?: number
+}
+
+interface ParsedWorkerLog {
+  stage: string | null
+  model: string | null
+  sessionId: string | null
+  workdir: string | null
+  approval: string | null
+  sandbox: string | null
+  provider: string | null
+  reasoningEffort: string | null
+  task: string | null
+  codexNotes: string[]
+  recentSteps: string[]
+}
+
+interface ProjectWorkingFileSummary {
+  project: string
+  slug: string
+  updatedAt: string
+  path: string
+  content: string
+  sessionCount: number
+}
+
+interface PipelineCutoffStatus {
+  stage: 'scribe' | 'working_update' | 'auditor' | 'librarian' | 'dreamer' | 'memory_analysis'
+  current: number
+  threshold: number | null
+  remaining: number | null
+  status: 'counting' | 'ready' | 'queued' | 'running' | 'waiting' | 'idle'
+  detail: string
+}
+
+const SCRIBE_INTERVAL = 10
+const AUDITOR_SCRIBE_THRESHOLD = 5
+const DAILY_ANALYSIS_HOUR_LOCAL = 7
+
+const COMMON_BIN_DIRS = [
+  '/opt/homebrew/bin',
+  '/usr/local/bin',
+  '/usr/bin',
+  '/bin',
+  '/usr/sbin',
+  '/sbin',
+]
+
+app.use(cors({ origin: 'http://localhost:5173' }))
+
+function getPointerConfigPath(): string {
+  return join(homedir(), '.graph-memory-config.yml')
+}
+
+function parseGraphRootFromPointer(raw: string): string | null {
+  const match = raw.match(/^\s*graphRoot:\s*(.+?)\s*$/m)
+  if (!match) return null
+  const value = match[1].trim().replace(/^['"]|['"]$/g, '')
+  return value || null
+}
+
+function getGraphRoot(): string {
+  if (process.env.GRAPH_MEMORY_ROOT) return resolve(process.env.GRAPH_MEMORY_ROOT)
+  const pointerPath = getPointerConfigPath()
+  if (existsSync(pointerPath)) {
+    try {
+      const parsed = parseGraphRootFromPointer(readFileSync(pointerPath, 'utf-8'))
+      if (parsed) return resolve(parsed)
+    } catch {
+      // fall through
+    }
+  }
+  return join(homedir(), '.graph-memory')
+}
+
+function getPaths(graphRoot = getGraphRoot()) {
+  return {
+    graphRoot,
+    index: join(graphRoot, '.index.json'),
+    archiveIndex: join(graphRoot, '.archive-index.json'),
+    nodes: join(graphRoot, 'nodes'),
+    archive: join(graphRoot, 'archive'),
+    logs: join(graphRoot, '.logs'),
+    activityLog: join(graphRoot, '.logs', 'activity.jsonl'),
+    deltas: join(graphRoot, '.deltas'),
+    dreams: join(graphRoot, 'dreams'),
+    map: join(graphRoot, 'MAP.md'),
+    priors: join(graphRoot, 'PRIORS.md'),
+    soma: join(graphRoot, 'SOMA.md'),
+    working: join(graphRoot, 'WORKING.md'),
+    workingRoot: join(graphRoot, 'working'),
+    workingGlobal: join(graphRoot, 'working', 'global.md'),
+    workingProjects: join(graphRoot, 'working', 'projects'),
+    dreamsContext: join(graphRoot, 'DREAMS.md'),
+    briefs: join(graphRoot, 'briefs'),
+    dailyBriefs: join(graphRoot, 'briefs', 'daily'),
+    auditBrief: join(graphRoot, '.audit-brief.md'),
+    auditReport: join(graphRoot, '.audit-report.json'),
+    runtimeConfig: join(graphRoot, '.runtime-config.json'),
+    pipelineLogs: join(graphRoot, '.pipeline-logs'),
+    activeProjects: join(graphRoot, '.active-projects'),
+    sessions: join(graphRoot, '.sessions'),
+    conversationLog: join(graphRoot, '.buffer', 'conversation.jsonl'),
+    jobs: {
+      root: join(graphRoot, '.jobs'),
+      queued: join(graphRoot, '.jobs', 'queued'),
+      running: join(graphRoot, '.jobs', 'running'),
+      done: join(graphRoot, '.jobs', 'done'),
+      failed: join(graphRoot, '.jobs', 'failed'),
+      daemonState: join(graphRoot, '.jobs', 'daemon-state.json'),
+      daemonLock: join(graphRoot, '.jobs', 'daemon.lock'),
+    },
+  }
+}
+
+function safeJsonParse(filePath: string): any {
+  try {
+    return JSON.parse(readFileSync(filePath, 'utf-8'))
+  } catch {
+    return null
+  }
+}
+
+function readIndex(graphRoot = getGraphRoot()) {
+  const indexPath = getPaths(graphRoot).index
+  if (!existsSync(indexPath)) return []
+  return safeJsonParse(indexPath) ?? []
+}
+
 function readNodeFile(nodePath: string) {
-  const nodesDir = join(GRAPH_ROOT, 'nodes')
-  const fullPath = resolve(nodesDir, nodePath.endsWith('.md') ? nodePath : `${nodePath}.md`)
-  // Path traversal protection
-  if (!fullPath.startsWith(nodesDir)) return null
+  return readNodeFileForGraph(getGraphRoot(), nodePath)
+}
+
+function readNodeFileForGraph(graphRoot: string, nodePath: string) {
+  const { nodes } = getPaths(graphRoot)
+  const fullPath = resolve(nodes, nodePath.endsWith('.md') ? nodePath : `${nodePath}.md`)
+  if (!fullPath.startsWith(nodes)) return null
   if (!existsSync(fullPath)) return null
   const raw = readFileSync(fullPath, 'utf-8')
   const { data, content } = matter(raw)
   return { frontmatter: data, content: content.trim(), raw }
 }
 
-function safeJsonParse(path: string): any {
+function walkNodeFiles(dir: string, prefix = ''): Array<{ nodePath: string; filePath: string }> {
+  if (!existsSync(dir)) return []
+
+  const files: Array<{ nodePath: string; filePath: string }> = []
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    if (entry.isDirectory()) {
+      const childPrefix = prefix ? `${prefix}/${entry.name}` : entry.name
+      files.push(...walkNodeFiles(join(dir, entry.name), childPrefix))
+      continue
+    }
+
+    if (!entry.name.endsWith('.md')) continue
+    const nodePath = prefix ? `${prefix}/${entry.name.replace(/\.md$/, '')}` : entry.name.replace(/\.md$/, '')
+    files.push({ nodePath, filePath: join(dir, entry.name) })
+  }
+
+  return files
+}
+
+function countMarkdownFiles(dir: string): number {
+  if (!existsSync(dir)) return 0
+  let count = 0
+  for (const entry of readdirSync(dir, { recursive: true })) {
+    if (String(entry).endsWith('.md')) count += 1
+  }
+  return count
+}
+
+function sanitizeProjectSlug(projectName: string): string {
+  return projectName.replace(/[^a-zA-Z0-9._-]+/g, '__') || 'global'
+}
+
+function getProjectWorkingPath(graphRoot = getGraphRoot(), projectName?: string): string | null {
+  if (!projectName || projectName === 'global') return null
+  return join(getPaths(graphRoot).workingProjects, `${sanitizeProjectSlug(projectName)}.md`)
+}
+
+function getProjectNameFromWorkingFilename(filename: string): string | null {
+  if (!filename.endsWith('.md')) return null
+  return filename.slice(0, -3).replace(/__/g, '/')
+}
+
+function listProjectWorkingFiles(graphRoot = getGraphRoot()): ProjectWorkingFileSummary[] {
+  const dir = getPaths(graphRoot).workingProjects
+  if (!existsSync(dir)) return []
+
+  return readdirSync(dir)
+    .filter((file) => file.endsWith('.md'))
+    .map((file) => {
+      const project = getProjectNameFromWorkingFilename(file)
+      if (!project) return null
+      const slug = file.slice(0, -3)
+      const filePath = join(dir, file)
+      const statePath = join(dir, `${slug}.state.json`)
+      const stat = statSync(filePath)
+      const state = existsSync(statePath) ? safeJsonParse(statePath) : null
+      return {
+        project,
+        slug,
+        updatedAt: stat.mtime.toISOString(),
+        path: filePath,
+        content: readFileSync(filePath, 'utf-8'),
+        sessionCount: Array.isArray(state?.sessions) ? state.sessions.length : 0,
+      }
+    })
+    .filter((entry): entry is ProjectWorkingFileSummary => Boolean(entry))
+    .sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt))
+}
+
+function readTextTail(filePath: string, lineCount = 30): string {
+  if (!existsSync(filePath)) return ''
   try {
-    return JSON.parse(readFileSync(path, 'utf-8'))
+    const lines = readFileSync(filePath, 'utf-8').split('\n')
+    return lines.slice(-lineCount).join('\n').trim()
   } catch {
-    return null
+    return ''
   }
 }
 
-function countFilesInDir(dir: string): number {
-  if (!existsSync(dir)) return 0
-  return readdirSync(dir, { recursive: true })
-    .filter((f) => String(f).endsWith('.md') || String(f).endsWith('.json'))
+function readTextPreview(filePath: string, lineCount = 8): string {
+  if (!existsSync(filePath)) return ''
+  try {
+    const lines = readFileSync(filePath, 'utf-8').split('\n')
+    return lines.slice(0, lineCount).join('\n').trim()
+  } catch {
+    return ''
+  }
+}
+
+function listDailyBriefFiles(graphRoot = getGraphRoot()) {
+  const dir = getPaths(graphRoot).dailyBriefs
+  if (!existsSync(dir)) return []
+  return readdirSync(dir)
+    .filter((file) => file.endsWith('.md'))
+    .sort((a, b) => b.localeCompare(a))
+}
+
+function getLatestBrief(graphRoot = getGraphRoot()) {
+  const files = listDailyBriefFiles(graphRoot)
+  const latest = files[0]
+  if (!latest) return null
+
+  const markdownPath = join(getPaths(graphRoot).dailyBriefs, latest)
+  const jsonPath = markdownPath.replace(/\.md$/, '.json')
+  const markdown = existsSync(markdownPath) ? readFileSync(markdownPath, 'utf-8') : ''
+  const json = existsSync(jsonPath) ? safeJsonParse(jsonPath) : null
+  const stat = existsSync(markdownPath) ? statSync(markdownPath) : null
+
+  return {
+    date: latest.replace(/\.md$/, ''),
+    updatedAt: stat ? stat.mtime.toISOString() : null,
+    markdown,
+    json,
+  }
+}
+
+function listSessionTraces(graphRoot = getGraphRoot()) {
+  const sessionsDir = getPaths(graphRoot).sessions
+  if (!existsSync(sessionsDir)) return []
+
+  return readdirSync(sessionsDir)
+    .map((sessionId) => {
+      const toolTracePath = join(sessionsDir, sessionId, 'tool-trace.jsonl')
+      const assistantTracePath = join(sessionsDir, sessionId, 'assistant-trace.jsonl')
+      if (!existsSync(toolTracePath) && !existsSync(assistantTracePath)) return null
+
+      const readJsonLines = (filePath: string) => {
+        if (!existsSync(filePath)) return []
+        return readFileSync(filePath, 'utf-8')
+          .split('\n')
+          .filter(Boolean)
+          .map((line) => {
+            try { return JSON.parse(line) } catch { return null }
+          })
+          .filter(Boolean)
+      }
+
+      const toolEvents = readJsonLines(toolTracePath)
+      const assistantEvents = readJsonLines(assistantTracePath)
+      const events = [...toolEvents, ...assistantEvents]
+        .sort((a: any, b: any) => Date.parse(a.timestamp || '') - Date.parse(b.timestamp || ''))
+      if (events.length === 0) return null
+
+      const updatedAtMs = Math.max(
+        existsSync(toolTracePath) ? statSync(toolTracePath).mtimeMs : 0,
+        existsSync(assistantTracePath) ? statSync(assistantTracePath).mtimeMs : 0
+      )
+      const tools = [...new Set(toolEvents.map((event: any) => event.toolName).filter(Boolean))]
+      const targets = [...new Set(toolEvents.flatMap((event: any) => Array.isArray(event.targetPaths) ? event.targetPaths : []))]
+
+      return {
+        sessionId,
+        updatedAt: new Date(updatedAtMs).toISOString(),
+        project: events[events.length - 1]?.project || 'global',
+        cwd: events[events.length - 1]?.cwd || null,
+        eventCount: events.length,
+        tools,
+        targets: targets.slice(0, 20),
+        lastEvents: events.slice(-40),
+      }
+    })
+    .filter(Boolean)
+    .sort((a: any, b: any) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt))
+    .slice(0, 30)
+}
+
+function countPendingDreams(graphRoot = getGraphRoot()): number {
+  const pendingDir = join(getPaths(graphRoot).dreams, 'pending')
+  if (!existsSync(pendingDir)) return 0
+  return readdirSync(pendingDir).filter((file) => file.endsWith('.json')).length
+}
+
+function readBufferCount(graphRoot = getGraphRoot()): number {
+  const conversationLog = getPaths(graphRoot).conversationLog
+  if (!existsSync(conversationLog)) return 0
+  const content = readFileSync(conversationLog, 'utf-8').trim()
+  return content ? content.split('\n').filter(Boolean).length : 0
+}
+
+function readLatestActiveProjectEntry(graphRoot = getGraphRoot()): { name: string; gitRoot?: string; cwd?: string; updatedAt: string } | null {
+  const activeProjectsDir = getPaths(graphRoot).activeProjects
+  if (!existsSync(activeProjectsDir)) return null
+  const files = readdirSync(activeProjectsDir).filter((file) => file.endsWith('.json'))
+  let latest: { name: string; gitRoot?: string; cwd?: string; mtimeMs: number } | null = null
+
+  for (const file of files) {
+    const filePath = join(activeProjectsDir, file)
+    const entry = safeJsonParse(filePath)
+    if (!entry?.name) continue
+    const mtimeMs = statSync(filePath).mtimeMs
+    if (!latest || mtimeMs > latest.mtimeMs) {
+      latest = { name: entry.name, gitRoot: entry.gitRoot, cwd: entry.cwd, mtimeMs }
+    }
+  }
+
+  return latest
+    ? { name: latest.name, gitRoot: latest.gitRoot, cwd: latest.cwd, updatedAt: new Date(latest.mtimeMs).toISOString() }
+    : null
+}
+
+function readLatestTraceProject(graphRoot = getGraphRoot()): { name: string; cwd?: string; updatedAt: string } | null {
+  const latestTrace = listSessionTraces(graphRoot)[0]
+  if (!latestTrace?.project) return null
+  return {
+    name: latestTrace.project,
+    cwd: latestTrace.cwd || undefined,
+    updatedAt: latestTrace.updatedAt,
+  }
+}
+
+function readLatestWorkingProject(graphRoot = getGraphRoot()): { name: string; updatedAt: string } | null {
+  const dir = getPaths(graphRoot).workingProjects
+  if (!existsSync(dir)) return null
+
+  let latest: { name: string; updatedAt: string; mtimeMs: number } | null = null
+  for (const file of readdirSync(dir).filter((entry) => entry.endsWith('.md'))) {
+    const name = getProjectNameFromWorkingFilename(file)
+    if (!name) continue
+    const filePath = join(dir, file)
+    const stat = statSync(filePath)
+    if (!latest || stat.mtimeMs > latest.mtimeMs) {
+      latest = { name, updatedAt: stat.mtime.toISOString(), mtimeMs: stat.mtimeMs }
+    }
+  }
+
+  return latest ? { name: latest.name, updatedAt: latest.updatedAt } : null
+}
+
+function readActiveProject(graphRoot = getGraphRoot()): { name: string; gitRoot?: string } | null {
+  const active = readLatestActiveProjectEntry(graphRoot)
+  const trace = readLatestTraceProject(graphRoot)
+  const working = readLatestWorkingProject(graphRoot)
+
+  const activeTs = active ? Date.parse(active.updatedAt) : 0
+  const traceTs = trace ? Date.parse(trace.updatedAt) : 0
+  const workingTs = working ? Date.parse(working.updatedAt) : 0
+  const freshnessCutoffMs = Date.now() - (12 * 60 * 60 * 1000)
+
+  if (trace && traceTs >= freshnessCutoffMs && traceTs >= activeTs) {
+    return { name: trace.name }
+  }
+
+  if (active && activeTs >= freshnessCutoffMs) {
+    return { name: active.name, gitRoot: active.gitRoot }
+  }
+
+  if (working && workingTs >= activeTs) {
+    return { name: working.name }
+  }
+
+  return active ? { name: active.name, gitRoot: active.gitRoot } : (trace ? { name: trace.name } : null)
+}
+
+function readJobs(state: JobState, graphRoot = getGraphRoot()): JobRecord[] {
+  const dir = getPaths(graphRoot).jobs[state]
+  if (!existsSync(dir)) return []
+  return readdirSync(dir)
+    .filter((file) => file.endsWith('.json'))
+    .map((file) => safeJsonParse(join(dir, file)))
+    .filter(Boolean)
+}
+
+function isScribeNoop(job: Pick<JobRecord, 'type' | 'lastError'> | null | undefined): boolean {
+  return job?.type === 'scribe' && /no new deltas|without writing any delta files/i.test(job.lastError || '')
+}
+
+function readAllJobs(graphRoot = getGraphRoot()) {
+  const jobs = {
+    queued: readJobs('queued', graphRoot),
+    running: readJobs('running', graphRoot),
+    done: readJobs('done', graphRoot),
+    failed: readJobs('failed', graphRoot),
+  }
+
+  const byType: Record<JobType, Record<JobState, number>> = {
+    scribe: { queued: 0, running: 0, done: 0, failed: 0 },
+    working_update: { queued: 0, running: 0, done: 0, failed: 0 },
+    auditor: { queued: 0, running: 0, done: 0, failed: 0 },
+    librarian: { queued: 0, running: 0, done: 0, failed: 0 },
+    dreamer: { queued: 0, running: 0, done: 0, failed: 0 },
+    memory_analysis: { queued: 0, running: 0, done: 0, failed: 0 },
+  }
+
+  for (const state of Object.keys(jobs) as JobState[]) {
+    for (const job of jobs[state]) {
+      byType[job.type][state] += 1
+    }
+  }
+
+  const noopJobs = jobs.failed.filter((job) => isScribeNoop(job)).length
+  const actionableFailedJobs = jobs.failed.length - noopJobs
+
+  return {
+    ...jobs,
+    totals: {
+      queued: jobs.queued.length,
+      running: jobs.running.length,
+      done: jobs.done.length,
+      failed: actionableFailedJobs,
+      rawFailed: jobs.failed.length,
+      noop: noopJobs,
+    },
+    byType,
+  }
+}
+
+function countActiveDeltaFiles(graphRoot = getGraphRoot()): number {
+  const deltasDir = getPaths(graphRoot).deltas
+  if (!existsSync(deltasDir)) return 0
+  return readdirSync(deltasDir).filter((file) => file.endsWith('.json')).length
+}
+
+function latestJobTime(job: JobRecord): number {
+  return Date.parse(job.completedAt || job.updatedAt || job.createdAt || '') || 0
+}
+
+function countCompletedScribesSinceLastAuditor(jobs: ReturnType<typeof readAllJobs>) {
+  const latestAuditorMs = jobs.done
+    .filter((job) => job.type === 'auditor')
+    .map((job) => latestJobTime(job))
+    .sort((a, b) => b - a)[0] || 0
+
+  return jobs.done
+    .filter((job) => job.type === 'scribe')
+    .filter((job) => latestJobTime(job) > latestAuditorMs)
     .length
 }
 
-// --- Routes ---
+function countCompletedProjectScopedScribes(jobs: ReturnType<typeof readAllJobs>) {
+  return jobs.done
+    .filter((job) => job.type === 'scribe')
+    .filter((job) => {
+      const project = typeof job.payload?.project === 'string' ? job.payload.project : ''
+      return Boolean(project && project !== 'global')
+    })
+    .length
+}
 
-// Full graph for Cytoscape
+function hasJobInFlight(jobs: ReturnType<typeof readAllJobs>, type: JobType): 'running' | 'queued' | null {
+  if (jobs.running.some((job) => job.type === type)) return 'running'
+  if (jobs.queued.some((job) => job.type === type)) return 'queued'
+  return null
+}
+
+function buildPipelineCutoffs(graphRoot = getGraphRoot(), jobs = readAllJobs(graphRoot)): PipelineCutoffStatus[] {
+  const bufferCount = readBufferCount(graphRoot)
+  const activeDeltaFiles = countActiveDeltaFiles(graphRoot)
+  const completedScribesSinceAuditor = countCompletedScribesSinceLastAuditor(jobs)
+  const completedProjectScopedScribes = countCompletedProjectScopedScribes(jobs)
+  const hasProjectWorkingHandoffs = listProjectWorkingFiles(graphRoot).some((file) => file.sessionCount > 0)
+  const scribeState = hasJobInFlight(jobs, 'scribe')
+  const workingUpdateState = hasJobInFlight(jobs, 'working_update')
+  const auditorState = hasJobInFlight(jobs, 'auditor')
+  const librarianState = hasJobInFlight(jobs, 'librarian')
+  const dreamerState = hasJobInFlight(jobs, 'dreamer')
+  const analysisState = hasJobInFlight(jobs, 'memory_analysis')
+  const now = new Date()
+  const analysisReady = now.getHours() >= DAILY_ANALYSIS_HOUR_LOCAL
+  const todaysBriefExists = (() => {
+    const today = new Date().toISOString().slice(0, 10)
+    return existsSync(join(getPaths(graphRoot).dailyBriefs, `${today}.md`))
+  })()
+
+  return [
+    {
+      stage: 'scribe',
+      current: bufferCount,
+      threshold: SCRIBE_INTERVAL,
+      remaining: Math.max(0, SCRIBE_INTERVAL - bufferCount),
+      status: scribeState || (bufferCount >= SCRIBE_INTERVAL ? 'ready' : 'counting'),
+      detail: scribeState
+        ? `Snapshot threshold reached. Scribe is ${scribeState}.`
+        : bufferCount >= SCRIBE_INTERVAL
+          ? 'Ready to rotate the next 10-message snapshot.'
+          : `${bufferCount} of ${SCRIBE_INTERVAL} canonical messages buffered. ${Math.max(0, SCRIBE_INTERVAL - bufferCount)} more until the next snapshot.`,
+    },
+    {
+      stage: 'working_update',
+      current: completedProjectScopedScribes,
+      threshold: null,
+      remaining: null,
+      status: workingUpdateState || (jobs.byType.working_update.done > 0 || hasProjectWorkingHandoffs ? 'idle' : completedProjectScopedScribes > 0 ? 'waiting' : 'idle'),
+      detail: workingUpdateState
+        ? `Working updater is ${workingUpdateState} on the latest repo handoff.`
+        : hasProjectWorkingHandoffs
+          ? 'Repo-specific WORKING handoffs already exist. Future working-updater passes will keep them fresh after successful project-scoped scribes.'
+        : jobs.byType.working_update.done > 0
+          ? 'Repo-specific WORKING handoffs are being maintained after scribe completion.'
+          : completedProjectScopedScribes > 0
+            ? 'Project-scoped scribes exist, but no working-updater completion has been recorded yet. Scribes are session snapshots; only sessions tagged with a project feed repo WORKING handoffs.'
+            : 'No project-scoped scribes have completed yet. Global-only sessions do not create repo WORKING handoffs.',
+    },
+    {
+      stage: 'auditor',
+      current: completedScribesSinceAuditor,
+      threshold: AUDITOR_SCRIBE_THRESHOLD,
+      remaining: Math.max(0, AUDITOR_SCRIBE_THRESHOLD - completedScribesSinceAuditor),
+      status: auditorState || (activeDeltaFiles === 0 ? 'idle' : completedScribesSinceAuditor >= AUDITOR_SCRIBE_THRESHOLD ? 'ready' : 'counting'),
+      detail: auditorState
+        ? `Auditor is ${auditorState} on the current scribe backlog.`
+        : activeDeltaFiles === 0
+          ? 'Waiting for fresh scribe deltas before audit can run.'
+          : completedScribesSinceAuditor >= AUDITOR_SCRIBE_THRESHOLD
+            ? 'Enough successful scribes have accumulated. Auditor is ready.'
+            : `${completedScribesSinceAuditor} of ${AUDITOR_SCRIBE_THRESHOLD} successful scribes since the last audit. ${Math.max(0, AUDITOR_SCRIBE_THRESHOLD - completedScribesSinceAuditor)} more needed. ${activeDeltaFiles} active delta file${activeDeltaFiles === 1 ? '' : 's'} on disk.`,
+    },
+    {
+      stage: 'librarian',
+      current: 0,
+      threshold: null,
+      remaining: null,
+      status: librarianState || (auditorState ? 'waiting' : activeDeltaFiles > 0 ? 'waiting' : 'idle'),
+      detail: librarianState
+        ? `Librarian is ${librarianState} to rebuild core memory artifacts.`
+        : auditorState
+          ? 'Waiting for auditor to finish and hand off the audited delta set.'
+          : activeDeltaFiles > 0
+            ? 'Fresh deltas exist, but librarian cannot run until auditor completes.'
+            : 'No audited delta set is ready for librarian yet.',
+    },
+    {
+      stage: 'dreamer',
+      current: 0,
+      threshold: null,
+      remaining: null,
+      status: dreamerState || (librarianState ? 'waiting' : jobs.done.some((job) => job.type === 'librarian') ? 'waiting' : 'idle'),
+      detail: dreamerState
+        ? `Dreamer is ${dreamerState} on the latest librarian output.`
+        : librarianState
+          ? 'Waiting for librarian to finish before speculative recombination can run.'
+          : jobs.done.some((job) => job.type === 'librarian')
+            ? 'Dreamer runs after each fresh librarian completion.'
+            : 'No fresh librarian pass yet, so dreamer is idle.',
+    },
+    {
+      stage: 'memory_analysis',
+      current: todaysBriefExists ? 1 : 0,
+      threshold: 1,
+      remaining: todaysBriefExists ? 0 : 1,
+      status: analysisState || (todaysBriefExists ? 'idle' : analysisReady ? 'ready' : 'waiting'),
+      detail: analysisState
+        ? `Morning brief is ${analysisState}.`
+        : todaysBriefExists
+          ? 'Today’s morning brief has already been generated.'
+          : analysisReady
+            ? `Daily brief window is open after ${DAILY_ANALYSIS_HOUR_LOCAL}:00 local.`
+            : `Daily brief will become eligible after ${DAILY_ANALYSIS_HOUR_LOCAL}:00 local.`,
+    },
+  ]
+}
+
+function collectWarnings(graphRoot = getGraphRoot(), nodeCount?: number): string[] {
+  const { map } = getPaths(graphRoot)
+  const warnings: string[] = []
+  const actualNodeCount = nodeCount ?? countMarkdownFiles(getPaths(graphRoot).nodes)
+
+  if (existsSync(map)) {
+    const mapTokens = Math.ceil(readFileSync(map, 'utf-8').length / 4)
+    const mapUsage = mapTokens / 12000
+    if (mapUsage > 0.9) warnings.push(`MAP at ${Math.round(mapUsage * 100)}% of token budget`)
+  }
+
+  const nodeUsage = actualNodeCount / 750
+  if (nodeUsage > 0.8) {
+    warnings.push(`Node count at ${Math.round(nodeUsage * 100)}% of limit (${actualNodeCount}/750)`)
+  }
+
+  const lowConfidence = readIndex(graphRoot).filter((entry: any) => (entry.confidence || 0.5) < 0.3).length
+  if (lowConfidence > 0) warnings.push(`${lowConfidence} node(s) below 0.3 confidence`)
+
+  return warnings
+}
+
+function readRuntimeConfig(graphRoot = getGraphRoot()): RuntimeConfig {
+  const runtimePath = getPaths(graphRoot).runtimeConfig
+  return safeJsonParse(runtimePath) ?? {
+    mode: 'manual',
+    graphRoot,
+  }
+}
+
+function runCommand(command: string, args: string[]): { ok: boolean; stdout: string; stderr: string; error?: string } {
+  const pathEntries = Array.from(new Set([
+    ...(process.env.PATH?.split(':').filter(Boolean) ?? []),
+    ...COMMON_BIN_DIRS,
+  ]))
+  const env = {
+    ...process.env,
+    PATH: pathEntries.join(':'),
+  }
+  const resolvedCommand = command.includes('/')
+    ? command
+    : pathEntries
+        .map((dir) => join(dir, command))
+        .find((candidate) => existsSync(candidate)) || command
+
+  const run = (cmd: string, cmdArgs: string[]) => spawnSync(cmd, cmdArgs, {
+    encoding: 'utf-8',
+    env,
+  })
+
+  let result = run(resolvedCommand, args)
+
+  if (result.error?.message?.includes('EBADF')) {
+    const shellQuote = (value: string) => `'${value.replace(/'/g, `'\\''`)}'`
+    const shellCommand = [resolvedCommand, ...args].map(shellQuote).join(' ')
+    result = run('/bin/zsh', ['-lc', shellCommand])
+  }
+
+  if (result.error) {
+    return {
+      ok: false,
+      stdout: result.stdout?.trim?.() ?? '',
+      stderr: result.stderr?.trim?.() ?? '',
+      error: result.error.message,
+    }
+  }
+
+  if (typeof result.status === 'number' && result.status !== 0) {
+    return {
+      ok: false,
+      stdout: result.stdout?.trim?.() ?? '',
+      stderr: result.stderr?.trim?.() ?? '',
+      error: `command exited with code ${result.status}`,
+    }
+  }
+
+  return {
+    ok: true,
+    stdout: result.stdout?.trim?.() ?? '',
+    stderr: result.stderr?.trim?.() ?? '',
+  }
+}
+
+function getDockerState(runtime: RuntimeConfig) {
+  if (runtime.mode !== 'docker' || !runtime.docker?.containerName) return null
+
+  const dockerCheck = runCommand('docker', ['--version'])
+  if (!dockerCheck.ok) {
+    return { available: false, error: dockerCheck.error || dockerCheck.stderr || 'docker unavailable' }
+  }
+
+  const inspect = runCommand('docker', [
+    'inspect',
+    runtime.docker.containerName,
+    '--format',
+    '{{json .State}}',
+  ])
+
+  if (!inspect.ok || !inspect.stdout) {
+    return { available: true, present: false, error: inspect.stderr || inspect.error || 'container missing' }
+  }
+
+  try {
+    return { available: true, present: true, ...JSON.parse(inspect.stdout) }
+  } catch {
+    return { available: true, present: true, raw: inspect.stdout }
+  }
+}
+
+function getCodexAuthState(runtime: RuntimeConfig, dockerState: any) {
+  if (runtime.mode !== 'docker' || !runtime.docker?.containerName || !runtime.docker?.authPathInContainer) return null
+  if (!dockerState?.Running) return null
+
+  const auth = runCommand('docker', [
+    'exec',
+    '-e', `HOME=${runtime.docker.authPathInContainer}`,
+    runtime.docker.containerName,
+    'bash',
+    '-lc',
+    'codex login status',
+  ])
+
+  if (!auth.ok) {
+    return { ready: false, error: auth.stderr || auth.error || 'codex auth unavailable' }
+  }
+
+  const status = auth.stdout || auth.stderr
+  return { ready: /Logged in/i.test(status), status }
+}
+
+function isFreshDaemonHeartbeat(daemonState: any): boolean {
+  const updatedAt = daemonState?.updatedAt
+  if (!updatedAt) return false
+  const ageMs = Date.now() - Date.parse(updatedAt)
+  return Number.isFinite(ageMs) && ageMs >= 0 && ageMs < 2 * 60 * 1000
+}
+
+function inferDockerStateFromDaemon(daemonState: any) {
+  if (!daemonState?.running || !isFreshDaemonHeartbeat(daemonState)) return null
+  return {
+    available: false,
+    inferred: true,
+    Running: true,
+    Health: { Status: 'healthy' },
+    StartedAt: daemonState.updatedAt,
+  }
+}
+
+function inferCodexAuthFromJobs(graphRoot: string) {
+  const jobs = readAllJobs(graphRoot)
+  const hasSuccessfulWorker = jobs.running.length > 0 || jobs.done.length > 0
+  if (!hasSuccessfulWorker) return null
+  return {
+    ready: true,
+    inferred: true,
+    status: 'Inferred from successful Codex worker activity',
+  }
+}
+
+function readRuntimeStatus(graphRoot = getGraphRoot()) {
+  const runtime = readRuntimeConfig(graphRoot)
+  const daemonState = safeJsonParse(getPaths(graphRoot).jobs.daemonState)
+  const inspectedDockerState = getDockerState(runtime)
+  const dockerState = inspectedDockerState?.Running
+    ? inspectedDockerState
+    : (inferDockerStateFromDaemon(daemonState) ?? inspectedDockerState)
+  const inspectedCodexAuth = getCodexAuthState(runtime, dockerState)
+  const inferredCodexAuth = inferCodexAuthFromJobs(graphRoot)
+  const codexAuth = inspectedCodexAuth?.ready
+    ? inspectedCodexAuth
+    : (inferredCodexAuth ?? inspectedCodexAuth)
+
+  return {
+    mode: runtime.mode ?? 'manual',
+    graphRoot,
+    docker: runtime.mode === 'docker'
+      ? {
+          ...runtime.docker,
+          state: dockerState,
+          codexAuth,
+        }
+      : null,
+    daemonState,
+    daemonLockPresent: existsSync(getPaths(graphRoot).jobs.daemonLock),
+  }
+}
+
+function estimateTokens(text: string): number {
+  return Math.ceil(text.length / 4)
+}
+
+function getArtifactInfo(graphRoot = getGraphRoot()) {
+  const paths = getPaths(graphRoot)
+  const activeProject = readActiveProject(graphRoot)?.name || 'global'
+  const projectWorkingPath = getProjectWorkingPath(graphRoot, activeProject)
+  const layers: Array<{
+    id: StartupLayerId
+    label: string
+    subtitle: string
+    owner: 'librarian' | 'dreamer'
+    injected: boolean
+    updatedAt: string | null
+    tokens: number
+    content: string
+  }> = [
+    { id: 'priors', label: 'PRIORS.md', subtitle: 'Behavioral priors', owner: 'librarian', injected: true, updatedAt: null, tokens: 0, content: existsSync(paths.priors) ? readFileSync(paths.priors, 'utf-8') : '' },
+    { id: 'soma', label: 'SOMA.md', subtitle: 'Salience and engagement', owner: 'librarian', injected: true, updatedAt: null, tokens: 0, content: existsSync(paths.soma) ? readFileSync(paths.soma, 'utf-8') : '' },
+    { id: 'map', label: 'MAP.md', subtitle: 'Knowledge map', owner: 'librarian', injected: true, updatedAt: null, tokens: 0, content: existsSync(paths.map) ? readFileSync(paths.map, 'utf-8') : '' },
+    { id: 'working_global', label: 'WORKING Global', subtitle: 'Cross-project carryover', owner: 'librarian', injected: true, updatedAt: null, tokens: 0, content: existsSync(paths.workingGlobal) ? readFileSync(paths.workingGlobal, 'utf-8') : '' },
+    { id: 'dreams', label: 'DREAMS.md', subtitle: 'Speculative fragments', owner: 'dreamer', injected: true, updatedAt: null, tokens: 0, content: existsSync(paths.dreamsContext) ? readFileSync(paths.dreamsContext, 'utf-8') : '' },
+  ]
+
+  if (projectWorkingPath) {
+    layers.splice(4, 0, {
+      id: 'working_project',
+      label: `WORKING ${activeProject}`,
+      subtitle: 'Project-specific working memory',
+      owner: 'librarian',
+      injected: true,
+      updatedAt: null,
+      tokens: 0,
+      content: existsSync(projectWorkingPath) ? readFileSync(projectWorkingPath, 'utf-8') : '',
+    })
+  }
+
+  for (const layer of layers) {
+    const filePath = {
+      priors: paths.priors,
+      soma: paths.soma,
+      map: paths.map,
+      working_global: paths.workingGlobal,
+      working_project: projectWorkingPath,
+      dreams: paths.dreamsContext,
+    }[layer.id] || ''
+    if (existsSync(filePath)) {
+      layer.updatedAt = statSync(filePath).mtime.toISOString()
+      layer.tokens = estimateTokens(layer.content)
+    }
+  }
+
+  return layers
+}
+
+function getPinnedNodes(graphRoot = getGraphRoot()) {
+  const activeProject = readActiveProject(graphRoot)?.name || 'global'
+  const index = readIndex(graphRoot)
+  const indexedPinned = index
+    .filter((entry: any) => entry.pinned)
+    .filter((entry: any) => !entry.project || entry.project === activeProject)
+    .slice(0, 12)
+
+  const entries = indexedPinned.length > 0
+    ? indexedPinned
+    : walkNodeFiles(getPaths(graphRoot).nodes)
+        .map(({ nodePath, filePath }) => {
+          try {
+            const raw = readFileSync(filePath, 'utf-8')
+            const { data, content } = matter(raw)
+            if (data.pinned !== true) return null
+            if (data.project && data.project !== activeProject) return null
+            return {
+              path: nodePath,
+              gist: data.gist || '',
+              project: data.project || 'global',
+              _detail: {
+                frontmatter: data,
+                content: content.trim(),
+                raw,
+              },
+            }
+          } catch {
+            return null
+          }
+        })
+        .filter(Boolean)
+        .slice(0, 12)
+
+  return entries
+    .map((entry: any) => {
+      const detail = entry._detail || readNodeFileForGraph(graphRoot, entry.path)
+      const content = detail?.content || ''
+      return {
+        path: entry.path,
+        title: detail?.frontmatter?.title || entry.path,
+        gist: entry.gist || '',
+        project: entry.project || 'global',
+        updatedAt: detail?.frontmatter?.updated || null,
+        tokens: estimateTokens(content),
+        contentPreview: content.slice(0, 280),
+      }
+    })
+}
+
+function countAllPinnedNodes(graphRoot = getGraphRoot()) {
+  const indexedPinnedCount = readIndex(graphRoot).filter((entry: any) => entry.pinned).length
+  if (indexedPinnedCount > 0) {
+    return indexedPinnedCount
+  }
+
+  return walkNodeFiles(getPaths(graphRoot).nodes).reduce((count, { filePath }) => {
+    try {
+      const raw = readFileSync(filePath, 'utf-8')
+      const { data } = matter(raw)
+      return data.pinned === true ? count + 1 : count
+    } catch {
+      return count
+    }
+  }, 0)
+}
+
+function summarizeJob(job: JobRecord, graphRoot = getGraphRoot()) {
+  const startedAt = job.startedAt || job.createdAt
+  const finishedAt = job.completedAt || null
+  const endTs = finishedAt ? Date.parse(finishedAt) : (job.state === 'running' ? Date.now() : Date.parse(startedAt))
+  const durationMs = Math.max(0, endTs - Date.parse(startedAt))
+  const fullLogPath = job.logFile
+    ? (job.logFile.startsWith('/graph-memory/')
+        ? join(graphRoot, job.logFile.replace('/graph-memory/', ''))
+        : job.logFile)
+    : null
+
+  const logExists = fullLogPath ? existsSync(fullLogPath) : false
+  const logSize = logExists ? statSync(fullLogPath!).size : 0
+  const displayState = isScribeNoop(job) ? 'noop' : job.state
+  const displayMessage = isScribeNoop(job)
+    ? 'No new deltas were extracted from this snapshot.'
+    : (job.lastError ?? null)
+
+  return {
+    ...job,
+    startedAt,
+    completedAt: finishedAt,
+    durationMs,
+    logFile: job.logFile ?? null,
+    logPath: fullLogPath ? relative(graphRoot, fullLogPath) : null,
+    logFilename: fullLogPath ? relative(getPaths(graphRoot).pipelineLogs, fullLogPath) : null,
+    logExists,
+    logSize,
+    logTail: logExists ? readTextTail(fullLogPath!, 40) : '',
+    displayState,
+    displayMessage,
+  }
+}
+
+function listPipelineJobs(graphRoot = getGraphRoot()) {
+  const allJobs = readAllJobs(graphRoot)
+  return [...allJobs.running, ...allJobs.queued, ...allJobs.failed, ...allJobs.done]
+    .map((job) => summarizeJob(job, graphRoot))
+    .sort((a, b) => Date.parse(b.startedAt || b.createdAt) - Date.parse(a.startedAt || a.createdAt))
+    .slice(0, 30)
+}
+
+function listWorkerLogs(graphRoot = getGraphRoot()) {
+  const logsDir = getPaths(graphRoot).pipelineLogs
+  if (!existsSync(logsDir)) return []
+
+  return readdirSync(logsDir)
+    .filter((file) => file.endsWith('.log'))
+    .map((file) => {
+      const filePath = join(logsDir, file)
+      const stat = statSync(filePath)
+      const content = readFileSync(filePath, 'utf-8')
+      const parsed = parseWorkerLog(content, file)
+      return {
+        filename: file,
+        size: stat.size,
+        updatedAt: stat.mtime.toISOString(),
+        preview: readTextPreview(filePath, 10),
+        parsed,
+      }
+    })
+    .sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt))
+    .slice(0, 40)
+}
+
+function parseWorkerLog(content: string, filename: string): ParsedWorkerLog {
+  const lines = content.split('\n')
+  const valueAfter = (prefix: string) => {
+    const line = lines.find((entry) => entry.startsWith(prefix))
+    return line ? line.slice(prefix.length).trim() : null
+  }
+
+  const stage = filename.split('-')[0] || null
+  const taskIdx = lines.findIndex((line) => line.trim() === 'user')
+  const warningIdx = lines.findIndex((line) => line.startsWith('warning:'))
+  const taskLines = taskIdx >= 0
+    ? lines.slice(taskIdx + 1, warningIdx >= 0 ? warningIdx : taskIdx + 8).filter(Boolean)
+    : []
+
+  const codexNotes = lines
+    .map((line, index) => ({ line, index }))
+    .filter(({ line }) => line.trim() === 'codex')
+    .map(({ index }) => lines[index + 1]?.trim())
+    .filter(Boolean)
+    .slice(-3) as string[]
+
+  const recentSteps = lines
+    .filter((line) => {
+      const trimmed = line.trim()
+      return trimmed.startsWith('exec') ||
+        trimmed.startsWith('succeeded in') ||
+        trimmed.startsWith('exited ') ||
+        trimmed.startsWith('failed in') ||
+        trimmed.startsWith('/bin/bash -lc')
+    })
+    .slice(-12)
+
+  return {
+    stage,
+    model: valueAfter('model:'),
+    sessionId: valueAfter('session id:'),
+    workdir: valueAfter('workdir:'),
+    approval: valueAfter('approval:'),
+    sandbox: valueAfter('sandbox:'),
+    provider: valueAfter('provider:'),
+    reasoningEffort: valueAfter('reasoning effort:'),
+    task: taskLines.join(' ').trim() || null,
+    codexNotes,
+    recentSteps,
+  }
+}
+
 app.get('/api/graph', (_req, res) => {
   try {
     const index = readIndex()
@@ -77,21 +1087,18 @@ app.get('/api/graph', (_req, res) => {
       })
     }
 
-    // Collect edges from index
     for (const node of index) {
-      const edges = node.edges ?? []
-      for (const edge of edges) {
+      for (const edge of node.edges ?? []) {
         const target = typeof edge === 'string' ? edge : edge.target
         const weight = typeof edge === 'string' ? 0.5 : (edge.weight ?? 0.5)
         const type = typeof edge === 'string' ? 'relates_to' : (edge.type ?? 'relates_to')
-        // Only add edge if target exists in index
-        if (index.some((n: any) => n.path === target)) {
+        if (index.some((entry: any) => entry.path === target)) {
           cytoscapeElements.push({
             group: 'edges',
             data: {
               id: `${node.path}->${target}`,
               source: node.path,
-              target: target,
+              target,
               weight,
               edgeType: type,
             },
@@ -99,19 +1106,17 @@ app.get('/api/graph', (_req, res) => {
         }
       }
 
-      // Anti-edges
-      const antiEdges = node.anti_edges ?? []
-      for (const ae of antiEdges) {
-        const target = typeof ae === 'string' ? ae : ae.target
-        if (target && index.some((n: any) => n.path === target)) {
+      for (const edge of node.anti_edges ?? []) {
+        const target = typeof edge === 'string' ? edge : edge.target
+        if (target && index.some((entry: any) => entry.path === target)) {
           cytoscapeElements.push({
             group: 'edges',
             data: {
               id: `${node.path}-x->${target}`,
               source: node.path,
-              target: target,
+              target,
               anti: true,
-              reason: typeof ae === 'string' ? '' : ae.reason || '',
+              reason: typeof edge === 'string' ? '' : edge.reason || '',
             },
           })
         }
@@ -125,148 +1130,290 @@ app.get('/api/graph', (_req, res) => {
   }
 })
 
-// Full node detail
 app.get('/api/node/:path(*)', (req, res) => {
   try {
-    const nodePath = req.params.path
-    const node = readNodeFile(nodePath)
+    const node = readNodeFile(req.params.path)
     if (!node) return res.status(404).json({ error: 'Node not found' })
-
-    // Also get index entry for extra metadata
-    const index = readIndex()
-    const indexEntry = index.find((n: any) => n.path === nodePath)
-
+    const indexEntry = readIndex().find((entry: any) => entry.path === req.params.path)
     res.json({ ...node, indexEntry })
-  } catch (err) {
+  } catch {
     res.status(500).json({ error: 'Internal server error' })
   }
 })
 
-// Pipeline status
 app.get('/api/status', (_req, res) => {
   try {
-    const dirtyPath = join(GRAPH_ROOT, '.dirty-session')
-    const consolidationPath = join(GRAPH_ROOT, '.consolidation-pending')
-    const bufferDir = join(GRAPH_ROOT, '.buffer')
-    const scribePendingPath = join(GRAPH_ROOT, '.scribe-pending')
-
-    const dirty = existsSync(dirtyPath) ? safeJsonParse(dirtyPath) : null
-    const consolidationPending = existsSync(consolidationPath) ? safeJsonParse(consolidationPath) : null
-
-    // Count actual messages in conversation.jsonl (not file count)
-    const conversationLog = join(bufferDir, 'conversation.jsonl')
-    let bufferCount = 0
-    if (existsSync(conversationLog)) {
-      const content = readFileSync(conversationLog, 'utf-8').trim()
-      bufferCount = content ? content.split('\n').filter(Boolean).length : 0
-    }
-
-    const scribePending = existsSync(scribePendingPath) ? 1 : 0
-
-    const index = readIndex()
+    const graphRoot = getGraphRoot()
+    const nodeCount = countMarkdownFiles(getPaths(graphRoot).nodes)
+    const jobs = readAllJobs(graphRoot)
+    const runtime = readRuntimeStatus(graphRoot)
+    const activeProject = readActiveProject(graphRoot)
 
     res.json({
-      dirty,
-      consolidationPending,
-      bufferCount,
-      scribePending,
-      nodeCount: index.length,
+      graphRoot,
+      initialized: existsSync(getPaths(graphRoot).map),
+      activeProject: activeProject?.name ?? 'global',
+      nodeCount,
+      archiveCount: countMarkdownFiles(getPaths(graphRoot).archive),
+      bufferCount: readBufferCount(graphRoot),
+      pendingDreams: countPendingDreams(graphRoot),
+      queuedJobs: jobs.totals.queued,
+      runningJobs: jobs.totals.running,
+      failedJobs: jobs.totals.failed,
+      noopJobs: jobs.totals.noop,
+      rawFailedJobs: jobs.totals.rawFailed,
+      completedJobs: jobs.totals.done,
+      jobCounts: jobs.byType,
+      pipelineCutoffs: buildPipelineCutoffs(graphRoot, jobs),
+      warnings: collectWarnings(graphRoot, nodeCount),
+      runtime,
     })
   } catch (err) {
+    console.error('Error in /api/status:', err)
     res.status(500).json({ error: 'Internal server error' })
   }
 })
 
-// Activity feed — last N events from JSONL log
+app.get('/api/startup-context', (_req, res) => {
+  try {
+    const graphRoot = getGraphRoot()
+    const layers = getArtifactInfo(graphRoot)
+    const pinnedNodes = getPinnedNodes(graphRoot)
+    const totalTokens = layers.reduce((sum, layer) => sum + layer.tokens, 0) + pinnedNodes.reduce((sum, node) => sum + node.tokens, 0)
+
+    res.json({
+      graphRoot,
+      activeProject: readActiveProject(graphRoot)?.name || 'global',
+      layers,
+      pinnedNodes,
+      allPinnedNodeCount: countAllPinnedNodes(graphRoot),
+      totalTokens,
+    })
+  } catch (err) {
+    console.error('Error in /api/startup-context:', err)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
+app.get('/api/briefs/latest', (_req, res) => {
+  try {
+    res.json(getLatestBrief())
+  } catch (err) {
+    console.error('Error in /api/briefs/latest:', err)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
+app.get('/api/session-traces', (_req, res) => {
+  try {
+    res.json(listSessionTraces())
+  } catch (err) {
+    console.error('Error in /api/session-traces:', err)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
 app.get('/api/activity', (req, res) => {
   try {
     const limit = Math.min(parseInt(req.query.limit as string) || 200, 1000)
-    const logPath = join(GRAPH_ROOT, '.logs', 'activity.jsonl')
+    const logPath = getPaths().activityLog
     if (!existsSync(logPath)) return res.json([])
     const lines = readFileSync(logPath, 'utf-8').trim().split('\n').filter(Boolean)
-    const tail = lines.slice(-limit)
-    const events = tail.map((l) => { try { return JSON.parse(l) } catch { return null } }).filter(Boolean)
+    const events = lines.slice(-limit).map((line) => {
+      try { return JSON.parse(line) } catch { return null }
+    }).filter(Boolean)
     res.json(events)
-  } catch (err) {
+  } catch {
     res.status(500).json({ error: 'Internal server error' })
   }
 })
 
-// Delta files listing
 app.get('/api/deltas', (_req, res) => {
   try {
-    const deltasDir = join(GRAPH_ROOT, '.deltas')
+    const deltasDir = getPaths().deltas
     if (!existsSync(deltasDir)) return res.json([])
-    const files = readdirSync(deltasDir).filter((f) => f.endsWith('.json'))
-    const summaries = files.map((f) => {
-      const data = safeJsonParse(join(deltasDir, f))
+    const files = readdirSync(deltasDir).filter((file) => file.endsWith('.json'))
+    const summaries = files.map((file) => {
+      const data = safeJsonParse(join(deltasDir, file))
       if (!data) return null
       return {
-        filename: f,
-        sessionId: data.sessionId ?? f.replace('.json', ''),
+        filename: file,
+        sessionId: data.sessionId ?? data.session_id ?? file.replace('.json', ''),
         scribes: Array.isArray(data.scribes) ? data.scribes.length : 0,
-        deltas: Array.isArray(data.deltas) ? data.deltas.length : (Array.isArray(data.scribes) ? data.scribes.reduce((n: number, s: any) => n + (s.deltas?.length ?? 0), 0) : 0),
-        timestamp: data.timestamp ?? data.created ?? null,
+        deltas: Array.isArray(data.deltas)
+          ? data.deltas.length
+          : (Array.isArray(data.scribes) ? data.scribes.reduce((count: number, s: any) => count + (s.deltas?.length ?? 0), 0) : 0),
+        timestamp: data.timestamp ?? data.created ?? data.started_at ?? null,
       }
     }).filter(Boolean)
     res.json(summaries)
-  } catch (err) {
+  } catch {
     res.status(500).json({ error: 'Internal server error' })
   }
 })
 
-// Single delta file detail
+app.get('/api/deltas/audited', (_req, res) => {
+  try {
+    const auditedDir = join(getPaths().deltas, 'audited')
+    if (!existsSync(auditedDir)) return res.json([])
+    const files = readdirSync(auditedDir).filter((file) => file.endsWith('.json'))
+    const summaries = files.map((file) => {
+      const data = safeJsonParse(join(auditedDir, file))
+      if (!data) return null
+      return {
+        filename: file,
+        sessionId: data.sessionId ?? data.session_id ?? file.replace('.json', ''),
+        scribes: Array.isArray(data.scribes) ? data.scribes.length : 0,
+        deltas: Array.isArray(data.deltas)
+          ? data.deltas.length
+          : (Array.isArray(data.scribes) ? data.scribes.reduce((count: number, s: any) => count + (s.deltas?.length ?? 0), 0) : 0),
+        timestamp: data.timestamp ?? data.created ?? data.started_at ?? null,
+      }
+    }).filter(Boolean)
+    res.json(summaries)
+  } catch {
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
+app.get('/api/deltas/audited/:sessionId', (req, res) => {
+  try {
+    const auditedDir = join(getPaths().deltas, 'audited')
+    const filePath = resolve(auditedDir, `${req.params.sessionId}.json`)
+    if (!filePath.startsWith(resolve(auditedDir))) return res.status(403).json({ error: 'Forbidden' })
+    if (!existsSync(filePath)) return res.status(404).json({ error: 'Not found' })
+    res.json(safeJsonParse(filePath))
+  } catch {
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
 app.get('/api/deltas/:sessionId', (req, res) => {
   try {
-    const deltasDir = join(GRAPH_ROOT, '.deltas')
-    const filePath = join(deltasDir, `${req.params.sessionId}.json`)
-    const resolved = resolve(filePath)
-    if (!resolved.startsWith(resolve(deltasDir))) return res.status(403).json({ error: 'Forbidden' })
-    if (!existsSync(resolved)) return res.status(404).json({ error: 'Not found' })
-    res.json(safeJsonParse(resolved))
-  } catch (err) {
+    const deltasDir = getPaths().deltas
+    const filePath = resolve(deltasDir, `${req.params.sessionId}.json`)
+    if (!filePath.startsWith(resolve(deltasDir))) return res.status(403).json({ error: 'Forbidden' })
+    if (!existsSync(filePath)) return res.status(404).json({ error: 'Not found' })
+    res.json(safeJsonParse(filePath))
+  } catch {
     res.status(500).json({ error: 'Internal server error' })
   }
 })
 
-// Dreams listing grouped by bucket
 app.get('/api/dreams', (_req, res) => {
   try {
-    const dreamsDir = join(GRAPH_ROOT, 'dreams')
+    const dreamsDir = getPaths().dreams
     const buckets = ['pending', 'integrated', 'archived']
     const result: Record<string, any[]> = {}
+
     for (const bucket of buckets) {
       const dir = join(dreamsDir, bucket)
-      if (!existsSync(dir)) { result[bucket] = []; continue }
-      const files = readdirSync(dir).filter((f) => f.endsWith('.json') || f.endsWith('.md'))
-      result[bucket] = files.map((f) => {
-        if (f.endsWith('.json')) {
-          const data = safeJsonParse(join(dir, f))
-          return data ? { filename: f, bucket, ...data } : { filename: f, bucket }
-        }
-        const raw = readFileSync(join(dir, f), 'utf-8')
-        const { data, content } = matter(raw)
-        return { filename: f, bucket, ...data, content: content.trim().slice(0, 500) }
-      })
+      if (!existsSync(dir)) {
+        result[bucket] = []
+        continue
+      }
+      result[bucket] = readdirSync(dir)
+        .filter((file) => file.endsWith('.json') || file.endsWith('.md'))
+        .map((file) => {
+          const filePath = join(dir, file)
+          if (file.endsWith('.json')) {
+            return { filename: file, bucket, ...(safeJsonParse(filePath) ?? {}) }
+          }
+          const raw = readFileSync(filePath, 'utf-8')
+          const { data, content } = matter(raw)
+          return { filename: file, bucket, ...data, content: content.trim().slice(0, 500) }
+        })
     }
+
     res.json(result)
-  } catch (err) {
+  } catch {
     res.status(500).json({ error: 'Internal server error' })
   }
 })
 
-// Raw MAP.md
-app.get('/api/map', (_req, res) => {
+app.get('/api/archive', (_req, res) => {
   try {
-    const mapPath = join(GRAPH_ROOT, 'MAP.md')
-    if (!existsSync(mapPath)) return res.status(404).json({ error: 'MAP.md not found' })
-    res.type('text/plain').send(readFileSync(mapPath, 'utf-8'))
-  } catch (err) {
+    const archiveIndex = safeJsonParse(getPaths().archiveIndex)
+    res.json(archiveIndex ?? [])
+  } catch {
     res.status(500).json({ error: 'Internal server error' })
   }
 })
 
-// --- SSE for real-time updates ---
+for (const [route, fileKey] of [
+  ['/api/map', 'map'],
+  ['/api/priors', 'priors'],
+  ['/api/soma', 'soma'],
+  ['/api/working', 'working'],
+  ['/api/dreams-context', 'dreamsContext'],
+] as const) {
+  app.get(route, (_req, res) => {
+    try {
+      const filePath = getPaths()[fileKey]
+      if (!existsSync(filePath)) return res.type('text/plain').send('')
+      res.type('text/plain').send(readFileSync(filePath, 'utf-8'))
+    } catch {
+      res.status(500).json({ error: 'Internal server error' })
+    }
+  })
+}
+
+app.get('/api/working/projects', (_req, res) => {
+  try {
+    res.json(listProjectWorkingFiles())
+  } catch {
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
+app.get('/api/audit', (_req, res) => {
+  try {
+    const paths = getPaths()
+    res.json({
+      brief: existsSync(paths.auditBrief) ? readFileSync(paths.auditBrief, 'utf-8') : null,
+      report: existsSync(paths.auditReport) ? safeJsonParse(paths.auditReport) : null,
+    })
+  } catch {
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
+app.get('/api/pipeline', (_req, res) => {
+  try {
+    res.json(listPipelineJobs())
+  } catch (err) {
+    console.error('Error in /api/pipeline:', err)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
+app.get('/api/logs', (_req, res) => {
+  try {
+    res.json(listWorkerLogs())
+  } catch {
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
+app.get('/api/logs/:filename(*)', (req, res) => {
+  try {
+    const logsDir = getPaths().pipelineLogs
+    const filePath = resolve(logsDir, req.params.filename)
+    if (!filePath.startsWith(resolve(logsDir))) return res.status(403).json({ error: 'Forbidden' })
+    if (!existsSync(filePath)) return res.status(404).json({ error: 'Log not found' })
+    const stat = statSync(filePath)
+    const content = readFileSync(filePath, 'utf-8')
+    res.json({
+      filename: req.params.filename,
+      size: stat.size,
+      updatedAt: stat.mtime.toISOString(),
+      content,
+      parsed: parseWorkerLog(content, req.params.filename),
+    })
+  } catch {
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
 
 const clients = new Set<express.Response>()
 let debounceTimer: ReturnType<typeof setTimeout> | null = null
@@ -276,6 +1423,7 @@ app.get('/api/events', (_req, res) => {
     res.status(503).json({ error: 'Too many connections' })
     return
   }
+
   res.writeHead(200, {
     'Content-Type': 'text/event-stream',
     'Cache-Control': 'no-cache',
@@ -289,55 +1437,79 @@ app.get('/api/events', (_req, res) => {
 function broadcast(type: string) {
   if (debounceTimer) clearTimeout(debounceTimer)
   debounceTimer = setTimeout(() => {
-    const msg = `data: ${JSON.stringify({ type })}\n\n`
-    for (const client of clients) {
-      client.write(msg)
-    }
-  }, 500)
+    const payload = `data: ${JSON.stringify({ type })}\n\n`
+    for (const client of clients) client.write(payload)
+  }, 300)
 }
 
-// Watch graph-memory for changes
-const watcher = watch(GRAPH_ROOT, {
+const initialGraphRoot = getGraphRoot()
+const watcher = watch([
+  initialGraphRoot,
+  getPointerConfigPath(),
+], {
   ignoreInitial: true,
   ignored: /(^|[\/\\])\.git(\/|$)/,
-  depth: 4,
+  depth: 5,
 })
 
-watcher
-  .on('add', (path) => {
-    if (path.includes('activity.jsonl')) {
-      broadcast('activity')
-    } else if (path.includes('.deltas/') || path.includes('dreams/')) {
-      broadcast('deltas')
-    } else if (path.includes('.dirty-session') || path.includes('.consolidation-pending') || path.includes('.scribe-pending')) {
-      broadcast('status')
-    } else if (path.endsWith('.md') || path.endsWith('.json')) {
-      broadcast('graph')
-    }
-  })
-  .on('change', (path) => {
-    if (path.includes('activity.jsonl')) {
-      broadcast('activity')
-    } else if (path.includes('.deltas/') || path.includes('dreams/')) {
-      broadcast('deltas')
-    } else if (path.includes('.index.json') || path.includes('MAP.md')) {
-      broadcast('graph')
-    } else if (path.includes('.dirty-session') || path.includes('.consolidation-pending')) {
-      broadcast('status')
-    } else if (path.endsWith('.md')) {
-      broadcast('node')
-    }
-  })
-  .on('unlink', (path) => {
-    if (path.includes('.deltas/') || path.includes('dreams/')) {
-      broadcast('deltas')
-    } else if (path.includes('.dirty-session') || path.includes('.consolidation-pending') || path.includes('.scribe-pending')) {
-      broadcast('status')
-    } else if (path.endsWith('.md')) {
-      broadcast('graph')
-    }
-  })
+watcher.on('all', (_event, changedPath) => {
+  if (changedPath.includes('.pipeline-logs/')) {
+    broadcast('pipeline')
+    broadcast('logs')
+    return
+  }
+  if (changedPath.includes('.jobs/')) {
+    broadcast('status')
+    broadcast('pipeline')
+    return
+  }
+  if (changedPath.endsWith('.runtime-config.json') || changedPath.includes('.active-projects/')) {
+    broadcast('status')
+    return
+  }
+  if (changedPath.includes('activity.jsonl')) {
+    broadcast('activity')
+    return
+  }
+  if (changedPath.includes('.deltas/') || changedPath.includes('/dreams/')) {
+    broadcast('deltas')
+    broadcast('status')
+    return
+  }
+  if (
+    changedPath.endsWith('.index.json') ||
+    changedPath.endsWith('MAP.md') ||
+    changedPath.endsWith('PRIORS.md') ||
+    changedPath.endsWith('SOMA.md') ||
+    changedPath.endsWith('WORKING.md') ||
+    changedPath.includes('/working/') ||
+    changedPath.endsWith('DREAMS.md') ||
+    changedPath.includes('/briefs/') ||
+    changedPath.includes('/nodes/') ||
+    changedPath.includes('/archive/')
+  ) {
+    broadcast('graph')
+    broadcast('status')
+    return
+  }
+  if (changedPath.endsWith('conversation.jsonl')) {
+    broadcast('status')
+  }
+})
 
-app.listen(PORT, () => {
-  console.log(`Memory API running on http://localhost:${PORT}`)
+const server = app.listen(PORT, () => {
+  console.log(`Memory dashboard server listening on http://localhost:${PORT}`)
+  console.log(`Graph root: ${initialGraphRoot}`)
+})
+
+server.on('error', (error: NodeJS.ErrnoException) => {
+  if (error.code === 'EADDRINUSE') {
+    console.error(
+      `Memory dashboard API port ${PORT} is already in use. ` +
+      `Stop the existing process or restart with MEMORY_DASHBOARD_API_PORT set to a different port.`,
+    )
+    process.exit(1)
+  }
+
+  throw error
 })

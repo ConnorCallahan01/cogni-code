@@ -8,14 +8,17 @@ import { activityBus } from "./events.js";
 import { safePath, countFiles as countFilesUtil } from "./utils.js";
 import { listCommits, revertTo, autoCommit } from "./git.js";
 import { somaBoost } from "./soma.js";
+import { overlap, recencyBoost, projectBoost } from "./scoring.js";
 import { applyDeltas } from "./pipeline/mechanical-apply.js";
 import { buildLibrarianInput } from "./pipeline/librarian.js";
 import { buildDreamerInput } from "./pipeline/dreamer.js";
-import { fullRegenerateMAP, rebuildIndex, regenerateAllContextFiles, validateEdgeType } from "./pipeline/graph-ops.js";
+import { fullRegenerateMAP, rebuildIndex, rebuildArchiveIndex, regenerateAllContextFiles, regenerateCoreContextFiles, validateEdgeType } from "./pipeline/graph-ops.js";
 import { runDecay } from "./pipeline/decay.js";
 import { updateManifest } from "./manifest.js";
 import { clearConsolidationPending } from "./dirty-state.js";
 import { readActiveProject } from "./project.js";
+import { countJobs } from "./pipeline/job-queue.js";
+import { getRuntimeStatus, GraphMemoryRuntimeMode, saveRuntimeConfig } from "./runtime.js";
 
 // --- Index cache ---
 let indexCache: { data: any[]; mtime: number } | null = null;
@@ -50,8 +53,17 @@ export async function handleGraphMemory(args: {
   confidence?: number;
   edges?: Array<{ target: string; type: string; weight?: number }>;
   soma?: { valence: string; intensity: number; marker: string };
+  pinned?: boolean;
   depth?: number;
   project?: string;
+  runtimeMode?: string;
+  containerName?: string;
+  imageName?: string;
+  authVolume?: string;
+  graphRootInContainer?: string;
+  authPathInContainer?: string;
+  memoryLimit?: string;
+  cpuLimit?: string;
 }): Promise<{ content: Array<{ type: "text"; text: string }>; isError?: boolean }> {
   const { action } = args;
 
@@ -78,11 +90,15 @@ export async function handleGraphMemory(args: {
       return revertGraph(args.path);
     case "consolidate":
       return runConsolidation();
+    case "resurface":
+      return resurfaceNode(args.path);
     case "initialize":
       return initializeGraphAction(args.graphRoot);
+    case "configure_runtime":
+      return configureRuntime(args);
     default:
       return {
-        content: [{ type: "text", text: `Unknown action: ${action}. Available: read_node, search, recall, list_edges, read_dream, write_note, remember, status, history, revert, consolidate, initialize` }],
+        content: [{ type: "text", text: `Unknown action: ${action}. Available: read_node, search, recall, list_edges, read_dream, write_note, remember, resurface, status, history, revert, consolidate, initialize, configure_runtime` }],
         isError: true,
       };
   }
@@ -99,6 +115,7 @@ function rememberNode(args: {
   confidence?: number;
   edges?: Array<{ target: string; type: string; weight?: number }>;
   soma?: { valence: string; intensity: number; marker: string };
+  pinned?: boolean;
   project?: string;
 }): { content: Array<{ type: "text"; text: string }>; isError?: boolean } {
   if (!args.path) {
@@ -153,6 +170,11 @@ function rememberNode(args: {
         parsed.data.soma = args.soma;
       }
 
+      // Update pinned if provided
+      if (args.pinned !== undefined) {
+        parsed.data.pinned = args.pinned;
+      }
+
       // Append content if different
       if (args.content && !parsed.content.includes(args.content.slice(0, 100))) {
         parsed.content = parsed.content.trimEnd() + `\n\n---\n\n${args.content}`;
@@ -196,6 +218,9 @@ function rememberNode(args: {
   if (args.project) {
     fm.project = args.project;
   }
+  if (args.pinned === true) {
+    fm.pinned = true;
+  }
 
   if (args.edges && args.edges.length > 0) {
     fm.edges = args.edges.map(e => ({
@@ -227,8 +252,8 @@ function updateIndexEntry(nodePath: string, fm: any) {
     const entry: Record<string, any> = {
       path: nodePath,
       gist: (fm.gist || "").slice(0, 200),
-      tags: fm.tags || [],
-      keywords: fm.keywords || [],
+      tags: (fm.tags || []).map((t: any) => String(t)),
+      keywords: (fm.keywords || []).map((k: any) => String(k)),
       edges: (fm.edges || [])
         .map((e: any) => ({ target: e.target, type: e.type || "relates_to", weight: e.weight ?? 0.5 }))
         .filter((e: any) => e.target),
@@ -238,12 +263,15 @@ function updateIndexEntry(nodePath: string, fm: any) {
       confidence: typeof fm.confidence === "number" ? fm.confidence : 0.5,
       soma_intensity: fm.soma?.intensity || 0,
       updated: fm.updated || fm.created || null,
-      last_accessed: fm.last_accessed || new Date().toISOString(),
+      last_accessed: fm.last_accessed || fm.updated || fm.created || new Date().toISOString(),
       access_count: fm.access_count || 0,
       dream_refs: fm.dream_refs || [],
     };
     if (fm.project) {
       entry.project = fm.project;
+    }
+    if (fm.pinned) {
+      entry.pinned = true;
     }
     if (existing !== -1) {
       index[existing] = entry;
@@ -253,15 +281,6 @@ function updateIndexEntry(nodePath: string, fm: any) {
     fs.writeFileSync(CONFIG.paths.index, JSON.stringify(index, null, 2));
     indexCache = null;
   } catch { /* non-critical */ }
-}
-
-// --- Project boost for search scoring ---
-
-function projectBoost(entryProject: string | undefined, currentProject: string | undefined): number {
-  if (!entryProject) return 1.0; // Global node — always relevant
-  if (!currentProject || currentProject === "global") return 1.0; // No project context
-  if (entryProject === currentProject) return 1.3; // Project match bonus
-  return 0.7; // Other project — slightly demoted
 }
 
 // --- recall action ---
@@ -284,8 +303,8 @@ function recallGraph(query?: string, depth?: number): { content: Array<{ type: "
   const results = index
     .map((entry: any) => {
       const gistTokens = (entry.gist || "").toLowerCase().split(/\s+/);
-      const tagTokens = (entry.tags || []).map((t: string) => t.toLowerCase());
-      const keywordTokens = (entry.keywords || []).map((k: string) => k.toLowerCase());
+      const tagTokens = (entry.tags || []).map((t: any) => String(t).toLowerCase());
+      const keywordTokens = (entry.keywords || []).map((k: any) => String(k).toLowerCase());
 
       const gistScore = overlap(queryTokens, gistTokens) * 3;
       const tagScore = overlap(queryTokens, tagTokens) * 2;
@@ -303,7 +322,38 @@ function recallGraph(query?: string, depth?: number): { content: Array<{ type: "
     .sort((a: any, b: any) => b.relevance - a.relevance)
     .slice(0, 5);
 
-  if (results.length === 0) {
+  // Archive fallback: if live results are sparse, search cold storage
+  if (results.length < 5) {
+    try {
+      const archiveIndexPath = CONFIG.paths.archiveIndex;
+      if (fs.existsSync(archiveIndexPath)) {
+        const archiveIndex = JSON.parse(fs.readFileSync(archiveIndexPath, "utf-8"));
+        const archiveResults = archiveIndex
+          .map((entry: any) => {
+            const gistTokens = (entry.gist || "").toLowerCase().split(/\s+/);
+            const tagTokens = (entry.tags || []).map((t: any) => String(t).toLowerCase());
+            const keywordTokens = (entry.keywords || []).map((k: any) => String(k).toLowerCase());
+
+            const gistScore = overlap(queryTokens, gistTokens) * 3;
+            const tagScore = overlap(queryTokens, tagTokens) * 2;
+            const keywordScore = overlap(queryTokens, keywordTokens) * 1;
+
+            const baseRelevance = (gistScore + tagScore + keywordScore) * (entry.confidence || 0.5);
+            const relevance = baseRelevance * 0.5; // Archive penalty
+            return { ...entry, relevance };
+          })
+          .filter((e: any) => e.relevance > 0.05)
+          .sort((a: any, b: any) => b.relevance - a.relevance)
+          .slice(0, 5 - results.length);
+
+        if (archiveResults.length > 0) {
+          (results as any).__archiveMatches = archiveResults;
+        }
+      }
+    } catch { /* non-critical */ }
+  }
+
+  if (results.length === 0 && !(results as any).__archiveMatches?.length) {
     return { content: [{ type: "text", text: `No results for: "${query}"` }] };
   }
 
@@ -359,7 +409,61 @@ function recallGraph(query?: string, depth?: number): { content: Array<{ type: "
     }
   }
 
+  // Append archived matches if any
+  const archiveMatches = (results as any).__archiveMatches;
+  if (archiveMatches && archiveMatches.length > 0) {
+    sections.push("\n## Archived Matches\n");
+    for (const a of archiveMatches) {
+      sections.push(`- [ARCHIVED] **${a.path}** (relevance: ${a.relevance.toFixed(2)}, confidence: ${a.confidence}, reason: ${a.archived_reason || "unknown"})\n  ${a.gist}`);
+    }
+  }
+
   return { content: [{ type: "text", text: sections.join("\n") }] };
+}
+
+// --- resurface action ---
+
+function resurfaceNode(nodePath?: string): { content: Array<{ type: "text"; text: string }>; isError?: boolean } {
+  if (!nodePath) {
+    return { content: [{ type: "text", text: "Error: path required for resurface" }], isError: true };
+  }
+
+  const archivePath = safePath(CONFIG.paths.archive, nodePath, ".md");
+  if (!archivePath || !fs.existsSync(archivePath)) {
+    return { content: [{ type: "text", text: `Archived node not found: ${nodePath}` }], isError: true };
+  }
+
+  try {
+    const raw = fs.readFileSync(archivePath, "utf-8");
+    const parsed = matter(raw);
+
+    // Reset confidence, remove archive metadata
+    parsed.data.confidence = 0.5;
+    delete parsed.data.archived_reason;
+    delete parsed.data.archived_date;
+    parsed.data.updated = new Date().toISOString().slice(0, 10);
+
+    // Move back to nodes/
+    const destPath = safePath(CONFIG.paths.nodes, nodePath, ".md");
+    if (!destPath) {
+      return { content: [{ type: "text", text: `Invalid destination path: ${nodePath}` }], isError: true };
+    }
+    const destDir = path.dirname(destPath);
+    if (!fs.existsSync(destDir)) fs.mkdirSync(destDir, { recursive: true });
+
+    fs.writeFileSync(destPath, matter.stringify(parsed.content, parsed.data));
+    fs.unlinkSync(archivePath);
+
+    // Rebuild both indexes
+    rebuildIndex();
+    rebuildArchiveIndex();
+    fullRegenerateMAP();
+
+    activityBus.log("graph:node_resurfaced", `Resurfaced: ${nodePath} (confidence reset to 0.5)`);
+    return { content: [{ type: "text", text: `Resurfaced node: ${nodePath} — confidence reset to 0.5, moved back to active graph.` }] };
+  } catch (err: any) {
+    return { content: [{ type: "text", text: `Error resurfacing node: ${err.message}` }], isError: true };
+  }
 }
 
 // --- consolidate action ---
@@ -399,9 +503,9 @@ async function runConsolidation(): Promise<{ content: Array<{ type: "text"; text
     allErrors.push(`Decay failed: ${err.message}`);
   }
 
-  // Rebuild all context files
+  // Rebuild core prompt artifacts after mechanical apply. DREAMS.md remains dreamer-owned.
   try {
-    regenerateAllContextFiles();
+    regenerateCoreContextFiles();
   } catch (err: any) {
     allErrors.push(`Rebuild failed: ${err.message}`);
   }
@@ -530,8 +634,8 @@ function searchGraph(query?: string) {
     const results = index
       .map((entry: any) => {
         const gistTokens = (entry.gist || "").toLowerCase().split(/\s+/);
-        const tagTokens = (entry.tags || []).map((t: string) => t.toLowerCase());
-        const keywordTokens = (entry.keywords || []).map((k: string) => k.toLowerCase());
+        const tagTokens = (entry.tags || []).map((t: any) => String(t).toLowerCase());
+        const keywordTokens = (entry.keywords || []).map((k: any) => String(k).toLowerCase());
 
         const gistScore = overlap(queryTokens, gistTokens) * 3;
         const tagScore = overlap(queryTokens, tagTokens) * 2;
@@ -545,7 +649,7 @@ function searchGraph(query?: string) {
 
         const reasons: string[] = [];
         if (gistScore > 0) reasons.push(`gist match (${Math.round(gistScore / 3 * 100)}%)`);
-        const matchedTags = (entry.tags || []).filter((t: string) => queryTokens.includes(t.toLowerCase()));
+        const matchedTags = (entry.tags || []).filter((t: any) => queryTokens.includes(String(t).toLowerCase()));
         if (matchedTags.length > 0) reasons.push(`tag: ${matchedTags.join(", ")}`);
         if (soma > 1.0) reasons.push(`soma ${soma.toFixed(1)}x`);
         if (recency !== 1.0) reasons.push(`recency ${recency.toFixed(1)}x`);
@@ -574,13 +678,7 @@ function searchGraph(query?: string) {
   }
 }
 
-function recencyBoost(lastAccessed?: string): number {
-  if (!lastAccessed) return 0.8;
-  const daysSince = (Date.now() - new Date(lastAccessed).getTime()) / (1000 * 60 * 60 * 24);
-  if (daysSince <= 7) return 1.2;
-  if (daysSince <= 30) return 1.0;
-  return 0.8;
-}
+// recencyBoost imported from scoring.ts
 
 function listEdges(nodePath?: string) {
   if (!nodePath) {
@@ -711,6 +809,49 @@ function initializeGraphAction(graphRoot?: string) {
   return getStatus();
 }
 
+function configureRuntime(args: {
+  runtimeMode?: string;
+  containerName?: string;
+  imageName?: string;
+  authVolume?: string;
+  graphRootInContainer?: string;
+  authPathInContainer?: string;
+  memoryLimit?: string;
+  cpuLimit?: string;
+}) {
+  const runtimeMode = args.runtimeMode as GraphMemoryRuntimeMode | undefined;
+  if (!runtimeMode || !["manual", "docker"].includes(runtimeMode)) {
+    return {
+      content: [{ type: "text" as const, text: "Error: runtimeMode must be one of manual or docker" }],
+      isError: true,
+    };
+  }
+
+  const current = getRuntimeStatus();
+  const next = saveRuntimeConfig({
+    mode: runtimeMode,
+    docker: {
+      enabled: runtimeMode === "docker",
+      workerProvider: "codex",
+      ...(args.containerName ? { containerName: args.containerName } : {}),
+      ...(args.imageName ? { image: args.imageName } : {}),
+      ...(args.authVolume ? { authVolume: args.authVolume } : {}),
+      ...(args.graphRootInContainer ? { graphRootInContainer: args.graphRootInContainer } : {}),
+      ...(args.authPathInContainer ? { authPathInContainer: args.authPathInContainer } : {}),
+      ...(args.memoryLimit ? { memoryLimit: args.memoryLimit } : {}),
+      ...(args.cpuLimit ? { cpuLimit: args.cpuLimit } : {}),
+    },
+  });
+
+  return {
+    content: [{ type: "text" as const, text: JSON.stringify({
+      success: true,
+      previousRuntime: current,
+      runtime: next,
+    }, null, 2) }],
+  };
+}
+
 function getStatus() {
   const initialized = isGraphInitialized();
   const mapExists = fs.existsSync(CONFIG.paths.map);
@@ -751,11 +892,19 @@ function getStatus() {
   }
 
   // Check for pending operations
-  const scribePending = fs.existsSync(CONFIG.paths.scribePending);
-  const consolidationPending = fs.existsSync(CONFIG.paths.consolidationPending);
+  const queuedJobs = countJobs("queued");
+  const runningJobs = countJobs("running");
+  const scribePending = countJobs("queued", "scribe") + countJobs("running", "scribe");
+  const consolidationPending = countJobs("queued", "auditor")
+    + countJobs("running", "auditor")
+    + countJobs("queued", "librarian")
+    + countJobs("running", "librarian")
+    + countJobs("queued", "dreamer")
+    + countJobs("running", "dreamer");
 
   // Active project
   const activeProject = readActiveProject();
+  const runtime = getRuntimeStatus();
 
   const status: Record<string, any> = {
     initialized,
@@ -767,29 +916,24 @@ function getStatus() {
     indexBuilt: indexExists,
     nodeCount,
     pendingDreams: dreamCount,
+    queuedJobs,
+    runningJobs,
     scribePending,
     consolidationPending,
+    runtime,
     warnings,
   };
 
   return { content: [{ type: "text" as const, text: JSON.stringify(status, null, 2) }] };
 }
 
-// Helpers
-function overlap(a: string[], b: string[]): number {
-  const setB = new Set(b);
-  let count = 0;
-  for (const token of a) {
-    if (setB.has(token)) count++;
-  }
-  return a.length > 0 ? count / a.length : 0;
-}
+// overlap, recencyBoost, projectBoost imported from scoring.ts
 
 // Zod schema for the tool (exported for MCP server registration)
 export const graphMemorySchema = {
   action: z.enum([
     "read_node", "search", "recall", "list_edges", "read_dream", "write_note",
-    "remember", "status", "history", "revert", "consolidate", "initialize"
+    "remember", "resurface", "status", "history", "revert", "consolidate", "initialize", "configure_runtime"
   ]).describe("The action to perform on the knowledge graph"),
   path: z.string().optional()
     .describe("Node path for read_node/list_edges/remember, dream path for read_dream, commit hash for revert"),
@@ -825,4 +969,22 @@ export const graphMemorySchema = {
     .describe("Storage path for initialize action (defaults to ~/.graph-memory/)"),
   project: z.string().optional()
     .describe("Project scope for remember action (e.g. 'owner/repo'). Only set for project-specific knowledge, omit for global."),
+  pinned: z.boolean().optional()
+    .describe("Pin node to prevent decay and auto-load at session start for matching projects"),
+  runtimeMode: z.enum(["manual", "docker"]).optional()
+    .describe("Runtime mode for configure_runtime"),
+  containerName: z.string().optional()
+    .describe("Docker container name override for configure_runtime"),
+  imageName: z.string().optional()
+    .describe("Docker image override for configure_runtime"),
+  authVolume: z.string().optional()
+    .describe("Docker auth volume name for configure_runtime"),
+  graphRootInContainer: z.string().optional()
+    .describe("Container graph root mount path for configure_runtime"),
+  authPathInContainer: z.string().optional()
+    .describe("Container auth mount path for configure_runtime"),
+  memoryLimit: z.string().optional()
+    .describe("Container memory limit for configure_runtime"),
+  cpuLimit: z.string().optional()
+    .describe("Container CPU limit for configure_runtime"),
 };

@@ -2,6 +2,19 @@
 
 Persistent, graph-backed memory for Claude Code and compatible agent workflows.
 
+```text
+      o----o----o
+     / \  / \    \
+    o---oo---o----o
+     \  / \  |   /
+      o----o-o--o
+            \  /
+             o
+
+      C O G N I - C O D E
+      graph-memory onboarding
+```
+
 This directory is the active plugin surface in the repository. If you cloned the repo, install from here rather than from the legacy root prototype.
 
 ## What It Does
@@ -64,6 +77,8 @@ Installed slash commands:
 | `/memory-status` | Report graph health, runtime state, counts, and warnings |
 | `/memory-search <query>` | Search the graph index |
 | `/memory-morning-kickoff` | Turn the latest brief into a focused daily kickoff |
+| `/memory-connect-inputs` | Configure host-side external inputs for briefs and context enrichment |
+| `/memory-input-refresh` | Refresh configured external inputs and ingest new data |
 
 Compatibility aliases are also installed under `/graph-memory:<command>`.
 
@@ -108,6 +123,7 @@ Resources:
 ## Development Notes
 
 - build: `npm run build`
+- test: `npm test`
 - type-check: `npx tsc --noEmit`
 - plugin manifest: [`.claude-plugin/plugin.json`](./.claude-plugin/plugin.json)
 - examples: [`../examples/`](../examples/)

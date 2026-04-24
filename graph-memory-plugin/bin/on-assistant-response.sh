@@ -1,7 +1,7 @@
 #!/bin/bash
-# Captures each assistant response and logs the exchange to the buffer.
-# Fires on the Stop hook — receives JSON on stdin with last_assistant_message
-# and transcript_path. Extracts the last user message from the transcript.
+# Captures each assistant response and logs the canonical final assistant turn
+# to the buffer. Also syncs visible intermediary assistant text from Claude's
+# local session transcript when available.
 
 DIR="$(cd "$(dirname "$0")/.." && pwd)"
 source "$DIR/bin/node-env.sh"

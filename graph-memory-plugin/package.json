@@ -14,8 +14,9 @@
     "dev": "tsc --watch",
     "mcp": "node dist/graph-memory/mcp-server.js",
     "postinstall": "[ -d dist ] || npm run build",
-    "prepublishOnly": "npm run build",
-    "status": "node -e \"import('./dist/graph-memory/tools.js').then(m => m.handleGraphMemory({action:'status'}).then(r => console.log(r.content[0].text)))\""
+    "prepublishOnly": "npm test",
+    "status": "node -e \"import('./dist/graph-memory/tools.js').then(m => m.handleGraphMemory({action:'status'}).then(r => console.log(r.content[0].text)))\"",
+    "test": "npm run build && node --test tests/*.check.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.27.1",
@@ -26,15 +27,18 @@
   },
   "devDependencies": {
     "@types/js-yaml": "^4.0.9",
+    "@types/node": "^20.19.37",
     "typescript": "^5.6.0"
   },
   "files": [
     "dist/",
     "bin/",
+    "docker/",
     "commands/",
     "agents/",
     "skills/",
     "hooks/",
-    ".claude-plugin/"
+    ".claude-plugin/",
+    "LICENSE"
   ]
 }
