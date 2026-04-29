@@ -165,7 +165,17 @@ For other preferences/interests:
 graph_memory(action="remember", path="user/[topic]", gist="[one-line summary]", title="[Topic]", content="[details]", tags=["preference"], confidence=0.7, edges=[{target: "user/identity", type: "relates_to", weight: 0.5}])
 ```
 
-## Step 6: Confirm and Next Steps
+## Step 6: Wire Memory Awareness into the Project's CLAUDE.md
+
+The plugin auto-loads `MAP.md`, `PRIORS.md`, `SOMA.md`, `WORKING.md`, and `DREAMS.md` at session start, but a project's `CLAUDE.md` is what teaches Claude Code *how to use* the memory system in that repo.
+
+Run the wiring procedure defined by the `memory-claude-wiring` agent (see `agents/memory-claude-wiring.md`). It is the source of truth for this step and is also what `/memory-wire-project` invokes standalone. Follow that procedure exactly: resolve the target `CLAUDE.md`, detect marker state, offer create/append/refresh, and only touch content inside the `<!-- BEGIN graph-memory plugin section -->` / `<!-- END graph-memory plugin section -->` markers.
+
+If the user declines, move on. Do not pressure.
+
+Mention to the user that they can run `/memory-wire-project` later to wire any additional repo or refresh the section after a plugin update.
+
+## Step 7: Confirm and Next Steps
 
 Summarize:
 

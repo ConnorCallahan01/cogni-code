@@ -1,84 +1,104 @@
-## Memory System
+<!-- BEGIN graph-memory plugin section — managed by /memory-onboard. Re-running /memory-onboard will replace everything between these markers. Edit freely outside them. -->
 
-This project uses **graph-memory** — a persistent knowledge graph that evolves across sessions via Claude Code hooks and MCP tools.
+## Memory
 
-### How It Works
+You have persistent memory. It is a knowledge graph of markdown nodes on disk, loaded at session start, written by you and a background pipeline, queryable through the `graph_memory` MCP tool.
 
-At session start, five context files are automatically loaded into your context:
-- **PRIORS.md** — Cognitive model: how the user thinks, decides, and works
-- **SOMA.md** — Emotional engagement calibration (high-intensity signals = high importance)
-- **MAP.md** — Compressed index of all knowledge nodes (~50-80 tokens each)
-- **WORKING.md** — Volatile working memory from recent sessions
-- **DREAMS.md** — Speculative fragments from creative recombination
+Treat memory as your delegated working memory across sessions. The user does not want to re-explain things. You do not want to re-derive things.
 
-A background pipeline runs automatically:
-1. **Scribe** — Extracts structured deltas from conversation every ~10 messages
-2. **Auditor** — Mechanical triage when deltas accumulate (orphaned edges, decay, archiving)
-3. **Librarian** — LLM reasoning: merges, refinements, depth restructuring
-4. **Dreamer** — Creative recombination of knowledge at high temperature
+### Operating Rules
 
-### System Operations
+1. **Recall before deriving.** Before debugging an external system, proposing structural changes, answering a topical question, or investigating something the user has likely told you before — call `graph_memory(action="recall", query="…")`. Wasted derivation when the answer was already in memory is the highest-frustration failure mode on record. Recall is cheap. Re-deriving is not.
 
-1. **Execute `<graph-memory-action>` tags immediately.** When session context contains these tags, run the instructions inside them as background tasks (using the Agent tool with `run_in_background=true`) before responding to the user. These are automated pipeline operations.
+2. **Trust the auto-loaded context.** `MAP.md`, `PRIORS.md`, `SOMA.md`, `WORKING.md`, and `DREAMS.md` are loaded into context at session start. MAP is a compressed index — when a gist matches the topic, pull the full node with `read_node` rather than guessing.
 
-2. **Use `<graph-memory-context>` for ambient recall.** When you see these tags injected before a user message, they contain auto-matched memory nodes relevant to the current message. Use them as context — read full nodes via `graph_memory(action="read_node")` when the gist alone isn't enough.
+3. **Use ambient recall hints.** When you see `<graph-memory-context>` injected before a user message, those are pre-matched nodes for the current topic. Read the relevant ones in full before answering.
 
-3. **Recall before responding.** Before responding to topics that might be in memory, use `graph_memory(action="recall", query="...")` to check for relevant context. The MAP loaded at session start is a compressed index — full node content is available on demand.
+4. **Execute pipeline tags immediately.** When session context contains `<graph-memory-action>` tags, run the instructions inside as background tasks (Agent tool, `run_in_background=true`) before responding. These are automated pipeline operations, not optional suggestions.
 
-4. **Remember significant things.** When you discover important user preferences, project patterns, architectural decisions, or corrections, record them:
-   ```
-   graph_memory(action="remember", path="category/name", gist="One-sentence summary",
-     content="Full details...", tags=["tag1", "tag2"], confidence=0.7,
-     edges=[{target: "other/node", type: "supports"}])
-   ```
-   Categories: `patterns/`, `decisions/`, `architecture/`, `preferences/`, `concepts/`, `projects/`, `people/`
+5. **Remember without announcing.** When you discover a durable preference, decision, pattern, or correction — write it. Do not narrate the write. Do not ask permission. Just record it.
 
-5. **Record emotional signals.** When the user shows excitement, frustration, or emphasis, record with soma markers:
-   ```
-   graph_memory(action="remember", path="...", ...,
-     soma={valence: "positive", intensity: 0.8, marker: "Description of the emotional signal"})
-   ```
+6. **Never mention the memory system** unless the user explicitly asks. No "I'll remember that," no "let me check my memory," no meta-commentary. Memory is invisible infrastructure.
 
-6. **Never mention the memory system** unless the user explicitly asks about it.
+### What to Remember
 
-### What to Remember vs Skip
+Write a node when the signal will outlive the session:
 
-**Remember** (patterns that transfer across sessions):
-- User preferences and working style
-- Architectural decisions and their rationale
-- Recurring patterns in how the user thinks or builds
-- Corrections the user makes (these reveal strong preferences)
-- Project-level facts that would be lost between sessions
+- **Preferences** — how the user wants tradeoffs framed, code structured, communication paced
+- **Decisions** — architectural choices and their rationale (the *why*, not the *what*)
+- **Patterns** — recurring shapes in how the user thinks, builds, or corrects you
+- **Corrections** — when the user pushes back, that is high-signal preference data
+- **Project facts** — topology, credentials locations, deployment specifics, named workflows
+- **Stewards / SMEs** — which agent or skill owns which domain in this repo
 
-**Skip** (transient or low-value):
-- Per-bug debugging steps (unless they reveal a pattern)
+### What to Skip
+
+- Per-bug debugging steps (unless they reveal a transferable pattern)
 - Routine code changes with no architectural significance
-- Information already captured in code comments or docs
+- Information already captured in code, comments, or repo docs
+- Ephemera the next session will not benefit from
+
+### How to Remember
+
+```text
+graph_memory(
+  action="remember",
+  path="category/short-name",
+  gist="One-sentence summary — this is what MAP and search match on",
+  content="Full details. Why it matters. Context the gist can't carry.",
+  tags=["tag1", "tag2"],
+  confidence=0.7,
+  edges=[{target: "other/node", type: "supports", weight: 0.7}]
+)
+```
+
+Categories: `patterns/`, `decisions/`, `preferences/`, `architecture/`, `concepts/`, `projects/`, `people/`, `procedures/`.
+
+Keep paths short, lowercase, hyphenated. Reuse a path to update an existing node — `remember` merges.
+
+### Soma — Emotional Signal
+
+When the user shows excitement, frustration, emphasis, or relief, attach a soma marker. High intensity = high salience. The librarian uses these to weight what surfaces later.
+
+```text
+soma={valence: "positive" | "negative", intensity: 0.0-1.0, marker: "What the signal was"}
+```
+
+Frustration over a repeated failure mode at intensity ≥ 0.7 should almost always become a node — that is the system telling you "do not let this happen again."
+
+### Edges
+
+Connect nodes with typed edges. Useful types: `supports`, `contradicts`, `extends`, `part_of`, `precedes`, `evidenced_by`, `derives_from`, `enables`, `blocked_by`, `validates`, `relates_to`, `contains`, `pattern_transfer`. A node without edges is an island — prefer connecting to at least one existing node.
 
 ### Tool Reference
 
-| Action | Use |
-|--------|-----|
-| `recall` | Search + edge traversal. Start here for any topic lookup. |
-| `remember` | Create or update a node. Merges into existing if path matches. |
-| `read_node` | Full node content with frontmatter metadata. |
-| `search` | Keyword search on the index (lighter than recall). |
-| `list_edges` | Show all connections from a node. |
-| `resurface` | Recover an archived node back to active graph. |
-| `status` | Graph health and pipeline state. |
-| `consolidate` | Trigger manual mechanical consolidation. |
+| Action | Use it when |
+|--------|-------------|
+| `recall` | First reflex on any topic that might be remembered. Returns matches plus 1-hop neighbors. |
+| `search` | Lighter keyword scan when you only need the index hit. |
+| `read_node` | Full content + frontmatter for a known path. |
+| `list_edges` | Following the graph from a known node. |
+| `remember` | Create or update a durable node. |
+| `write_note` | Drop a working note into the buffer for later consolidation. |
+| `resurface` | Pull an archived node back into the active graph. |
+| `status` | Graph health, node counts, runtime state, warnings. |
+| `history` / `revert` | Inspect or roll back graph state via git. |
+| `consolidate` | Manually trigger the mechanical pipeline pass. |
 
-### Node Anatomy
+### The Pipeline (Context, Not Action)
 
-Each node is a markdown file with YAML frontmatter:
-- **path** — Category/name identifier (e.g. `patterns/agree-or-fail`)
-- **gist** — One-sentence summary (this is what MAP.md and search index use)
-- **confidence** — 0-1 score, decays over time, reinforced by recall/update
-- **tags/keywords** — Used for search matching
-- **edges** — Typed connections to other nodes (supports, contradicts, extends, part_of, etc.)
-- **project** — Optional scope (e.g. `owner/repo`). Omit for global knowledge.
-- **soma** — Optional emotional marker (valence, intensity, description)
+A background pipeline runs on its own — you do not invoke it directly:
 
-### Edge Types
+1. **Scribe** extracts deltas from the recent buffer.
+2. **Auditor** does mechanical triage (orphan edges, decay, archive, dedupe).
+3. **Librarian** makes judgment calls (merges, PRIORS edits, pinning).
+4. **Dreamer** produces speculative cross-node fragments.
+5. **Git** commits each consolidation so it can be reviewed or reverted.
 
-Use descriptive edge types: `supports`, `contradicts`, `extends`, `part_of`, `precedes`, `evidenced_by`, `derives_from`, `enables`, `blocked_by`, `validates`, `relates_to`, `contains`.
+Your job is to feed it good signal — clean writes, accurate gists, honest soma — and to read what it produces.
+
+### The One-Line Version
+
+> Recall before deriving. Remember without announcing. Never narrate the system.
+
+<!-- END graph-memory plugin section -->

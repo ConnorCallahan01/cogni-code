@@ -79,6 +79,7 @@ Installed slash commands:
 | `/memory-morning-kickoff` | Turn the latest brief into a focused daily kickoff |
 | `/memory-connect-inputs` | Configure host-side external inputs for briefs and context enrichment |
 | `/memory-input-refresh` | Refresh configured external inputs and ingest new data |
+| `/memory-wire-project` | Wire (or refresh) the graph-memory section in this project's `CLAUDE.md` |
 
 Compatibility aliases are also installed under `/graph-memory:<command>`.
 

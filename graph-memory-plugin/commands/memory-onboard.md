@@ -15,6 +15,7 @@ Launch the `memory-onboarder` agent to handle the guided onboarding flow. This a
    - Configuring worker auth for the container runtime, preferably by importing existing host Codex auth
    - Running healthchecks to verify queue, storage, and worker connectivity
    - Running a short interview to seed initial memory nodes and priors
+   - Wiring memory awareness into the project's `CLAUDE.md` from the plugin template (idempotent — safe to re-run)
    - Starting the background daemon if Docker mode is enabled
 
 Open the onboarding with this exact ASCII banner once, in a fenced `text` block:

@@ -244,6 +244,7 @@ These slash entries are technically skill commands installed into Claude Code.
 | `/recall <query>` | deeper graph lookup with edge traversal |
 | `/memory-connect-inputs` | host-side external-input setup for briefing flows |
 | `/memory-input-refresh` | refreshes configured external-input sources |
+| `/memory-wire-project` | wires (or refreshes) the graph-memory section in this project's `CLAUDE.md` |
 
 And the MCP tool surface:
 
