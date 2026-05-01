@@ -23,7 +23,7 @@
     "gray-matter": "^4.0.3",
     "js-yaml": "^4.1.1",
     "simple-git": "^3.32.3",
-    "zod": "^4.0.0"
+    "zod": "^4.4.1"
   },
   "devDependencies": {
     "@types/js-yaml": "^4.0.9",
