@@ -103,3 +103,43 @@ graph_memory(action="remember", path="patterns/new-pattern", gist="One-sentence 
 - **Keyword retrieval over curated gists** — simple and inspectable
 - **Archive with recall, not delete** — stale nodes can be resurfaced
 - **Git tracks changes** — every consolidation is recoverable
+
+<!-- BEGIN graph-memory plugin section -->
+## Graph Memory
+
+The `graph_memory` MCP tool provides persistent knowledge graph access. Use it for recall, search, and remembering across sessions.
+
+### When to Recall
+
+- ALWAYS recall before debugging any external system, live infrastructure, or third-party integration.
+- Recall before investigating a topic that may have been discussed in prior sessions.
+- When Patrick references a prior decision, procedure, or pattern by name, recall it before responding.
+
+### When to Remember
+
+- When Patrick corrects a factual error or articulates a design decision, remember it.
+- When a reusable pattern or preference emerges across sessions, remember it.
+- When a significant architectural decision is made, remember it with appropriate edges.
+
+### Actions
+
+```text
+# Search memory
+graph_memory(action="recall", query="keyword or topic", depth=1)
+
+# Read a specific node
+graph_memory(action="read_node", path="patterns/some-pattern")
+
+# List connections from a node
+graph_memory(action="list_edges", path="patterns/some-pattern")
+
+# Create or update a node
+graph_memory(action="remember", path="decisions/new-decision", gist="One-sentence summary", content="Full details...", tags=["tag1"], edges=[{target: "other/node", type: "supports"}])
+```
+
+### Rules
+
+- Never mention the memory system to the user unless explicitly asked.
+- Record patterns and decisions; skip per-bug or per-session incident details.
+- Gists must be concise (15-25 words) — they are loaded at every session start.
+<!-- END graph-memory plugin section -->

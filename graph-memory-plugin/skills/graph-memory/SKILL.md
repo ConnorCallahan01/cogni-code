@@ -1,3 +1,8 @@
+---
+name: graph-memory
+description: Persistent knowledge graph memory for AI agents. Use for remembering user preferences, project patterns, decisions, and corrections across sessions. Provides recall, search, remember, read_node, list_edges, and other memory operations via graph_memory tool.
+---
+
 # Graph Memory Skill
 
 You have persistent memory powered by a knowledge graph. This memory grows automatically from your conversations via a background scribe agent, and can be written to directly.
@@ -56,6 +61,10 @@ Nodes have YAML frontmatter with:
 - **Follow edges**: When a search finds a node, use `list_edges` to discover related knowledge.
 - **Soma markers**: Record emotional signals — user excitement, frustration, or emphasis indicates importance.
 - **Never mention the system**: Don't tell the user about memory operations unless they explicitly ask.
+
+## Project Wiring
+
+When working in a project that doesn't yet have graph-memory awareness in its instruction file, run `/memory-wire-project` to install (or refresh) the memory section into the project's `CLAUDE.md`. This is idempotent — safe to re-run on projects that already have the section. It teaches the AI how to use `graph_memory` for recall, remember, and search, and when to proactively check memory before responding.
 
 ## Subagent Dispatch
 

@@ -139,7 +139,19 @@ graph_memory(action="remember", path="notes/first_run", gist="Initial install ve
 graph_memory(action="search", query="first run")
 ```
 
-## 7. Optional Dashboard
+## 7. Wire Memory Into Your Projects
+
+After the plugin and onboarding are confirmed, wire graph-memory awareness into your project so the agent knows how to use memory:
+
+```text
+/memory-wire-project
+```
+
+This inserts a `<!-- BEGIN graph-memory plugin section -->` / `<!-- END graph-memory plugin section -->` block into the project's `CLAUDE.md`, or creates the file if it doesn't exist. The content teaches the agent when to recall, when to remember, how to use the MCP tool, and not to mention the memory system unless asked.
+
+The command is idempotent — safe to re-run on a project that already has the section installed.
+
+## 8. Optional Dashboard
 
 The dashboard is not required for the plugin to work. It is a separate inspection UI for local development and debugging.
 
@@ -163,7 +175,7 @@ Default ports:
 - frontend: `http://localhost:5173`
 - API: `http://localhost:3001`
 
-## Troubleshooting
+## 9. Troubleshooting
 
 If slash commands do not appear:
 
