@@ -113,11 +113,11 @@ The `graph_memory` tool provides persistent knowledge graph access across both t
 
 - ALWAYS recall before debugging any external system, live infrastructure, or third-party integration.
 - Recall before investigating a topic that may have been discussed in prior sessions.
-- When Patrick references a prior decision, procedure, or pattern by name, recall it before responding.
+- When a prior decision, procedure, or pattern is referenced by name, recall it before responding.
 
 ### When to Remember
 
-- When Patrick corrects a factual error or articulates a design decision, remember it.
+- When a factual error is corrected or a design decision is articulated, remember it.
 - When a reusable pattern or preference emerges across sessions, remember it.
 - When a significant architectural decision is made, remember it with appropriate edges.
 
