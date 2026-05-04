@@ -18,7 +18,7 @@ import { updateManifest } from "./manifest.js";
 import { clearConsolidationPending } from "./dirty-state.js";
 import { readActiveProject } from "./project.js";
 import { countJobs } from "./pipeline/job-queue.js";
-import { getRuntimeStatus, GraphMemoryRuntimeMode, saveRuntimeConfig } from "./runtime.js";
+import { getRuntimeStatus, GraphMemoryRuntimeMode, saveRuntimeConfig, WorkerProvider } from "./runtime.js";
 
 // --- Index cache ---
 let indexCache: { data: any[]; mtime: number } | null = null;
@@ -811,6 +811,7 @@ function initializeGraphAction(graphRoot?: string) {
 
 function configureRuntime(args: {
   runtimeMode?: string;
+  workerProvider?: string;
   containerName?: string;
   imageName?: string;
   authVolume?: string;
@@ -832,7 +833,7 @@ function configureRuntime(args: {
     mode: runtimeMode,
     docker: {
       enabled: runtimeMode === "docker",
-      workerProvider: "codex",
+      workerProvider: (args.workerProvider as WorkerProvider) || "codex",
       ...(args.containerName ? { containerName: args.containerName } : {}),
       ...(args.imageName ? { image: args.imageName } : {}),
       ...(args.authVolume ? { authVolume: args.authVolume } : {}),
@@ -971,6 +972,8 @@ export const graphMemorySchema = {
     .describe("Project scope for remember action (e.g. 'owner/repo'). Only set for project-specific knowledge, omit for global."),
   pinned: z.boolean().optional()
     .describe("Pin node to prevent decay and auto-load at session start for matching projects"),
+  workerProvider: z.enum(["codex", "claude", "pi"]).optional()
+    .describe("Worker harness for configure_runtime (codex, claude, pi)"),
   runtimeMode: z.enum(["manual", "docker"]).optional()
     .describe("Runtime mode for configure_runtime"),
   containerName: z.string().optional()

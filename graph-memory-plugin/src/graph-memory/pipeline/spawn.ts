@@ -1,5 +1,7 @@
 /**
- * Detached pipeline agent spawner.
+ * @deprecated Use worker-runner.ts harness adapters instead.
+ *
+ * Detached pipeline agent spawner (legacy Claude Code path).
  *
  * Fires scribe/auditor/librarian/dreamer as completely decoupled `claude` CLI
  * processes. Uses normal OAuth auth (not --bare) but spawns from /tmp to avoid
@@ -7,6 +9,10 @@
  *
  * The main conversation never sees these agents — no stdout pollution, no
  * completion notifications, no interruptions.
+ *
+ * This file is retained for reference. The active dispatch path is now in
+ * worker-runner.ts, which routes to codex/claude/pi adapters based on the
+ * workerProvider field in the runtime config.
  */
 import { spawn } from "child_process";
 import fs from "fs";
