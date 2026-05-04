@@ -83,6 +83,46 @@
       "name": "graph-memory",
       "description": "How to use the persistent memory system — remember, recall, search, edges, soma markers",
       "path": "./skills/graph-memory"
+    },
+    {
+      "name": "memory-onboard",
+      "description": "First-time setup for graph memory — initialize storage, configure runtime, seed initial memory",
+      "path": "./skills/memory-onboard"
+    },
+    {
+      "name": "memory-search",
+      "description": "Search the knowledge graph for nodes matching a given query",
+      "path": "./skills/memory-search"
+    },
+    {
+      "name": "memory-status",
+      "description": "Check the health and status of the graph memory system — node count, warnings, pending operations",
+      "path": "./skills/memory-status"
+    },
+    {
+      "name": "memory-morning-kickoff",
+      "description": "Kick off the day with a repo-specific operating brief from the latest memory context",
+      "path": "./skills/memory-morning-kickoff"
+    },
+    {
+      "name": "memory-wire-project",
+      "description": "Wire graph-memory awareness into the current project's instruction file — idempotent, safe to re-run",
+      "path": "./skills/memory-wire-project"
+    },
+    {
+      "name": "recall",
+      "description": "Deep search memory graph with multi-hop edge traversal and full node reading",
+      "path": "./skills/recall"
+    },
+    {
+      "name": "memory-connect-inputs",
+      "description": "Configure optional Gmail and Calendar inputs for the morning brief",
+      "path": "./skills/memory-connect-inputs"
+    },
+    {
+      "name": "memory-input-refresh",
+      "description": "Refresh Gmail and Calendar inputs on the host for the morning brief",
+      "path": "./skills/memory-input-refresh"
     }
   ],
   "hooks": "./hooks/hooks.json"

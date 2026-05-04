@@ -8,7 +8,7 @@ RUN apt-get update \
 
 COPY package.json package-lock.json ./
 RUN npm ci --ignore-scripts
-RUN npm install -g @openai/codex
+RUN npm install -g @openai/codex @mariozechner/pi-coding-agent
 
 COPY tsconfig.json ./
 COPY src ./src

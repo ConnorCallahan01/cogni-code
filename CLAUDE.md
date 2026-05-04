@@ -107,7 +107,7 @@ graph_memory(action="remember", path="patterns/new-pattern", gist="One-sentence 
 <!-- BEGIN graph-memory plugin section -->
 ## Graph Memory
 
-The `graph_memory` MCP tool provides persistent knowledge graph access. Use it for recall, search, and remembering across sessions.
+The `graph_memory` tool provides persistent knowledge graph access across both the Claude Code and pi harnesses. Use it for recall, search, and remembering across sessions.
 
 ### When to Recall
 

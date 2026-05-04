@@ -11,9 +11,11 @@ export interface RepoMountConfig {
   mode: "ro" | "rw";
 }
 
+export type WorkerProvider = "codex" | "claude" | "pi";
+
 export interface DockerRuntimeConfig {
   enabled: boolean;
-  workerProvider: "codex";
+  workerProvider: WorkerProvider;
   image: string;
   containerName: string;
   authVolume: string;
@@ -51,11 +53,22 @@ function slugify(input: string): string {
     .slice(0, 40) || "graph-memory";
 }
 
+function resolveDefaultWorkerProvider(): WorkerProvider {
+  // Prefer what's already on PATH, falling back to codex
+  const which = (cmd: string) => {
+    const r = spawnSync("which", [cmd], { stdio: ["ignore", "pipe", "ignore"] });
+    return r.status === 0;
+  };
+  if (which("codex")) return "codex";
+  if (which("claude")) return "claude";
+  return "codex";
+}
+
 function defaultDockerConfig(graphRoot: string): DockerRuntimeConfig {
   const suffix = slugify(path.basename(graphRoot));
   return {
     enabled: true,
-    workerProvider: "codex",
+    workerProvider: resolveDefaultWorkerProvider(),
     image: "graph-memory-daemon:local",
     containerName: `graph-memory-daemon-${suffix}`,
     authVolume: `graph-memory-auth-${suffix}`,

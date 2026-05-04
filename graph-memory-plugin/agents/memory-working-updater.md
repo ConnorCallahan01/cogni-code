@@ -40,6 +40,9 @@ Produce concise, high-signal arrays for:
 
 6. `nextPickup`
    Where the next conversation should resume from.
+   This is the most important field. Write it as if the user will open a fresh session and say:
+   "Let's pick up where we left off."
+   Each bullet should be an immediately usable resume instruction, not a recap.
 
 7. `recalledNodes`
    Existing graph nodes explicitly recalled, read, searched, or traversed during this session.
@@ -99,6 +102,9 @@ The output should read like a handoff that could be shown to someone working onl
 - If something is uncertain, omit it.
 - If a section has no items, use an empty array.
 - The output must be valid JSON.
+- Optimize `nextPickup` for action. A good `nextPickup` bullet starts with a verb and names the next file, command, test, PR, branch, decision, or blocker when known.
+- Put unresolved blockers in both `didntWork` and `nextPickup` when they are the obvious restart point.
+- Prefer concrete handoff bullets over status narration.
 
 ## Output Schema
 
@@ -164,6 +170,15 @@ This should read like a high-signal handoff for the next Claude session.
 Examples:
 - `Validate the dedicated WORKING updater against a real multi-scribe repo session`
 - `Tune how recalled nodes are surfaced when only search queries are visible`
+- `Re-run npm test after fixing the project WORKING renderer`
+- `Open src/auth/session.ts and continue from the refresh-token edge case`
+- `Decide whether to archive the stale Railway deployment node or merge it into projects/acellus-health`
+
+Bad:
+- `Continue working on the project`
+- `The session discussed several memory improvements`
+- `There were no blockers`
+- `Pick up where we left off`
 
 ## Final Step
 
