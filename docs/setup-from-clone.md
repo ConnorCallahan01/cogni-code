@@ -85,26 +85,31 @@ graph_memory(action="configure_runtime", runtimeMode="docker")
 
 ## 5. If You Choose Docker
 
-Run the helpers from [`graph-memory-plugin/bin/`](../graph-memory-plugin/bin/):
+Run the harness-agnostic helpers from [`graph-memory-plugin/bin/`](../graph-memory-plugin/bin/):
 
 ```bash
 ./bin/docker-bootstrap.sh
 ./bin/docker-auth-check.sh
 ```
 
+The auth-check script detects which worker harness (codex, claude, or pi) is active and validates the correct auth.
+
 If worker auth is missing:
 
 ```bash
+# For codex:
 codex login
 ./bin/docker-codex-import-host-auth.sh
+
+# For pi:
+./bin/docker-pi-import-host-auth.sh
 ```
 
-Fallback auth options:
+Worker-specific auth:
 
-```bash
-./bin/docker-codex-login.sh
-./bin/docker-codex-login-api-key.sh
-```
+- `./bin/docker-codex-login.sh`
+- `./bin/docker-codex-login-api-key.sh`
+- `./bin/docker-pi-auth-status.sh`
 
 Useful Docker helper scripts:
 

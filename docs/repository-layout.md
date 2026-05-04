@@ -53,5 +53,6 @@ If you are improving the public-facing repo, prioritize:
 3. `examples/`
 4. `graph-memory-plugin/README.md`
 5. `graph-memory-plugin/.claude-plugin/plugin.json`
+6. `LICENSE` (root MIT license)
 
 Do not assume the legacy root prototype is safe to delete without a dedicated migration pass.
