@@ -57,14 +57,19 @@ Detailed clone-to-first-run instructions are in [../docs/setup-from-clone.md](..
 - graph root stays on the host
 - daemon and bounded workers run in Docker against the mounted graph root
 
-Useful helpers:
+Useful helpers (harness-agnostic):
 
 - `bin/docker-bootstrap.sh`
 - `bin/docker-doctor.sh`
 - `bin/docker-auth-check.sh`
-- `bin/docker-codex-import-host-auth.sh`
-- `bin/docker-codex-login.sh`
-- `bin/docker-codex-login-api-key.sh`
+
+Worker-specific helpers:
+
+- `bin/docker-codex-import-host-auth.sh` / `bin/docker-codex-login.sh` / `bin/docker-codex-login-api-key.sh`
+- `bin/docker-pi-import-host-auth.sh` / `bin/docker-pi-auth-status.sh`
+
+General:
+
 - `bin/docker-stop.sh`
 
 ## Commands
@@ -79,6 +84,8 @@ Installed slash commands:
 | `/memory-morning-kickoff` | Turn the latest brief into a focused daily kickoff |
 | `/memory-connect-inputs` | Configure host-side external inputs for briefs and context enrichment |
 | `/memory-input-refresh` | Refresh configured external inputs and ingest new data |
+| `/memory-switch-harness` | Switch the background pipeline worker between codex, claude, and pi |
+| `/recall <query>` | Deep graph lookup with edge traversal |
 | `/memory-wire-project` | Wire (or refresh) the graph-memory section in this project's `CLAUDE.md` |
 
 Compatibility aliases are also installed under `/graph-memory:<command>`.

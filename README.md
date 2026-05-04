@@ -6,6 +6,8 @@
 
 ## Give your agent a past
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
+
 **The home of the `graph-memory` plugin for Claude Code and long-lived AI workflows**
 
 *Not a vector DB. Not a prompt scrapbook. Not a black box.*
@@ -245,6 +247,7 @@ These slash entries are technically skill commands installed into Claude Code.
 | `/memory-connect-inputs` | host-side external-input setup for briefing flows |
 | `/memory-input-refresh` | refreshes configured external-input sources |
 | `/memory-wire-project` | wires (or refreshes) the graph-memory section in this project's `CLAUDE.md` |
+| `/memory-switch-harness` | switch the background pipeline worker between codex, claude, and pi |
 
 And the MCP tool surface:
 
@@ -280,20 +283,27 @@ Use this if you want the system to behave like a full memory runtime instead of 
 - Claude Code stays on the host
 - graph root stays on the host
 - daemon and bounded workers run in Docker
+- supports three worker harnesses: **codex**, **claude**, and **pi**
+- use `/memory-switch-harness` to change workers without manual config editing
 - helper scripts manage bootstrap, health, auth, and status
 
-Useful helpers:
+Auth helpers (harness-agnostic):
 
-- `bin/docker-bootstrap.sh`
-- `bin/docker-doctor.sh`
-- `bin/docker-auth-check.sh`
+- `bin/docker-bootstrap.sh` — build and start the container
+- `bin/docker-auth-check.sh` — detect active harness and validate auth
+- `bin/docker-doctor.sh` — full health diagnostic
+
+Worker-specific auth helpers:
+
+- `bin/docker-codex-import-host-auth.sh` / `bin/docker-codex-login.sh` / `bin/docker-codex-login-api-key.sh`
+- `bin/docker-pi-import-host-auth.sh`
+
+General helpers:
+
 - `bin/docker-build.sh`
 - `bin/docker-start.sh`
 - `bin/docker-stop.sh`
 - `bin/docker-status.sh`
-- `bin/docker-codex-import-host-auth.sh`
-- `bin/docker-codex-login.sh`
-- `bin/docker-codex-login-api-key.sh`
 
 ---
 

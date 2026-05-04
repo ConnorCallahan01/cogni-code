@@ -46,6 +46,28 @@ Expected outcome:
 
 - turns the latest morning brief into a focused work kickoff for the current repo
 
+## Wire Memory Into A Project
+
+```text
+/memory-wire-project
+```
+
+Expected outcome:
+
+- inserts (or refreshes) the graph-memory section into CLI documentation for the active project
+- safe to re-run — idempotent
+
+## Switch Worker Harness
+
+```text
+/memory-switch-harness
+```
+
+Expected outcome:
+
+- switches the background pipeline worker between codex, claude, and pi
+- no manual config editing required
+
 ## Deep Recall Skill
 
 The plugin also ships a user-invocable recall skill:
