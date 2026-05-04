@@ -414,59 +414,125 @@ function renderBulletSection(title: string, items: string[], fallback: string): 
   return output;
 }
 
+function compactItems(items: string[], limit: number): string[] {
+  return items
+    .map(normalizeBullet)
+    .filter(Boolean)
+    .slice(0, limit);
+}
+
+function buildResumeNowItems(latest: WorkingSessionEntry): string[] {
+  const resumeItems: string[] = [];
+
+  for (const item of compactItems(latest.nextPickup, 5)) {
+    pushUnique(resumeItems, item, 5);
+  }
+
+  if (resumeItems.length === 0 && latest.didntWork.length > 0) {
+    pushUnique(resumeItems, `Resolve the latest blocker: ${latest.didntWork[0]}`, 5);
+  }
+
+  if (resumeItems.length === 0 && latest.tasksWorkedOn.length > 0) {
+    pushUnique(resumeItems, `Continue the latest task: ${latest.tasksWorkedOn[0]}`, 5);
+  }
+
+  if (resumeItems.length === 0 && latest.summaries.length > 0) {
+    pushUnique(resumeItems, `Continue from the last session summary: ${latest.summaries[0]}`, 5);
+  }
+
+  return resumeItems;
+}
+
+function buildCurrentStateItems(latest: WorkingSessionEntry): string[] {
+  const stateItems: string[] = [];
+
+  for (const item of compactItems(latest.tasksWorkedOn, 3)) {
+    pushUnique(stateItems, item, 5);
+  }
+  for (const item of compactItems(latest.summaries, 2)) {
+    pushUnique(stateItems, item, 5);
+  }
+
+  return stateItems;
+}
+
+function buildOpenLoopItems(latest: WorkingSessionEntry): string[] {
+  const openLoops: string[] = [];
+
+  for (const item of compactItems(latest.didntWork, 4)) {
+    pushUnique(openLoops, item, 4);
+  }
+
+  return openLoops;
+}
+
+function buildEvidenceItems(latest: WorkingSessionEntry): string[] {
+  const evidence: string[] = [];
+
+  for (const item of compactItems(latest.commits, 3)) {
+    pushUnique(evidence, `Commit: ${item}`, 6);
+  }
+  for (const item of compactItems(latest.worked, 3)) {
+    pushUnique(evidence, `Worked: ${item}`, 6);
+  }
+
+  return evidence;
+}
+
+function buildMemoryItems(latest: WorkingSessionEntry): string[] {
+  const relevantNodes: string[] = [];
+
+  for (const pathValue of compactItems(latest.recalledNodes, 6)) pushUnique(relevantNodes, `Recalled: ${pathValue}`, 12);
+  for (const pathValue of compactItems(latest.createdNodes, 4)) pushUnique(relevantNodes, `Created: ${pathValue}`, 12);
+  for (const pathValue of compactItems(latest.updatedNodes, 4)) pushUnique(relevantNodes, `Updated: ${pathValue}`, 12);
+
+  return relevantNodes;
+}
+
 function renderProjectWorkingMarkdown(state: ProjectWorkingState): string {
   const latest = state.sessions[0];
   let content = `# WORKING — ${state.project}\n\n`;
-  content += `> Persistent repo handoff. Updated after successful scribes. Older context is retained below rather than replaced.\n\n`;
+  content += `> Persistent repo handoff. Optimized for "Let's pick up where we left off." Updated after successful scribes.\n\n`;
   content += `**Last updated:** ${state.updatedAt}\n`;
 
   if (!latest) {
-    content += `\n## Current Handoff\n\n${EMPTY_MARKER}\n`;
+    content += `\n## Resume Now\n\n${EMPTY_MARKER}\n`;
     return content;
   }
 
-  content += `\n## Current Handoff\n\n`;
+  const resumeItems = buildResumeNowItems(latest);
+  const currentStateItems = buildCurrentStateItems(latest);
+  const openLoopItems = buildOpenLoopItems(latest);
+  const evidenceItems = buildEvidenceItems(latest);
+  const memoryItems = buildMemoryItems(latest);
+
+  content += `\n## Resume Now\n\n`;
   content += `**Most recent session:** ${latest.sessionId}\n`;
-  content += `**First captured:** ${latest.firstCapturedAt}\n`;
+  content += `**Activity timestamp:** ${latest.activityAt}\n`;
   content += `**Last refreshed:** ${latest.lastUpdatedAt}\n\n`;
 
-  content += renderBulletSection("Tasks Worked On", latest.tasksWorkedOn, "No tasks captured yet.");
+  content += renderBulletSection("Start Here", resumeItems, "Resume from the latest task thread.");
   content += `\n`;
-  content += renderBulletSection("Commits In This Conversation", latest.commits, "No commits detected in tool traces.");
+  content += renderBulletSection("Current State", currentStateItems, "No current state captured yet.");
   content += `\n`;
-  content += renderBulletSection("What Worked", latest.worked, "No positive execution signals captured yet.");
+  content += renderBulletSection("Open Loops / Blockers", openLoopItems, "No blockers captured.");
   content += `\n`;
-  content += renderBulletSection("What Didn't Work", latest.didntWork, "No failed attempts captured yet.");
+  content += renderBulletSection("Evidence", evidenceItems, "No commits, passing checks, or execution evidence captured yet.");
   content += `\n`;
-  content += renderBulletSection("Where To Pick Up", latest.nextPickup, "Resume from the latest task thread.");
-  content += `\n`;
-
-  const relevantNodes: string[] = [];
-  for (const pathValue of latest.recalledNodes) pushUnique(relevantNodes, `Recalled: ${pathValue}`, 24);
-  for (const pathValue of latest.createdNodes) pushUnique(relevantNodes, `Created: ${pathValue}`, 24);
-  for (const pathValue of latest.updatedNodes) pushUnique(relevantNodes, `Updated: ${pathValue}`, 24);
-  content += renderBulletSection("Relevant Graph Memory", relevantNodes, "No graph nodes were captured for this session yet.");
+  content += renderBulletSection("Relevant Memory", memoryItems, "No graph nodes were captured for this session yet.");
 
   content += `\n## Session Timeline\n`;
-  for (const session of state.sessions) {
+  for (const session of state.sessions.slice(0, 6)) {
     content += `\n### ${session.lastUpdatedAt} — ${session.sessionId}\n\n`;
     content += renderBulletSection("Session Summaries", session.summaries, "No scribe summaries yet.");
     content += `\n`;
     content += renderBulletSection("Tasks Worked On", session.tasksWorkedOn, "No tasks captured.");
     content += `\n`;
-    content += renderBulletSection("What Worked", session.worked, "No positive signals captured.");
-    content += `\n`;
-    content += renderBulletSection("What Didn't Work", session.didntWork, "No failures captured.");
-    content += `\n`;
-    content += renderBulletSection("Relevant Graph Memory", [
-      ...session.recalledNodes.map((value) => `Recalled: ${value}`),
-      ...session.createdNodes.map((value) => `Created: ${value}`),
-      ...session.updatedNodes.map((value) => `Updated: ${value}`),
-    ], "No graph references captured.");
-    content += `\n`;
-    content += renderBulletSection("Commits", session.commits, "No commits detected.");
-    content += `\n`;
     content += renderBulletSection("Next Pickup", session.nextPickup, "Continue from the most recent task.");
+    if (session.didntWork.length > 0) {
+      content += `\n`;
+      content += renderBulletSection("Blockers", compactItems(session.didntWork, 3), "No failures captured.");
+    }
   }
 
   return `${content.trimEnd()}\n`;

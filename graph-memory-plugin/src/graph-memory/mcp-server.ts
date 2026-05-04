@@ -44,7 +44,7 @@ PIPELINE:
 
 SETUP:
 - initialize: First-time setup. Pass graphRoot to choose storage location (defaults to ~/.graph-memory/).
-- configure_runtime: Set manual or Docker runtime configuration for the current graph root.`,
+- configure_runtime: Set manual or Docker runtime configuration. Pass workerProvider (codex, claude, pi) to choose the pipeline agent harness.`,
   graphMemorySchema,
   async (args) => {
     return handleGraphMemory(args);

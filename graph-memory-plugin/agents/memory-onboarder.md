@@ -59,21 +59,36 @@ Explain the runtime options:
 
 Strongly recommend Docker daemon mode unless the user explicitly wants otherwise.
 
-Configure the chosen mode:
+## Step 3b: Choose Pipeline Worker Harness
+
+Ask which agent harness should run the background pipeline (scribe → auditor → librarian → dreamer):
+
+- `codex` (OpenAI Codex CLI) — requires `codex login` auth. Best for ChatGPT subscribers.
+- `claude` (Anthropic Claude Code) — requires `claude` CLI on PATH, uses existing OAuth or API key. Best for Claude subscribers.
+- `pi` (pi coding agent) — requires `pi` CLI on PATH, uses existing subscription or API key. Open-source, provider-agnostic.
+
+If the user isn't sure, recommend:
+- Codex if they have a ChatGPT subscription
+- Claude if they have a Claude subscription
+- pi as a provider-agnostic fallback
+
+Once chosen, hold this value for the configure_runtime call in the next step.
+
+## Step 4: Configure the chosen mode
 
 For Docker:
 
 ```text
-graph_memory(action="configure_runtime", runtimeMode="docker")
+graph_memory(action="configure_runtime", runtimeMode="docker", workerProvider="<chosen_harness>")
 ```
 
 For manual:
 
 ```text
-graph_memory(action="configure_runtime", runtimeMode="manual")
+graph_memory(action="configure_runtime", runtimeMode="manual", workerProvider="<chosen_harness>")
 ```
 
-## Step 4: Docker Runtime Bootstrap
+## Step 5: Docker Runtime Bootstrap
 
 Only for Docker daemon mode.
 
@@ -93,37 +108,35 @@ Tell the user the helper scripts now exist:
 - `bin/docker-doctor.sh`
 - `bin/docker-stop.sh`
 
-Ask the user to authenticate Codex for the worker runtime. This is a worker-auth step, not a Claude Code login step.
+Ask the user to authenticate the chosen harness for the worker runtime. Auth steps depend on the harness:
 
-Preferred path for ChatGPT subscribers:
-
-- have the user run `codex login` on the host once
-- import that host auth into the container
-
-Fallback paths:
-
-- device login inside the container
-- API key login
-
-Tell them the available helpers are:
-
+**For codex:**
+- `codex login` on the host
 - `bin/docker-codex-import-host-auth.sh` to copy host Codex auth into the container
-- `bin/docker-codex-login.sh` for interactive `codex login`
+- `bin/docker-codex-login.sh` for interactive `codex login` inside the container
+- `bin/docker-codex-login-api-key.sh` for API-key login via `OPENAI_API_KEY`
 - `bin/docker-codex-auth-status.sh` to inspect current auth state
-- `bin/docker-auth-check.sh` to verify auth and print next steps
-- `bin/docker-codex-login-api-key.sh` if they prefer API-key login via `OPENAI_API_KEY`
+
+**For claude:**
+- `claude` CLI on the host already uses OAuth or `ANTHROPIC_API_KEY`
+- `bin/docker-auth-check.sh` (harness-aware, checks relevant auth)
+- If using API key: mount or set `ANTHROPIC_API_KEY` in container env
+
+**For pi:**
+- `pi` CLI on the host already uses subscription or API key
+- `bin/docker-auth-check.sh` (harness-aware)
+- If using API key: mount or set the relevant provider key in container env
 
 Recommend this sequence:
 
-1. `codex login` on the host if needed
+1. Authenticate the harness on the host if needed
 2. `bin/docker-bootstrap.sh`
 3. `bin/docker-auth-check.sh`
-4. If needed, `bin/docker-codex-import-host-auth.sh`
-5. If host auth is unavailable, `bin/docker-codex-login.sh`
+4. Follow auth prompts for the chosen harness
 
 Do not claim the bootstrap succeeded unless the user confirms they ran it or future tool support verifies it directly.
 
-## Step 5: Seed Initial Memory
+## Step 6: Seed Initial Memory
 
 Ask a short high-value interview:
 
@@ -165,7 +178,7 @@ For other preferences/interests:
 graph_memory(action="remember", path="user/[topic]", gist="[one-line summary]", title="[Topic]", content="[details]", tags=["preference"], confidence=0.7, edges=[{target: "user/identity", type: "relates_to", weight: 0.5}])
 ```
 
-## Step 6: Wire Memory Awareness into the Project's CLAUDE.md
+## Step 7: Wire Memory Awareness into the Project's CLAUDE.md
 
 The plugin auto-loads `MAP.md`, `PRIORS.md`, `SOMA.md`, `WORKING.md`, and `DREAMS.md` at session start, but a project's `CLAUDE.md` is what teaches Claude Code *how to use* the memory system in that repo.
 
@@ -175,7 +188,7 @@ If the user declines, move on. Do not pressure.
 
 Mention to the user that they can run `/memory-wire-project` later to wire any additional repo or refresh the section after a plugin update.
 
-## Step 7: Confirm and Next Steps
+## Step 8: Confirm and Next Steps
 
 Summarize:
 
