@@ -8,7 +8,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
 
-**The home of the `graph-memory` plugin for Claude Code and long-lived AI workflows**
+**The home of the `graph-memory` plugin for Claude Code, OpenCode, and long-lived AI workflows**
 
 *Not a vector DB. Not a prompt scrapbook. Not a black box.*
 
@@ -26,7 +26,7 @@ The model learns your style, adapts to a repo, notices recurring mistakes, and s
 
 `Cogni-Code` packages the `graph-memory` plugin as a public, inspectable memory system without hiding memory behind infrastructure you cannot inspect.
 
-It stores memory as markdown nodes, compresses the graph into prompt-ready artifacts like `MAP.md` and `PRIORS.md`, gives Claude Code a real memory tool surface, and optionally runs a background pipeline that turns recent interaction history into structured graph updates.
+It stores memory as markdown nodes, compresses the graph into prompt-ready artifacts like `MAP.md` and `PRIORS.md`, gives agents a real memory tool surface, and optionally runs a background pipeline that turns recent interaction history into structured graph updates.
 
 The goal is simple:
 
@@ -44,6 +44,7 @@ If you cloned this repo, pick the path that matches what you want:
 | If you want... | Start here |
 |---|---|
 | basic persistent memory in Claude Code | [Quick Start](#quick-start) |
+| persistent memory in OpenCode | [OpenCode Quick Start](#opencode-quick-start) |
 | the full background pipeline | [Runtime Modes](#runtime-modes) |
 | concrete command and tool examples | [Five-Minute First Success](#five-minute-first-success) |
 | the current plugin surface | [`graph-memory-plugin/`](./graph-memory-plugin/) |
@@ -129,7 +130,8 @@ That is the interesting part.
 | durable graph nodes | markdown memory nodes with confidence, tags, edges, soma markers, timestamps | stable core |
 | recall + search | keyword search, multi-hop recall, direct node reads | stable core |
 | direct memory writes | `remember`, `write_note`, `resurface`, git history, revert | stable core |
-| startup context loading | `MAP.md`, `PRIORS.md`, working context loaded through hooks | stable core |
+| startup context loading | `MAP.md`, `PRIORS.md`, working context loaded through hooks or plugin events | stable core |
+| OpenCode plugin | native OpenCode extension with tool registration, context injection, ambient recall, and conversation capture | stable core |
 | background pipeline | `scribe -> auditor -> librarian -> dreamer` | advanced / optional |
 | Docker runtime helpers | bootstrap, health checks, status, auth import, runtime env | advanced / optional |
 | morning kickoff | repo-specific start-of-day briefing from memory | available, still evolving |
@@ -141,6 +143,8 @@ That is the interesting part.
 ---
 
 ## Quick Start
+
+### Claude Code
 
 ```bash
 git clone https://github.com/ConnorCallahan01/cogni-code.git
@@ -154,7 +158,21 @@ Then open Claude Code and run:
 /memory-onboard
 ```
 
-That flow will walk through:
+### OpenCode Quick Start
+
+```bash
+git clone https://github.com/ConnorCallahan01/cogni-code.git
+cd cogni-code/graph-memory-plugin
+./bin/install-opencode.sh
+```
+
+Then start OpenCode and run:
+
+```text
+/memory-onboard
+```
+
+Both installers will walk through:
 
 1. choosing a graph root
 2. selecting runtime mode
@@ -235,7 +253,7 @@ More examples:
 
 ## The Main Skill-Command Surface
 
-These slash entries are technically skill commands installed into Claude Code.
+These slash entries are installed as skill commands in Claude Code or slash commands in OpenCode.
 
 | Skill command | Job |
 |---|---|
@@ -309,7 +327,7 @@ General helpers:
 
 ## What Gets Installed
 
-Running `graph-memory-plugin/bin/install.sh`:
+### Claude Code (`bin/install.sh`)
 
 1. installs plugin dependencies if needed
 2. builds the plugin
@@ -325,6 +343,22 @@ That gives you:
 - auto-loaded startup context
 - session capture hooks
 - session-end consolidation hooks
+
+### OpenCode (`bin/install-opencode.sh`)
+
+1. installs plugin dependencies if needed
+2. builds the plugin
+3. symlinks the OpenCode extension into `~/.config/opencode/plugins/`
+4. symlinks slash commands into `~/.config/opencode/commands/`
+5. registers the MCP server (disabled by default) in `~/.config/opencode/opencode.json`
+
+That gives you:
+
+- a live `graph_memory` tool (registered directly by the plugin)
+- slash command entrypoints
+- auto-loaded startup context via session events
+- ambient auto-recall on user messages
+- conversation capture feeding the scribe pipeline
 
 ---
 
@@ -366,7 +400,7 @@ That keeps the system legible.
 
 Main surfaces:
 
-- [`graph-memory-plugin/`](./graph-memory-plugin/): the installable plugin
+- [`graph-memory-plugin/`](./graph-memory-plugin/): the installable plugin (Claude Code + OpenCode + pi)
 - [`memory-dashboard/`](./memory-dashboard/): optional local inspection UI
 - [`docs/`](./docs/): setup and repo notes
 - [`examples/`](./examples/): concrete command, tool, skill, and SDK examples
@@ -393,7 +427,7 @@ If you are evaluating the project, start there.
 - MCP tool surface
 - startup context artifacts
 - git-backed memory history
-- plugin install flow
+- plugin install flow (Claude Code, OpenCode, pi)
 
 ### Advanced But Worth Using
 

@@ -4,7 +4,7 @@ This is the public setup path for someone cloning the repository and installing 
 
 ## Prerequisites
 
-- Claude Code installed on the host machine
+- An AI coding agent: **Claude Code**, **OpenCode**, or **pi**
 - Node.js 20+ and `npm`
 - Git
 - Optional: Docker Desktop if you want background daemon mode
@@ -21,6 +21,8 @@ The plugin lives in [`graph-memory-plugin/`](../graph-memory-plugin/). The root 
 
 ## 2. Install The Plugin
 
+### Claude Code
+
 ```bash
 cd graph-memory-plugin
 ./bin/install.sh
@@ -35,11 +37,28 @@ What `./bin/install.sh` does:
 5. Installs slash commands into `~/.claude/commands/`
 6. Registers Claude Code hooks in `~/.claude/settings.json`
 
-If you prefer to do this manually, inspect [`graph-memory-plugin/bin/install.sh`](../graph-memory-plugin/bin/install.sh) first and mirror those steps yourself.
+### OpenCode
 
-## 3. Start Claude Code And Onboard
+```bash
+cd graph-memory-plugin
+./bin/install-opencode.sh
+```
 
-Start a new Claude Code session, then run:
+What `./bin/install-opencode.sh` does:
+
+1. Installs plugin dependencies if needed
+2. Builds the TypeScript sources into `dist/`
+3. Symlinks the OpenCode extension into `~/.config/opencode/plugins/`
+4. Symlinks slash commands into `~/.config/opencode/commands/`
+5. Registers the MCP server (disabled by default) in `~/.config/opencode/opencode.json`
+
+The OpenCode plugin registers the `graph_memory` tool directly — no separate MCP server is needed for normal usage. The registered MCP server is available as a fallback for other MCP clients.
+
+If you prefer to do this manually, inspect the install scripts first and mirror those steps yourself.
+
+## 3. Start Your Agent And Onboard
+
+Start a new Claude Code or OpenCode session, then run:
 
 ```text
 /memory-onboard
@@ -152,7 +171,9 @@ After the plugin and onboarding are confirmed, wire graph-memory awareness into 
 /memory-wire-project
 ```
 
-This inserts a `<!-- BEGIN graph-memory plugin section -->` / `<!-- END graph-memory plugin section -->` block into the project's `CLAUDE.md`, or creates the file if it doesn't exist. The content teaches the agent when to recall, when to remember, how to use the MCP tool, and not to mention the memory system unless asked.
+This inserts a `<!-- BEGIN graph-memory plugin section -->` / `<!-- END graph-memory plugin section -->` block into the project's `CLAUDE.md` (for Claude Code) or `AGENTS.md` (for OpenCode), or creates the file if it doesn't exist. The content teaches the agent when to recall, when to remember, how to use the tool, and not to mention the memory system unless asked.
+
+For OpenCode, you can also manually copy `templates/OPENCODE-memory-section.md` into your project's `AGENTS.md`.
 
 The command is idempotent — safe to re-run on a project that already has the section installed.
 
@@ -182,6 +203,8 @@ Default ports:
 
 ## 9. Troubleshooting
 
+### Claude Code
+
 If slash commands do not appear:
 
 - restart Claude Code
@@ -193,6 +216,21 @@ If `graph_memory` is missing:
 - open `/mcp`
 - confirm `graph-memory` is registered
 - check `~/.claude.json` for the MCP server entry
+
+### OpenCode
+
+If slash commands do not appear:
+
+- restart OpenCode
+- confirm the plugin is symlinked under `~/.config/opencode/plugins/graph-memory.ts`
+- confirm commands exist under `~/.config/opencode/commands/`
+
+If `graph_memory` is missing:
+
+- confirm the extension symlink points to `extensions/graph-memory-opencode.ts`
+- check `~/.config/opencode/opencode.json` for the plugin registration
+
+### Docker
 
 If Docker mode is unhealthy:
 
