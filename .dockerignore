@@ -1,0 +1,15 @@
+node_modules/
+**/node_modules/
+dist/
+**/dist/
+.env
+.claude/
+.firecrawl/
+graph/
+*.log
+.git/
+.gitignore
+.dockerignore
+Dockerfile*
+README.md
+LICENSE
