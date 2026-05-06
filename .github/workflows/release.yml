@@ -76,6 +76,18 @@ jobs:
             --title "${{ steps.version.outputs.tag }}" \
             --notes-file "${{ steps.changelog.outputs.body_path }}"
 
+      - name: Update CHANGELOG [Unreleased] heading
+        if: steps.check_tag.outputs.exists == 'false' && inputs.dry_run != true
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          DATE=$(date +%Y-%m-%d)
+          sed -i "s/^## \[Unreleased\]$/## [${VERSION}] — ${DATE}/" CHANGELOG.md
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add CHANGELOG.md
+          git diff --cached --quiet || git commit -m "Update changelog for v${VERSION}"
+          git push
+
       - name: Dry run summary
         if: steps.check_tag.outputs.exists == 'false' && inputs.dry_run == true
         run: |
