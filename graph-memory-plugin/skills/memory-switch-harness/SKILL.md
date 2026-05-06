@@ -39,14 +39,25 @@ Available: codex | claude | pi | opencode
 
 ### Phase 3: Ensure Docker image has the harness CLI
 
-10. **Only for pi**: The Docker image must have `@mariozechner/pi-coding-agent` installed. Check the Dockerfile at `<plugin_dir>/docker/Dockerfile`. If it does not list `@mariozechner/pi-coding-agent` in the `RUN npm install -g` line, add it alongside `@openai/codex`.
-11. Rebuild the image:
+10. **Docker mode only (skip if manual mode).** Verify the chosen harness CLI is available inside the running container:
     ```bash
-    cd <plugin_dir> && npm install --ignore-scripts && bin/docker-build.sh
+    docker exec "$GRAPH_MEMORY_DOCKER_CONTAINER" which <harness_cli> 2>/dev/null
     ```
-    (The `npm install` syncs the lockfile before the Docker build uses `npm ci`.)
-12. **For codex and claude**: These are already in the base image. No rebuild needed.
-13. **For opencode**: opencode is installed in the Dockerfile via the official install script. If the image was built before opencode support was added, rebuild it using the instructions in step 11.
+    Where `<harness_cli>` is `codex` for codex, `claude` for claude, `pi` for pi, or `opencode` for opencode.
+
+11. **If the CLI is not found** (command fails or returns empty): rebuild the image and restart.
+    - First, check the Dockerfile at `<plugin_dir>/docker/Dockerfile` to confirm the harness CLI is included in the install steps. If it's missing from the Dockerfile, add the appropriate install command:
+      - **codex**: `@openai/codex` via `npm install -g`
+      - **claude**: already bundled in the base node image (no Dockerfile change needed)
+      - **pi**: `@mariozechner/pi-coding-agent` via `npm install -g`
+      - **opencode**: via `curl -fsSL https://opencode.ai/install | bash`
+    - Then rebuild:
+      ```bash
+      cd <plugin_dir> && npm install --ignore-scripts && bin/docker-build.sh
+      ```
+      (The `npm install` syncs the lockfile before the Docker build uses `npm ci`.)
+
+12. **If the CLI is found**: no rebuild needed. Continue to Phase 4.
 
 ### Phase 4: Restart the daemon
 
