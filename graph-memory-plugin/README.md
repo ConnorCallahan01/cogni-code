@@ -1,6 +1,6 @@
 # graph-memory plugin
 
-Persistent, graph-backed memory for Claude Code and compatible agent workflows.
+Persistent, graph-backed memory for Claude Code, OpenCode, and compatible agent workflows.
 
 ```text
       o----o----o
@@ -20,12 +20,15 @@ This directory is the active plugin surface in the repository. If you cloned the
 ## What It Does
 
 - remembers preferences, decisions, project context, and recurring patterns across sessions
-- exposes a `graph_memory` MCP tool for search, recall, remember, inspection, and maintenance
+- exposes a `graph_memory` tool for search, recall, remember, inspection, and maintenance
 - loads compact context artifacts like `MAP.md` and `PRIORS.md` into new sessions
+- supports Claude Code (MCP + hooks), OpenCode (native plugin), and pi (extension)
 - optionally runs a background `scribe -> auditor -> librarian -> dreamer` pipeline in Docker
 - keeps git history for memory changes so you can inspect or revert them
 
-## Install From This Repository
+## Install
+
+### Claude Code
 
 From the repository root:
 
@@ -40,21 +43,37 @@ Then start Claude Code and run:
 /memory-onboard
 ```
 
+### OpenCode
+
+From the repository root:
+
+```bash
+cd graph-memory-plugin
+./bin/install-opencode.sh
+```
+
+Then start OpenCode and run:
+
+```text
+/memory-onboard
+```
+
 Detailed clone-to-first-run instructions are in [../docs/setup-from-clone.md](../docs/setup-from-clone.md).
 
 ## Runtime Model
 
 ### Manual mode
 
-- MCP tool and graph storage only
+- tool and graph storage only
 - no daemon container
 - useful for lightweight local testing
+- works with Claude Code, OpenCode, and pi
 
 ### Docker daemon mode
 
 - recommended for normal use
-- Claude Code stays on the host
-- graph root stays on the host
+- host agent stays on the host
+- graph root stays on the host filesystem
 - daemon and bounded workers run in Docker against the mounted graph root
 
 Useful helpers (harness-agnostic):
@@ -74,7 +93,7 @@ General:
 
 ## Commands
 
-Installed slash commands:
+Installed slash commands (available in both Claude Code and OpenCode):
 
 | Command | Description |
 |---------|-------------|
@@ -85,14 +104,13 @@ Installed slash commands:
 | `/memory-connect-inputs` | Configure host-side external inputs for briefs and context enrichment |
 | `/memory-input-refresh` | Refresh configured external inputs and ingest new data |
 | `/memory-switch-harness` | Switch the background pipeline worker between codex, claude, and pi |
-| `/recall <query>` | Deep graph lookup with edge traversal |
 | `/memory-wire-project` | Wire (or refresh) the graph-memory section in this project's `CLAUDE.md` |
 
-Compatibility aliases are also installed under `/graph-memory:<command>`.
+Claude Code also provides `/recall <query>` as a skill command with deeper graph lookup and edge traversal.
 
-## MCP Tool
+## Tool
 
-The plugin exposes one MCP tool: `graph_memory`.
+The plugin exposes one tool: `graph_memory`. In Claude Code it is registered as an MCP server; in OpenCode it is registered directly by the plugin extension.
 
 Supported actions:
 
@@ -133,5 +151,8 @@ Resources:
 - build: `npm run build`
 - test: `npm test`
 - type-check: `npx tsc --noEmit`
-- plugin manifest: [`.claude-plugin/plugin.json`](./.claude-plugin/plugin.json)
+- Claude Code plugin manifest: [`.claude-plugin/plugin.json`](./.claude-plugin/plugin.json)
+- OpenCode extension: [`extensions/graph-memory-opencode.ts`](./extensions/graph-memory-opencode.ts)
+- pi extension: [`extensions/graph-memory.ts`](./extensions/graph-memory.ts)
+- memory section templates: [`templates/`](./templates/)
 - examples: [`../examples/`](../examples/)

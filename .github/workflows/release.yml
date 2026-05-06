@@ -1,0 +1,89 @@
+name: Release
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry run — log what would happen without creating a release"
+        type: boolean
+        default: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Read version from package.json
+        id: version
+        run: |
+          VERSION=$(jq -r .version graph-memory-plugin/package.json)
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Check if tag already exists
+        id: check_tag
+        run: |
+          if git rev-parse "v${{ steps.version.outputs.version }}" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Extract changelog for this version
+        id: changelog
+        if: steps.check_tag.outputs.exists == 'false'
+        run: |
+          python3 -c "
+          import re, sys
+          with open('CHANGELOG.md') as f:
+              content = f.read()
+          pattern = r'^## \[Unreleased\]\s*\n(.*?)(?=\n## \[|\Z)'
+          m = re.search(pattern, content, re.DOTALL | re.MULTILINE)
+          if m:
+              print(m.group(1).strip())
+          else:
+              print('No Unreleased section found in CHANGELOG.md')
+              sys.exit(1)
+          " > /tmp/body.md
+          echo "body_path=/tmp/body.md" >> "$GITHUB_OUTPUT"
+
+      - name: Build plugin
+        if: steps.check_tag.outputs.exists == 'false'
+        run: |
+          cd graph-memory-plugin
+          npm install
+          npm run build
+
+      - name: Create release
+        if: steps.check_tag.outputs.exists == 'false' && inputs.dry_run != true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${{ steps.version.outputs.tag }}" \
+            --title "${{ steps.version.outputs.tag }}" \
+            --notes-file "${{ steps.changelog.outputs.body_path }}"
+
+      - name: Dry run summary
+        if: steps.check_tag.outputs.exists == 'false' && inputs.dry_run == true
+        run: |
+          echo "=== DRY RUN — would create release ==="
+          echo "Tag: ${{ steps.version.outputs.tag }}"
+          echo "Title: ${{ steps.version.outputs.tag }}"
+          echo "--- Body ---"
+          cat "${{ steps.changelog.outputs.body_path }}"
+
+      - name: Skip (tag exists)
+        if: steps.check_tag.outputs.exists == 'true'
+        run: |
+          echo "Tag ${{ steps.version.outputs.tag }} already exists — skipping release."

@@ -5,6 +5,26 @@ All notable changes to graph-memory will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.0] — 2026-05-06
+
+### Added
+
+- **OpenCode plugin extension** (`extensions/graph-memory-opencode.ts`) — native OpenCode plugin that registers the `graph_memory` tool, injects context files (MAP, PRIORS, SOMA, WORKING, DREAMS) at session start, performs ambient auto-recall on user messages, and captures conversation for the scribe pipeline.
+- **`bin/install-opencode.sh`** — installer that symlinks the OpenCode extension and slash commands into `~/.config/opencode/` and registers the MCP server (disabled by default) in `opencode.json`.
+- **`opencode-commands/`** — 7 slash commands for OpenCode (`memory-onboard`, `memory-status`, `memory-search`, `memory-morning-kickoff`, `memory-connect-inputs`, `memory-input-refresh`, `memory-wire-project`).
+- **`templates/OPENCODE-memory-section.md`** — memory instruction template for wiring into OpenCode project `AGENTS.md` files.
+- **`.dockerignore`** — excludes unnecessary files from Docker builds.
+- Updated documentation across `CLAUDE.md`, `README.md`, `graph-memory-plugin/README.md`, and `docs/setup-from-clone.md` to reflect OpenCode as a supported harness alongside Claude Code and pi.
+- **Release workflow** (`.github/workflows/release.yml`) — creates a GitHub Release automatically on merge to master, using the version from `graph-memory-plugin/package.json` and the `[Unreleased]` section from `CHANGELOG.md`.
+
+### Changed
+
+- **`package.json`** description updated to mention OpenCode; `opencode-commands/` added to files array.
+
+### Fixed
+
+- Patched npm audit vulnerabilities.
+
 ## [2.0.0] — 2026-05-04
 
 ### Added

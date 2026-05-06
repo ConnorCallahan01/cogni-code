@@ -8,7 +8,7 @@ This repository contains **graph-memory** — a persistent, self-evolving knowle
 
 Active surfaces:
 
-- **`graph-memory-plugin/`** — The current plugin. MCP server, hooks, runtime helpers, slash commands, skills, and agents.
+- **`graph-memory-plugin/`** — The current plugin. MCP server, hooks, runtime helpers, slash commands, skills, agents, and OpenCode extension.
 - **`memory-dashboard/`** — Optional inspection UI for graph state, logs, jobs, and briefs.
 
 Legacy/reference material:
@@ -23,8 +23,12 @@ graph-memory-plugin/
     pipeline/             # daemon, queue, graph ops, librarian, dreamer, preflight
   src/hooks/              # Claude Code hooks
   agents/                 # Background agent instruction files
-  commands/               # Slash command specs
+  commands/               # Slash command specs (Claude Code)
+  opencode-commands/      # Slash command specs (OpenCode)
+  extensions/             # Plugin extension entry points
+                           #   graph-memory.ts (pi), graph-memory-opencode.ts (OpenCode)
   skills/                 # Memory skill + /recall
+  templates/              # Memory section templates (Claude, OpenCode, generic)
   bin/                    # Install, runtime, Docker, and hook shell wrappers
 
 memory-dashboard/
@@ -54,7 +58,7 @@ cd memory-dashboard && npx tsc --noEmit
 
 ## Pipeline Architecture
 
-The memory system runs automatically via Claude Code hooks:
+The memory system runs automatically via hooks (Claude Code) or plugin events (OpenCode):
 
 1. **Session hooks** capture startup context, user prompts, assistant responses, and tool traces.
 2. **Scribe** extracts deltas from buffered session state.
@@ -73,7 +77,7 @@ Context files loaded at session start:
 
 ## Using The Memory System
 
-The `graph_memory` MCP tool is available in Claude Code sessions after installation. Common actions:
+The `graph_memory` tool is available in Claude Code, OpenCode, and pi sessions after installation. Common actions:
 
 ### Recall
 
@@ -107,7 +111,7 @@ graph_memory(action="remember", path="patterns/new-pattern", gist="One-sentence 
 <!-- BEGIN graph-memory plugin section -->
 ## Graph Memory
 
-The `graph_memory` tool provides persistent knowledge graph access across both the Claude Code and pi harnesses. Use it for recall, search, and remembering across sessions.
+The `graph_memory` tool provides persistent knowledge graph access across Claude Code, OpenCode, and pi sessions. Use it for recall, search, and remembering across sessions.
 
 ### When to Recall
 
