@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`templates/OPENCODE-memory-section.md`** — memory instruction template for wiring into OpenCode project `AGENTS.md` files.
 - **`.dockerignore`** — excludes unnecessary files from Docker builds.
 - Updated documentation across `CLAUDE.md`, `README.md`, `graph-memory-plugin/README.md`, and `docs/setup-from-clone.md` to reflect OpenCode as a supported harness alongside Claude Code and pi.
+- **Release workflow** (`.github/workflows/release.yml`) — creates a GitHub Release automatically on merge to master, using the version from `graph-memory-plugin/package.json` and the `[Unreleased]` section from `CHANGELOG.md`.
 
 ### Changed
 
