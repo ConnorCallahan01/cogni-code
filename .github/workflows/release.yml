@@ -46,15 +46,17 @@ jobs:
         run: |
           python3 -c "
           import re, sys
+          version = '${{ steps.version.outputs.version }}'
           with open('CHANGELOG.md') as f:
               content = f.read()
-          pattern = r'^## \[Unreleased\]\s*\n(.*?)(?=\n## \[|\Z)'
-          m = re.search(pattern, content, re.DOTALL | re.MULTILINE)
-          if m:
-              print(m.group(1).strip())
-          else:
-              print('No Unreleased section found in CHANGELOG.md')
-              sys.exit(1)
+          for heading in ['Unreleased', version]:
+              pattern = r'^## \[' + re.escape(heading) + r'\][^\n]*\n(.*?)(?=\n## \[|\Z)'
+              m = re.search(pattern, content, re.DOTALL | re.MULTILINE)
+              if m:
+                  print(m.group(1).strip())
+                  sys.exit(0)
+          print('No [Unreleased] or [' + version + '] section found in CHANGELOG.md')
+          sys.exit(1)
           " > /tmp/body.md
           echo "body_path=/tmp/body.md" >> "$GITHUB_OUTPUT"
 
