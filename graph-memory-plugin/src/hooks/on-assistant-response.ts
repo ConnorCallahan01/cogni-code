@@ -8,7 +8,7 @@
  *   - last_assistant_message: the assistant's response text
  *   - session_id: Claude Code session ID
  *
- * Appends directly to conversation.jsonl. When buffer reaches threshold,
+ * Appends to the per-session conversation buffer. When buffer reaches threshold,
  * rotates to a snapshot and queues a scribe job.
  */
 import fs from "fs";
@@ -18,7 +18,7 @@ import { collectVisibleAssistantTrace } from "../graph-memory/claude-transcript.
 import { clearMemoryGateState } from "../graph-memory/memory-gate.js";
 import { detectProject } from "../graph-memory/project.js";
 import { enqueueJob } from "../graph-memory/pipeline/job-queue.js";
-import { appendAssistantTraceEvents, getAssistantTracePath, getToolTracePath } from "../graph-memory/session-trace.js";
+import { appendAssistantTraceEvents, getAssistantTracePath, getConversationLogPath, getToolTracePath } from "../graph-memory/session-trace.js";
 
 interface StopHookInput {
   session_id: string;
@@ -93,7 +93,7 @@ async function main() {
     fs.mkdirSync(bufferDir, { recursive: true });
   }
 
-  const logPath = CONFIG.paths.conversationLog;
+  const logPath = getConversationLogPath(sessionId);
   const now = latestTranscriptFinal?.timestamp || new Date().toISOString();
 
   // Append assistant message

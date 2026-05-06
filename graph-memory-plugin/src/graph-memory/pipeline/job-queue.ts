@@ -10,7 +10,9 @@ const PRIORITY: Record<GraphMemoryJobType, number> = {
   auditor: 2,
   librarian: 3,
   dreamer: 4,
-  memory_analysis: 5,
+  skillforge: 5,
+  skillforge_refresh: 5,
+  memory_analysis: 6,
 };
 
 function stateDir(state: GraphMemoryJobState): string {
@@ -60,6 +62,7 @@ export function ensureJobDirectories(): void {
     CONFIG.paths.jobsRunning,
     CONFIG.paths.jobsDone,
     CONFIG.paths.jobsFailed,
+    CONFIG.paths.skillforgeManifests,
   ]) {
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });

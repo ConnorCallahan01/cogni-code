@@ -116,7 +116,11 @@ export default function OverviewView({ status, latestBrief, jobs, onNavigate }: 
       <div className="overview-status-strip panel-card">
         <div className="overview-status-item">
           <span>Current job</span>
-          <strong>{runningJob ? `${runningJob.type} · ${runningJob.displayState}` : 'idle'}</strong>
+          <strong>
+            {runningJob
+              ? `${runningJob.type.replace(/_/g, ' ')} · ${runningJob.displayState}${(runningJob.payload?.project && runningJob.payload.project !== 'global') ? ` · ${runningJob.payload.project}` : ''}`
+              : 'idle'}
+          </strong>
         </div>
         <div className="overview-status-item">
           <span>Archive</span>

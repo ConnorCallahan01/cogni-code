@@ -3,14 +3,16 @@ FROM node:20-bookworm-slim
 WORKDIR /app
 
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends ca-certificates \
+  && apt-get install -y --no-install-recommends ca-certificates curl \
   && rm -rf /var/lib/apt/lists/*
 
 COPY package.json package-lock.json ./
 RUN npm ci --ignore-scripts
 RUN npm install -g @openai/codex @mariozechner/pi-coding-agent
-RUN curl -fsSL https://opencode.ai/install | bash \
-  && ln -s /root/.opencode/bin/opencode /usr/local/bin/opencode
+RUN ARCH=$(uname -m) && \
+    case "$ARCH" in aarch64) GOARCH="arm64" ;; x86_64) GOARCH="amd64" ;; esac && \
+    curl -fsSL "https://github.com/anomalyco/opencode/releases/latest/download/opencode-linux-${GOARCH}.tar.gz" \
+    | tar xz -C /usr/local/bin opencode
 
 COPY tsconfig.json ./
 COPY src ./src

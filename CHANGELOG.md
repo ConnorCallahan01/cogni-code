@@ -5,6 +5,28 @@ All notable changes to graph-memory will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Skillforge pipeline** — the background daemon now scores frequently-accessed memory nodes and automatically converts high-scoring candidates into executable skill/command files that agents can invoke as slash commands. Includes scoring (`skillforge-score.ts`), manifest tracking (`skillforge-manifest.ts`), a skillforge agent (`agents/memory-skillforge.md`), and daemon job types `skillforge` and `skillforge_refresh`.
+- **`/refresh-skill` command** — new slash command (Claude Code and OpenCode) for manually refreshing a skillforged skill whose source node has drifted.
+- **Drift detection and auto-refresh** — the daemon compares content hashes of skillforged nodes against their manifests each tick and enqueues `skillforge_refresh` jobs when the source content has changed.
+- **Recall and access tracking** — nodes now track `recall_action_count`, `distinct_sessions`, and `access_sessions` in both frontmatter and the index. `updateLastAccessed` accepts `actionType` and `sessionId` to distinguish reads from recalls and count unique sessions.
+- **Per-session conversation buffers** — the OpenCode plugin now writes each session to its own `conversation-{sessionId}.jsonl` file instead of a shared `conversation.jsonl`, preventing cross-session writes. Stale buffers are scavenged on daemon tick.
+- **Project-aware scribe payloads** — rotated snapshots from both the OpenCode and pi plugins include the current project in the scribe job payload so downstream pipeline stages can scope correctly.
+- **Skills section in daily analysis** — the memory analysis agent now receives and reports on skillforged skills (active, stale, unused) in the daily brief.
+- **Librarian skillforge unpin rule** — nodes marked `skillforged_at` are automatically unpinned by the librarian, since the skill file replaces the pinned loading mechanism.
+- **Daemon concurrency** — `daemonConcurrency` config field (default 3) controls how many jobs the daemon runs in parallel.
+- **Dockerfile fix** — OpenCode binary installed via GitHub releases tarball instead of the shell installer, with arch-aware `GOARCH` resolution.
+
+### Changed
+
+- **OpenCode event property access** — `session.created` reads `info.id` instead of `id`; `session.idle` and `session.deleted` read `sessionID` instead of `id`, matching the current OpenCode plugin API.
+- **OpenCode `message.updated` handler** — now fetches messages from the session API instead of relying on the event payload directly, improving reliability of user message capture and ambient recall.
+- **`conversationLog` path removed** — replaced by per-session buffer files; `CONFIG.paths.conversationLog` is no longer used.
+- **Symlink-safe dist resolution** — the OpenCode plugin resolves its `dist/` directory through `fs.realpathSync` to handle symlinked installs correctly.
+
 ## [2.2.0] — 2026-05-06
 
 ### Added

@@ -48,6 +48,13 @@ export type ActivityEventType =
   | "graph:dream_capped"
   | "graph:archive_index_rebuilt"
   | "graph:node_resurfaced"
+  | "skillforge:scored"
+  | "skillforge:job_queued"
+  | "skillforge:complete"
+  | "skillforge:error"
+  | "skillforge:drift_detected"
+  | "skillforge:refresh"
+  | "skillforge:refresh_error"
   | "system:init"
   | "system:info"
   | "system:error";

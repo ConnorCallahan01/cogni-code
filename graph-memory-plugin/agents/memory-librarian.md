@@ -89,6 +89,12 @@ For each pin candidate, decide:
 - **Skip** — useful node, but not durable procedural memory
 - **Unpin** — for any already-pinned node that is no longer durable, procedural, or accurate
 
+Pin compaction for skillforged nodes:
+- If a node has `skillforged_at` in its frontmatter, it has been converted to a skill file
+- Skills replace pinned nodes as the preferred loading mechanism
+- **Unpin** any node that has been skillforged — the skill file now serves the loading purpose
+- Add a comment or log note: "Unpinned skillforged node {path} — skill file replaces pinned loading"
+
 Pinning standard:
 - Pinned nodes must be rare
 - They should read like instructions, guardrails, or operating procedures
@@ -228,3 +234,4 @@ Use specific edge types — `relates_to` is a fallback:
 9. **Confidence should be evidence-based** — Multiple sessions → high. Single mention → moderate. Speculative → low. Contradicted → lowered.
 10. **Pinned nodes are durable procedures, not highlights** — Pin only instructions the agent should reliably follow in future sessions. If "follow this exactly next time" would be too strong, do not pin it.
 11. **Pinning is a frontmatter change plus content discipline** — Set `pinned: true` in YAML frontmatter, and make sure the node body reads like a durable procedure or guardrail rather than a historical note.
+12. **Skillforged nodes should not remain pinned** — Once a node is converted to a skill (has `skillforged_at`), unpin it. The skill file provides the loading mechanism; keeping it pinned duplicates context injection.

@@ -749,6 +749,10 @@ export function rebuildIndex() {
         updated: fm.updated || fm.created || null,
         last_accessed: fm.last_accessed || fm.updated || fm.created || new Date().toISOString(),
         access_count: fm.access_count || 0,
+        recall_action_count: fm.recall_action_count || 0,
+        distinct_sessions: fm.distinct_sessions || (fm.access_sessions || []).length,
+        access_sessions: (fm.access_sessions || []).slice(-50),
+        skillforged_at: fm.skillforged_at || null,
         dream_refs: fm.dream_refs || [],
       };
       if (fm.project) {

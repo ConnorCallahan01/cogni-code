@@ -56,6 +56,10 @@ export function getAssistantTracePath(sessionId: string): string {
   return path.join(getSessionTraceDir(sessionId), "assistant-trace.jsonl");
 }
 
+export function getConversationLogPath(sessionId: string): string {
+  return path.join(CONFIG.paths.buffer, `conversation-${sanitizeSessionId(sessionId)}.jsonl`);
+}
+
 function ensureSessionTraceDir(sessionId: string): void {
   const dir = getSessionTraceDir(sessionId);
   if (!fs.existsSync(dir)) {

@@ -28,8 +28,13 @@ let _projectBoost: any;
 
 async function loadCore() {
   if (_handleGraphMemory) return;
-  const extDir = import.meta.dirname ?? path.dirname(new URL(import.meta.url).pathname);
-  const distDir = path.resolve(extDir, "..", "dist", "graph-memory");
+  const rawDir = import.meta.dirname ?? path.dirname(new URL(import.meta.url).pathname);
+  const realDir = fs.realpathSync(rawDir);
+  const candidates = [
+    path.resolve(realDir, "..", "dist", "graph-memory"),
+    path.resolve(rawDir, "..", "dist", "graph-memory"),
+  ];
+  const distDir = candidates.find((d) => fs.existsSync(path.join(d, "tools.js"))) || candidates[0];
   const tools = await import(path.join(distDir, "tools.js"));
   const index = await import(path.join(distDir, "index.js"));
   const config = await import(path.join(distDir, "config.js"));
@@ -71,11 +76,16 @@ export const GraphMemoryPlugin: Plugin = async ({ project, client, directory, wo
     }
   }
 
+  function sessionLogPath(): string {
+    const safeId = captureSessionId.replace(/[^a-zA-Z0-9_\-]/g, "_");
+    return path.join(_CONFIG!.paths.buffer, `conversation-${safeId}.jsonl`);
+  }
+
   function appendToBuffer(entry: Record<string, unknown>) {
     if (!captureEnabled || !_CONFIG) return;
     ensureBufferDir();
     fs.appendFileSync(
-      _CONFIG.paths.conversationLog,
+      sessionLogPath(),
       JSON.stringify(entry) + "\n"
     );
     messageCount++;
@@ -83,7 +93,7 @@ export const GraphMemoryPlugin: Plugin = async ({ project, client, directory, wo
 
   function rotateAndQueue() {
     if (!_CONFIG || !captureEnabled) return;
-    const logPath = _CONFIG.paths.conversationLog;
+    const logPath = sessionLogPath();
     if (!fs.existsSync(logPath)) return;
     const content = fs.readFileSync(logPath, "utf-8").trim();
     if (!content) return;
@@ -91,15 +101,17 @@ export const GraphMemoryPlugin: Plugin = async ({ project, client, directory, wo
     const snapshotName = `snapshot_${Date.now()}.jsonl`;
     const snapshotPath = path.join(_CONFIG.paths.buffer, snapshotName);
     fs.writeFileSync(snapshotPath, content + "\n");
-    fs.writeFileSync(logPath, "");
+    fs.unlinkSync(logPath);
     messageCount = 0;
 
     if (_enqueueJob) {
+      const currentProject = detectCurrentProject();
       _enqueueJob({
         type: "scribe",
         payload: {
           snapshotPath,
           sessionId: captureSessionId,
+          ...(currentProject ? { project: currentProject } : {}),
         },
         triggerSource: "opencode-plugin:threshold",
         idempotencyKey: `scribe:${snapshotPath}`,
@@ -259,6 +271,12 @@ export const GraphMemoryPlugin: Plugin = async ({ project, client, directory, wo
   let activeSessionId: string | null = null;
   let lastProcessedMessageCount: Record<string, number> = {};
 
+  try {
+    const markerDir = path.join(process.env.HOME || "/tmp", ".graph-memory");
+    if (!fs.existsSync(markerDir)) fs.mkdirSync(markerDir, { recursive: true });
+    fs.writeFileSync(path.join(markerDir, ".plugin-loaded"), `${new Date().toISOString()} project=${project?.id || "unknown"} worktree=${worktree || "none"}\n`);
+  } catch { /* ignore */ }
+
   return {
     // ── Register the graph_memory tool ─────────────────────────────
     tool: {
@@ -338,14 +356,12 @@ SETUP:
     event: async ({ event }) => {
       const type = event.type;
 
-      // ── session.created: initialize, load context, start capture ──
       if (type === "session.created") {
-        const sessionId = (event.properties as any)?.id;
+        const sessionId = (event.properties as any)?.info?.id;
         if (sessionId) {
           activeSessionId = sessionId;
         }
 
-        // Flush leftover buffer from a previous session
         await ensureGraph();
         await loadCore();
         if (_CONFIG && messageCount > 0) {
@@ -356,12 +372,17 @@ SETUP:
         messageCount = 0;
         captureSessionId = `opencode_session_${Date.now()}`;
 
-        if (_CONFIG) {
-          ensureBufferDir();
+        const bufferDir = _CONFIG?.paths?.buffer || path.join(process.env.GRAPH_MEMORY_ROOT || path.join(process.env.HOME || "/tmp", ".graph-memory"), ".buffer");
+        try {
+          if (!fs.existsSync(bufferDir)) fs.mkdirSync(bufferDir, { recursive: true });
+          const safeId = captureSessionId.replace(/[^a-zA-Z0-9_\-]/g, "_");
+          const perSessionLog = path.join(bufferDir, `conversation-${safeId}.jsonl`);
+          fs.writeFileSync(perSessionLog, "");
+        } catch (e) {
           try {
-            if (fs.existsSync(_CONFIG.paths.conversationLog)) {
-              fs.writeFileSync(_CONFIG.paths.conversationLog, "");
-            }
+            await client.app.log({
+              body: { service: "graph-memory", level: "error", message: `session.created buffer init failed: ${e}` },
+            });
           } catch { /* ignore */ }
         }
 
@@ -392,7 +413,7 @@ SETUP:
       if (type === "session.idle") {
         if (!captureEnabled || !_CONFIG) return;
 
-        const sessionId = (event.properties as any)?.id;
+        const sessionId = (event.properties as any)?.sessionID;
         if (sessionId) {
           try {
             const messages = await client.session.messages({
@@ -426,12 +447,14 @@ SETUP:
                     ? textParts.slice(0, maxLen) + "..."
                     : textParts;
 
+                  const currentProject = detectCurrentProject();
                   appendToBuffer({
                     role: "assistant",
                     content: truncated,
                     timestamp: new Date().toISOString(),
                     source: "opencode_session_idle",
                     final: true,
+                    ...(currentProject ? { project: currentProject } : {}),
                   });
                 }
               } else if (role === "user") {
@@ -447,11 +470,13 @@ SETUP:
                     ? textParts.slice(0, maxLen) + "..."
                     : textParts;
 
+                  const currentProject = detectCurrentProject();
                   appendToBuffer({
                     role: "user",
                     content: truncated,
                     timestamp: new Date().toISOString(),
                     source: "opencode_session_idle",
+                    ...(currentProject ? { project: currentProject } : {}),
                   });
 
                   // Ambient recall for user messages discovered at idle
@@ -491,6 +516,15 @@ SETUP:
         if (captureEnabled && messageCount > 0) {
           rotateAndQueue();
         }
+        if (captureSessionId && _CONFIG) {
+          try {
+            const safeId = captureSessionId.replace(/[^a-zA-Z0-9_\-]/g, "_");
+            const perSessionLog = path.join(_CONFIG.paths.buffer, `conversation-${safeId}.jsonl`);
+            if (fs.existsSync(perSessionLog)) {
+              fs.unlinkSync(perSessionLog);
+            }
+          } catch { /* ignore */ }
+        }
         captureEnabled = false;
         messageCount = 0;
         captureSessionId = "";
@@ -504,43 +538,57 @@ SETUP:
         await ensureGraph();
         if (!_CONFIG) return;
 
-        const msgData = event.properties as any;
-        const role = msgData?.role;
-        if (role !== "user") return;
+        const info = (event.properties as any)?.info;
+        if (!info) return;
 
-        const content = msgData?.content;
-        if (!content || typeof content !== "string") return;
-
-        const maxLen = 2000;
-        const truncated = content.length > maxLen
-          ? content.slice(0, maxLen) + "..."
-          : content;
-
-        appendToBuffer({
-          role: "user",
-          content: truncated,
-          timestamp: new Date().toISOString(),
-          source: "opencode_message_updated",
-        });
-
-        // Inject ambient recall hints
-        const recallBlock = ambientRecall(truncated);
-        if (recallBlock && activeSessionId) {
+        if (info.role === "user" && activeSessionId) {
           try {
-            await client.session.prompt({
+            const messages = await client.session.messages({
               path: { id: activeSessionId },
-              body: {
-                noReply: true,
-                parts: [{ type: "text", text: recallBlock }],
-              },
             });
-          } catch { /* ignore injection failures */ }
+            const last = messages?.[messages.length - 1];
+            if (last?.info?.role === "user") {
+              const textParts = (last.parts || [])
+                .filter((p: any) => p.type === "text")
+                .map((p: any) => p.text)
+                .join("\n");
+
+              if (textParts) {
+                const maxLen = 2000;
+                const truncated = textParts.length > maxLen
+                  ? textParts.slice(0, maxLen) + "..."
+                  : textParts;
+
+                const currentProject = detectCurrentProject();
+                appendToBuffer({
+                  role: "user",
+                  content: truncated,
+                  timestamp: new Date().toISOString(),
+                  source: "opencode_message_updated",
+                  ...(currentProject ? { project: currentProject } : {}),
+                });
+
+                const recallBlock = ambientRecall(truncated);
+                if (recallBlock) {
+                  try {
+                    await client.session.prompt({
+                      path: { id: activeSessionId },
+                      body: {
+                        noReply: true,
+                        parts: [{ type: "text", text: recallBlock }],
+                      },
+                    });
+                  } catch { /* ignore */ }
+                }
+              }
+            }
+          } catch { /* ignore fetch failures */ }
         }
       }
 
       // ── session.deleted: cleanup ──
       if (type === "session.deleted") {
-        const sessionId = (event.properties as any)?.id;
+        const sessionId = (event.properties as any)?.sessionID;
         if (sessionId) {
           delete lastProcessedMessageCount[sessionId];
         }

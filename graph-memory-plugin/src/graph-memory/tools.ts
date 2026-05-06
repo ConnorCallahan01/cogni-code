@@ -265,6 +265,10 @@ function updateIndexEntry(nodePath: string, fm: any) {
       updated: fm.updated || fm.created || null,
       last_accessed: fm.last_accessed || fm.updated || fm.created || new Date().toISOString(),
       access_count: fm.access_count || 0,
+      recall_action_count: fm.recall_action_count || 0,
+      distinct_sessions: fm.distinct_sessions || (fm.access_sessions || []).length,
+      access_sessions: (fm.access_sessions || []).slice(-50),
+      skillforged_at: fm.skillforged_at || null,
       dream_refs: fm.dream_refs || [],
     };
     if (fm.project) {
@@ -383,6 +387,10 @@ function recallGraph(query?: string, depth?: number): { content: Array<{ type: "
     if (nextFrontier.size === 0) break;
   }
   const connectedNodes = allConnected.slice(0, 10);
+
+  for (const r of results) {
+    updateLastAccessed(r.path, { actionType: "recall" });
+  }
 
   // Format output
   const sections: string[] = [];
@@ -564,7 +572,7 @@ function readNode(nodePath?: string) {
   }
 
   let content = fs.readFileSync(fullPath, "utf-8");
-  updateLastAccessed(nodePath);
+  updateLastAccessed(nodePath, { actionType: "read" });
 
   // Surface dream connections if present
   try {
@@ -591,8 +599,10 @@ function readNode(nodePath?: string) {
   return { content: [{ type: "text" as const, text: content }] };
 }
 
-function updateLastAccessed(nodePath: string) {
+function updateLastAccessed(nodePath: string, options?: { actionType?: "read" | "recall"; sessionId?: string }) {
   const now = new Date().toISOString();
+  const actionType = options?.actionType || "read";
+  const sessionId = options?.sessionId;
 
   const fullPath = safePath(CONFIG.paths.nodes, nodePath, ".md");
   if (fullPath && fs.existsSync(fullPath)) {
@@ -601,6 +611,21 @@ function updateLastAccessed(nodePath: string) {
       const parsed = matter(raw);
       parsed.data.last_accessed = now;
       parsed.data.access_count = (parsed.data.access_count || 0) + 1;
+
+      if (actionType === "recall") {
+        parsed.data.recall_action_count = (parsed.data.recall_action_count || 0) + 1;
+      }
+
+      if (sessionId) {
+        const sessions: string[] = parsed.data.access_sessions || [];
+        if (!sessions.includes(sessionId)) {
+          sessions.push(sessionId);
+          if (sessions.length > 50) sessions.splice(0, sessions.length - 50);
+          parsed.data.access_sessions = sessions;
+        }
+        parsed.data.distinct_sessions = new Set(sessions).size;
+      }
+
       fs.writeFileSync(fullPath, matter.stringify(parsed.content, parsed.data));
     } catch { /* Non-critical */ }
   }
@@ -611,6 +636,21 @@ function updateLastAccessed(nodePath: string) {
     if (entry) {
       entry.last_accessed = now;
       entry.access_count = (entry.access_count || 0) + 1;
+
+      if (actionType === "recall") {
+        entry.recall_action_count = (entry.recall_action_count || 0) + 1;
+      }
+
+      if (sessionId) {
+        const sessions: string[] = entry.access_sessions || [];
+        if (!sessions.includes(sessionId)) {
+          sessions.push(sessionId);
+          if (sessions.length > 50) sessions.splice(0, sessions.length - 50);
+          entry.access_sessions = sessions;
+        }
+        entry.distinct_sessions = new Set(sessions).size;
+      }
+
       fs.writeFileSync(CONFIG.paths.index, JSON.stringify(index, null, 2));
       indexCache = null;
     }

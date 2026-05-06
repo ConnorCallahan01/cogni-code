@@ -11,7 +11,7 @@ const app = express()
 const PORT = Number.parseInt(process.env.MEMORY_DASHBOARD_API_PORT || process.env.PORT || '3001', 10)
 
 type JobState = 'queued' | 'running' | 'done' | 'failed'
-type JobType = 'scribe' | 'working_update' | 'auditor' | 'librarian' | 'dreamer' | 'memory_analysis'
+type JobType = 'scribe' | 'working_update' | 'auditor' | 'librarian' | 'dreamer' | 'memory_analysis' | 'skillforge' | 'skillforge_refresh'
 
 interface RuntimeConfig {
   mode?: 'manual' | 'docker'
@@ -149,7 +149,7 @@ function getPaths(graphRoot = getGraphRoot()) {
     pipelineLogs: join(graphRoot, '.pipeline-logs'),
     activeProjects: join(graphRoot, '.active-projects'),
     sessions: join(graphRoot, '.sessions'),
-    conversationLog: join(graphRoot, '.buffer', 'conversation.jsonl'),
+    buffer: join(graphRoot, '.buffer'),
     jobs: {
       root: join(graphRoot, '.jobs'),
       queued: join(graphRoot, '.jobs', 'queued'),
@@ -363,10 +363,16 @@ function countPendingDreams(graphRoot = getGraphRoot()): number {
 }
 
 function readBufferCount(graphRoot = getGraphRoot()): number {
-  const conversationLog = getPaths(graphRoot).conversationLog
-  if (!existsSync(conversationLog)) return 0
-  const content = readFileSync(conversationLog, 'utf-8').trim()
-  return content ? content.split('\n').filter(Boolean).length : 0
+  const bufferDir = join(getPaths(graphRoot).buffer)
+  if (!existsSync(bufferDir)) return 0
+  let total = 0
+  for (const file of readdirSync(bufferDir)) {
+    if (file.startsWith('conversation-') && file.endsWith('.jsonl')) {
+      const content = readFileSync(join(bufferDir, file), 'utf-8').trim()
+      total += content ? content.split('\n').filter(Boolean).length : 0
+    }
+  }
+  return total
 }
 
 function readLatestActiveProjectEntry(graphRoot = getGraphRoot()): { name: string; gitRoot?: string; cwd?: string; updatedAt: string } | null {
@@ -471,6 +477,8 @@ function readAllJobs(graphRoot = getGraphRoot()) {
     librarian: { queued: 0, running: 0, done: 0, failed: 0 },
     dreamer: { queued: 0, running: 0, done: 0, failed: 0 },
     memory_analysis: { queued: 0, running: 0, done: 0, failed: 0 },
+    skillforge: { queued: 0, running: 0, done: 0, failed: 0 },
+    skillforge_refresh: { queued: 0, running: 0, done: 0, failed: 0 },
   }
 
   for (const state of Object.keys(jobs) as JobState[]) {
@@ -1492,7 +1500,7 @@ watcher.on('all', (_event, changedPath) => {
     broadcast('status')
     return
   }
-  if (changedPath.endsWith('conversation.jsonl')) {
+  if (changedPath.includes('.buffer/') && changedPath.includes('conversation-') && changedPath.endsWith('.jsonl')) {
     broadcast('status')
   }
 })

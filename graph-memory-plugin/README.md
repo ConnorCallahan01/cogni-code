@@ -106,8 +106,30 @@ Installed slash commands (available in both Claude Code and OpenCode):
 | `/memory-input-refresh` | Refresh configured external inputs and ingest new data |
 | `/memory-switch-harness` | Switch the background pipeline worker between codex, claude, pi, and opencode |
 | `/memory-wire-project` | Wire (or refresh) the graph-memory section in this project's `CLAUDE.md` |
+| `/refresh-skill` | Manually refresh a skillforged skill whose source node has drifted |
 
 Claude Code also provides `/recall <query>` as a skill command with deeper graph lookup and edge traversal.
+
+## Skillforge
+
+Skillforge is an automatic pipeline stage that converts frequently-accessed memory nodes into executable slash-command skills. When a node crosses a scoring threshold (based on access count, recall actions, session span, pinned status, and procedural content), the daemon enqueues a `skillforge` job that:
+
+1. Reads the source node and its connected nodes
+2. Generates a structured workflow skill file
+3. Writes it to `.claude/commands/` and `.opencode/commands/` in the project root
+4. Creates a manifest in `<graphRoot>/.skillforge/` for tracking
+
+Skills are automatically refreshed when their source node content changes (drift detection). The daemon compares content hashes each tick and enqueues `skillforge_refresh` jobs for drifted manifests.
+
+Key config (`CONFIG.skillforge`):
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `enabled` | `true` | Enable/disable skillforge scoring and job enqueueing |
+| `scoreThreshold` | `0.65` | Minimum score to become a skillforge candidate |
+| `cooldownDays` | `14` | Days before a skillforged node can be re-scored |
+| `maxSkillsPerProject` | `15` | Cap on skills per project |
+| `maxJobsPerTick` | `2` | Max skillforge jobs enqueued per daemon tick |
 
 ## Tool
 

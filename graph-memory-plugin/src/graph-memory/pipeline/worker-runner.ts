@@ -3,6 +3,7 @@ import os from "os";
 import path from "path";
 import { spawn, SpawnOptions } from "child_process";
 import { loadRuntimeConfig, WorkerProvider } from "../runtime.js";
+import { activityBus } from "../events.js";
 
 export interface WorkerRunOptions {
   name: string;
@@ -260,6 +261,11 @@ export async function runPipelineWorker(opts: WorkerRunOptions): Promise<WorkerR
   });
 
   const pid = child.pid;
+  activityBus.log("system:info", `Worker spawned: ${plan.command} ${plan.args.slice(0, 3).join(" ")}... (pid=${pid})`, { harness, pid, logFile });
+
+  child.on("error", (err) => {
+    activityBus.log("system:error", `Worker spawn error (pid=${pid}): ${err.message}`, { harness, pid });
+  });
 
   const timeoutMs = Math.max(30_000, opts.timeoutMs ?? 300_000);
   let timedOut = false;

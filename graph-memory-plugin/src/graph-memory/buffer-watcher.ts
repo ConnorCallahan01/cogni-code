@@ -3,6 +3,7 @@ import path from "path";
 import { CONFIG } from "./config.js";
 import { activityBus } from "./events.js";
 import { enqueueJob } from "./pipeline/job-queue.js";
+import { sanitizeSessionId } from "./session-trace.js";
 
 export interface ConversationEntry {
   role: "user" | "assistant";
@@ -36,9 +37,10 @@ export class BufferWatcher {
     if (!fs.existsSync(bufferDir)) {
       fs.mkdirSync(bufferDir, { recursive: true });
     }
-    if (!fs.existsSync(CONFIG.paths.conversationLog)) {
-      fs.writeFileSync(CONFIG.paths.conversationLog, "");
-    }
+  }
+
+  private sessionLogPath(): string {
+    return path.join(CONFIG.paths.buffer, `conversation-${sanitizeSessionId(this.sessionId)}.jsonl`);
   }
 
   /** Append a message to the conversation log */
@@ -48,7 +50,7 @@ export class BufferWatcher {
     }
 
     const line = JSON.stringify(entry) + "\n";
-    fs.appendFileSync(CONFIG.paths.conversationLog, line);
+    fs.appendFileSync(this.sessionLogPath(), line);
 
     this.messageCount++;
     this.totalSessionMessages++;
@@ -66,34 +68,32 @@ export class BufferWatcher {
   }
 
   private onThresholdReached() {
-    const logPath = CONFIG.paths.conversationLog;
+    const logPath = this.sessionLogPath();
+    if (!fs.existsSync(logPath)) return;
     const content = fs.readFileSync(logPath, "utf-8").trim();
     if (!content) return;
 
-    // Rotate buffer to snapshot
     const snapshotPath = this.rotateBuffer(content);
     if (!snapshotPath) return;
 
-    // Queue a scribe job for the background daemon
     this.queueScribe(snapshotPath);
   }
 
   private rotateBuffer(content?: string): string | null {
     try {
-      const logPath = CONFIG.paths.conversationLog;
+      const logPath = this.sessionLogPath();
 
       if (!content) {
+        if (!fs.existsSync(logPath)) return null;
         content = fs.readFileSync(logPath, "utf-8").trim();
       }
       if (!content) return null;
 
-      // Write snapshot for scribe input
       const snapshotName = `snapshot_${Date.now()}.jsonl`;
       const snapshotPath = path.join(CONFIG.paths.buffer, snapshotName);
       fs.writeFileSync(snapshotPath, content + "\n");
 
-      // Clear the main buffer
-      fs.writeFileSync(logPath, "");
+      fs.unlinkSync(logPath);
       this.messageCount = 0;
 
       return snapshotPath;
@@ -121,18 +121,13 @@ export class BufferWatcher {
     this.totalSessionMessages = 0;
     this.sessionId = `session_${Date.now()}`;
 
-    // Clear any stale buffer
-    if (fs.existsSync(CONFIG.paths.conversationLog)) {
-      fs.writeFileSync(CONFIG.paths.conversationLog, "");
-    }
-
     activityBus.log("session:start", `New session started: ${this.sessionId}`);
   }
 
-  /** Flush remaining buffer to snapshot for final scribe pass */
   flush(): string | null {
     if (this.messageCount > 0) {
-      const logPath = CONFIG.paths.conversationLog;
+      const logPath = this.sessionLogPath();
+      if (!fs.existsSync(logPath)) return null;
       const content = fs.readFileSync(logPath, "utf-8").trim();
       if (content) {
         const snapshotPath = this.rotateBuffer(content);

@@ -28,6 +28,7 @@ let _overlap: any;
 let _recencyBoost: any;
 let _somaBoost: any;
 let _projectBoost: any;
+let _listManifests: any;
 
 async function loadCore() {
   if (_handleGraphMemory) return;
@@ -40,6 +41,7 @@ async function loadCore() {
   const jobQueue = await import(path.join(distDir, "pipeline", "job-queue.js"));
   const scoring = await import(path.join(distDir, "scoring.js"));
   const soma = await import(path.join(distDir, "soma.js"));
+  const manifest = await import(path.join(distDir, "pipeline", "skillforge-manifest.js"));
   _handleGraphMemory = tools.handleGraphMemory;
   _initializeGraph = index.initializeGraph;
   _CONFIG = config.CONFIG;
@@ -49,6 +51,7 @@ async function loadCore() {
   _recencyBoost = scoring.recencyBoost;
   _somaBoost = soma.somaBoost;
   _projectBoost = scoring.projectBoost;
+  _listManifests = manifest.listManifests;
 }
 
 export default function (pi: ExtensionAPI) {
@@ -199,7 +202,7 @@ SETUP:
 
   // ── Conversation capture state ────────────────────────────────────
   // Mirrors the Claude Code hook pipeline: user + assistant messages
-  // are buffered to conversation.jsonl. At the scribe threshold
+  // are buffered to per-session conversation files. At the scribe threshold
   // (default 10 messages), the buffer is rotated to a snapshot and a
   // scribe job is queued for the background daemon.
   let messageCount = 0;
@@ -213,11 +216,16 @@ SETUP:
     }
   }
 
+  function sessionLogPath(): string {
+    const safeId = captureSessionId.replace(/[^a-zA-Z0-9_\-]/g, "_");
+    return path.join(_CONFIG!.paths.buffer, `conversation-${safeId}.jsonl`);
+  }
+
   function appendToBuffer(entry: Record<string, unknown>) {
     if (!captureEnabled || !_CONFIG) return;
     ensureBufferDir();
     fs.appendFileSync(
-      _CONFIG.paths.conversationLog,
+      sessionLogPath(),
       JSON.stringify(entry) + "\n"
     );
     messageCount++;
@@ -225,7 +233,7 @@ SETUP:
 
   function rotateAndQueue() {
     if (!_CONFIG || !captureEnabled) return;
-    const logPath = _CONFIG.paths.conversationLog;
+    const logPath = sessionLogPath();
     if (!fs.existsSync(logPath)) return;
     const content = fs.readFileSync(logPath, "utf-8").trim();
     if (!content) return;
@@ -233,7 +241,7 @@ SETUP:
     const snapshotName = `snapshot_${Date.now()}.jsonl`;
     const snapshotPath = path.join(_CONFIG.paths.buffer, snapshotName);
     fs.writeFileSync(snapshotPath, content + "\n");
-    fs.writeFileSync(logPath, "");
+    fs.unlinkSync(logPath);
     messageCount = 0;
 
     if (_enqueueJob) {
@@ -258,10 +266,11 @@ SETUP:
     messageCount = 0;
     captureSessionId = `pi_session_${Date.now()}`;
     ensureBufferDir();
-    // Clear stale buffer from a previous run
     try {
-      if (fs.existsSync(_CONFIG.paths.conversationLog)) {
-        fs.writeFileSync(_CONFIG.paths.conversationLog, "");
+      const safeId = captureSessionId.replace(/[^a-zA-Z0-9_\-]/g, "_");
+      const perSessionLog = path.join(_CONFIG.paths.buffer, `conversation-${safeId}.jsonl`);
+      if (fs.existsSync(perSessionLog)) {
+        fs.unlinkSync(perSessionLog);
       }
     } catch { /* ignore */ }
   });
@@ -270,6 +279,15 @@ SETUP:
   pi.on("session_shutdown", async () => {
     if (captureEnabled && messageCount > 0) {
       rotateAndQueue();
+    }
+    if (captureSessionId && _CONFIG) {
+      try {
+        const safeId = captureSessionId.replace(/[^a-zA-Z0-9_\-]/g, "_");
+        const perSessionLog = path.join(_CONFIG.paths.buffer, `conversation-${safeId}.jsonl`);
+        if (fs.existsSync(perSessionLog)) {
+          fs.unlinkSync(perSessionLog);
+        }
+      } catch { /* ignore */ }
     }
     captureEnabled = false;
     messageCount = 0;
@@ -451,6 +469,25 @@ SETUP:
       parts.unshift(recallBlock);
     }
 
+    // --- Inject skillforge skill files ---
+    if (_listManifests && _CONFIG) {
+      try {
+        const manifests = _listManifests();
+        for (const m of manifests) {
+          if (!m.project_root || !m.files) continue;
+          for (const filePath of Object.values(m.files) as string[]) {
+            const full = path.join(m.project_root, filePath);
+            if (fs.existsSync(full)) {
+              const skillContent = fs.readFileSync(full, "utf-8").trim();
+              if (skillContent) {
+                parts.push(`<!-- Skill: ${m.skill_name} -->\n${skillContent}`);
+              }
+            }
+          }
+        }
+      } catch { /* ignore */ }
+    }
+
     if (parts.length === 0) return;
 
     return {
@@ -505,6 +542,60 @@ SETUP:
       ctx.ui.notify(
         result.content[0]?.text?.slice(0, 300) || "Status retrieved",
         "info"
+      );
+    },
+  });
+
+  pi.registerCommand("refresh-skill", {
+    description: "Refresh a skillforged skill from its source node",
+    handler: async (args, ctx) => {
+      await ensureGraph();
+      await loadCore();
+      if (!_listManifests || !_enqueueJob) {
+        ctx.ui.notify("Graph memory not fully loaded", "error");
+        return;
+      }
+
+      const manifests = _listManifests();
+      if (manifests.length === 0) {
+        ctx.ui.notify("No skillforged skills found. Skills are auto-generated when nodes cross the scoring threshold.", "info");
+        return;
+      }
+
+      const target = (args || "").trim();
+      if (!target) {
+        const lines = manifests.map((m: any) =>
+          `- ${m.skill_name} (${m.source_node}, project: ${m.project}, refreshed: ${m.last_refreshed_at || "never"})`
+        );
+        ctx.ui.notify(`Available skills:\n${lines.join("\n")}\n\nUsage: /refresh-skill <skill-name>`, "info");
+        return;
+      }
+
+      const match = manifests.find((m: any) => m.skill_name === target || m.source_node === target);
+      if (!match) {
+        ctx.ui.notify(`No skill found for "${target}". Use /refresh-skill without args to list available skills.`, "error");
+        return;
+      }
+
+      const sanitizedPath = match.source_node.replace(/\//g, "-");
+      const { job, created } = _enqueueJob({
+        type: "skillforge_refresh",
+        payload: {
+          manifestPath: path.join(_CONFIG.paths.skillforgeManifests, `${sanitizedPath}.json`),
+          nodePath: match.source_node,
+          skillName: match.skill_name,
+          project: match.project,
+          reason: "manual refresh via /refresh-skill",
+        },
+        triggerSource: "pi:refresh-skill",
+        idempotencyKey: `skillforge-refresh:${match.source_node}:manual:${Date.now()}`,
+      });
+
+      ctx.ui.notify(
+        created
+          ? `Refresh job queued: ${job.id}`
+          : `Job already exists: ${job.id}`,
+        created ? "success" : "info"
       );
     },
   });
