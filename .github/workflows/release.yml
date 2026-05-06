@@ -76,6 +76,20 @@ jobs:
             --title "${{ steps.version.outputs.tag }}" \
             --notes-file "${{ steps.changelog.outputs.body_path }}"
 
+      - name: Check for [Unreleased] section
+        id: check_unreleased
+        run: |
+          if grep -q '^## \[Unreleased\]' CHANGELOG.md; then
+            echo "has_unreleased=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_unreleased=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Warn if version not bumped
+        if: steps.check_tag.outputs.exists == 'true' && steps.check_unreleased.outputs.has_unreleased == 'true'
+        run: |
+          echo "::warning::Tag ${{ steps.version.outputs.tag }} already exists but CHANGELOG.md has [Unreleased] section. Did you forget to bump the version in package.json?"
+
       - name: Update CHANGELOG [Unreleased] heading
         if: steps.check_tag.outputs.exists == 'false' && inputs.dry_run != true
         run: |
