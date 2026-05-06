@@ -972,8 +972,8 @@ export const graphMemorySchema = {
     .describe("Project scope for remember action (e.g. 'owner/repo'). Only set for project-specific knowledge, omit for global."),
   pinned: z.boolean().optional()
     .describe("Pin node to prevent decay and auto-load at session start for matching projects"),
-  workerProvider: z.enum(["codex", "claude", "pi"]).optional()
-    .describe("Worker harness for configure_runtime (codex, claude, pi)"),
+  workerProvider: z.enum(["codex", "claude", "pi", "opencode"]).optional()
+    .describe("Worker harness for configure_runtime (codex, claude, pi, opencode)"),
   runtimeMode: z.enum(["manual", "docker"]).optional()
     .describe("Runtime mode for configure_runtime"),
   containerName: z.string().optional()

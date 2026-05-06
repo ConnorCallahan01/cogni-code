@@ -25,7 +25,6 @@ const server = new McpServer({
 server.tool(
   "graph_memory",
   `Access the persistent knowledge graph. Actions: initialize, configure_runtime, status, remember, write_note, search, recall, read_node, list_edges, read_dream, consolidate, history, revert, resurface.
-
 MEMORY ACTIONS:
 - remember: Create or update a graph node directly. Provide path, gist, and optionally content, tags, edges, soma markers.
 - recall: Combined search + edge traversal. Returns matching nodes plus connected nodes (1 hop).
@@ -44,7 +43,7 @@ PIPELINE:
 
 SETUP:
 - initialize: First-time setup. Pass graphRoot to choose storage location (defaults to ~/.graph-memory/).
-- configure_runtime: Set manual or Docker runtime configuration. Pass workerProvider (codex, claude, pi) to choose the pipeline agent harness.`,
+- configure_runtime: Set manual or Docker runtime configuration. Pass workerProvider (codex, claude, pi, opencode) to choose the pipeline agent harness.`,
   graphMemorySchema,
   async (args) => {
     return handleGraphMemory(args);

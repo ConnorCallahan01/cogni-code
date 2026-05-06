@@ -11,7 +11,7 @@ export interface RepoMountConfig {
   mode: "ro" | "rw";
 }
 
-export type WorkerProvider = "codex" | "claude" | "pi";
+export type WorkerProvider = "codex" | "claude" | "pi" | "opencode";
 
 export interface DockerRuntimeConfig {
   enabled: boolean;
@@ -59,6 +59,7 @@ function resolveDefaultWorkerProvider(): WorkerProvider {
     const r = spawnSync("which", [cmd], { stdio: ["ignore", "pipe", "ignore"] });
     return r.status === 0;
   };
+  if (which("opencode")) return "opencode";
   if (which("codex")) return "codex";
   if (which("claude")) return "claude";
   return "codex";

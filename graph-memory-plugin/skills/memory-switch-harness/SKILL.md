@@ -1,6 +1,6 @@
 ---
 name: memory-switch-harness
-description: Switch the background pipeline worker harness (codex, claude, pi) for an already-initialized graph memory system. Use when the user wants to change which agent runs the scribe/auditor/librarian/dreamer daemon pipeline.
+description: Switch the background pipeline worker harness (codex, claude, pi, opencode) for an already-initialized graph memory system. Use when the user wants to change which agent runs the scribe/auditor/librarian/dreamer daemon pipeline.
 ---
 
 # /memory-switch-harness
@@ -20,13 +20,14 @@ Switch the agent harness that runs the background memory pipeline (scribe → au
 ```
 Current harness: <current>
 Runtime mode: <mode>
-Available: codex | claude | pi
+Available: codex | claude | pi | opencode
 ```
 
 6. Briefly explain what each harness means:
    - **codex** — OpenAI Codex CLI. Best for ChatGPT subscribers. Requires `codex login` or `OPENAI_API_KEY`.
    - **claude** — Anthropic Claude Code. Best for Claude subscribers. Uses existing OAuth or `ANTHROPIC_API_KEY`.
    - **pi** — pi coding agent. Open-source, provider-agnostic. Uses `/login` subscription or API keys (any supported provider: Anthropic, OpenAI, OpenRouter, etc.).
+   - **opencode** — OpenCode. Open-source, provider-agnostic. Uses provider API keys configured via `opencode providers`.
 
 7. Ask which harness they want to switch to.
 
@@ -38,13 +39,25 @@ Available: codex | claude | pi
 
 ### Phase 3: Ensure Docker image has the harness CLI
 
-10. **Only for pi**: The Docker image must have `@mariozechner/pi-coding-agent` installed. Check the Dockerfile at `<plugin_dir>/docker/Dockerfile`. If it does not list `@mariozechner/pi-coding-agent` in the `RUN npm install -g` line, add it alongside `@openai/codex`.
-11. Rebuild the image:
+10. **Docker mode only (skip if manual mode).** Verify the chosen harness CLI is available inside the running container:
     ```bash
-    cd <plugin_dir> && npm install --ignore-scripts && bin/docker-build.sh
+    docker exec "$GRAPH_MEMORY_DOCKER_CONTAINER" which <harness_cli> 2>/dev/null
     ```
-    (The `npm install` syncs the lockfile before the Docker build uses `npm ci`.)
-12. **For codex and claude**: These are already in the base image. No rebuild needed.
+    Where `<harness_cli>` is `codex` for codex, `claude` for claude, `pi` for pi, or `opencode` for opencode.
+
+11. **If the CLI is not found** (command fails or returns empty): rebuild the image and restart.
+    - First, check the Dockerfile at `<plugin_dir>/docker/Dockerfile` to confirm the harness CLI is included in the install steps. If it's missing from the Dockerfile, add the appropriate install command:
+      - **codex**: `@openai/codex` via `npm install -g`
+      - **claude**: already bundled in the base node image (no Dockerfile change needed)
+      - **pi**: `@mariozechner/pi-coding-agent` via `npm install -g`
+      - **opencode**: via `curl -fsSL https://opencode.ai/install | bash`
+    - Then rebuild:
+      ```bash
+      cd <plugin_dir> && npm install --ignore-scripts && bin/docker-build.sh
+      ```
+      (The `npm install` syncs the lockfile before the Docker build uses `npm ci`.)
+
+12. **If the CLI is found**: no rebuild needed. Continue to Phase 4.
 
 ### Phase 4: Restart the daemon
 
@@ -90,30 +103,43 @@ Available: codex | claude | pi
        (copy host ~/.claude.json to the auth volume)
     ```
 
-    **For pi:**
-    ```
-    pi auth is not ready in the container. Choose a setup path:
+     **For pi:**
+     ```
+     pi auth is not ready in the container. Choose a setup path:
 
-    A) If you're already authenticated on the host:
-       <plugin_dir>/bin/docker-pi-import-host-auth.sh
+     A) If you're already authenticated on the host:
+        <plugin_dir>/bin/docker-pi-import-host-auth.sh
 
-    B) If you need to authenticate on the host first:
-       1. Run `pi` on the host
-       2. Use `/login` to authenticate with a subscription provider
-       3. Exit pi
-       4. Run <plugin_dir>/bin/docker-pi-import-host-auth.sh
+     B) If you need to authenticate on the host first:
+        1. Run `pi` on the host
+        2. Use `/login` to authenticate with a subscription provider
+        3. Exit pi
+        4. Run <plugin_dir>/bin/docker-pi-import-host-auth.sh
 
-    C) If you have an API key you want to use:
-       1. Create/edit ~/.pi/agent/auth.json on the host:
-          {
-            "<provider>": {
-              "type": "api_key",
-              "key": "sk-..."
-            }
-          }
-       2. Set your default provider/model in ~/.pi/agent/settings.json:
-          { "defaultProvider": "<provider>", "defaultModel": "<model>" }
-       3. Run <plugin_dir>/bin/docker-pi-import-host-auth.sh
-    ```
+     C) If you have an API key you want to use:
+        1. Create/edit ~/.pi/agent/auth.json on the host:
+           {
+             "<provider>": {
+               "type": "api_key",
+               "key": "sk-..."
+             }
+           }
+        2. Set your default provider/model in ~/.pi/agent/settings.json:
+           { "defaultProvider": "<provider>", "defaultModel": "<model>" }
+        3. Run <plugin_dir>/bin/docker-pi-import-host-auth.sh
+     ```
+
+     **For opencode:**
+     ```
+     opencode auth is not ready in the container. Choose a setup path:
+
+     A) If you're already authenticated on the host:
+        <plugin_dir>/bin/docker-opencode-import-host-auth.sh
+
+     B) If you need to configure a provider API key on the host first:
+        1. Run `opencode providers` on the host
+        2. Follow prompts to add a provider (Anthropic, OpenAI, OpenRouter, etc.)
+        3. Run <plugin_dir>/bin/docker-opencode-import-host-auth.sh
+     ```
 
 18. After the user completes auth setup, rerun `<plugin_dir>/bin/docker-auth-check.sh` to confirm.

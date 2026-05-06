@@ -86,6 +86,7 @@ Worker-specific helpers:
 
 - `bin/docker-codex-import-host-auth.sh` / `bin/docker-codex-login.sh` / `bin/docker-codex-login-api-key.sh`
 - `bin/docker-pi-import-host-auth.sh` / `bin/docker-pi-auth-status.sh`
+- `bin/docker-opencode-import-host-auth.sh` / `bin/docker-opencode-auth-status.sh`
 
 General:
 
@@ -103,7 +104,7 @@ Installed slash commands (available in both Claude Code and OpenCode):
 | `/memory-morning-kickoff` | Turn the latest brief into a focused daily kickoff |
 | `/memory-connect-inputs` | Configure host-side external inputs for briefs and context enrichment |
 | `/memory-input-refresh` | Refresh configured external inputs and ingest new data |
-| `/memory-switch-harness` | Switch the background pipeline worker between codex, claude, and pi |
+| `/memory-switch-harness` | Switch the background pipeline worker between codex, claude, pi, and opencode |
 | `/memory-wire-project` | Wire (or refresh) the graph-memory section in this project's `CLAUDE.md` |
 
 Claude Code also provides `/recall <query>` as a skill command with deeper graph lookup and edge traversal.

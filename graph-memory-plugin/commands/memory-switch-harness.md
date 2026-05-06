@@ -12,6 +12,7 @@ Switch the agent harness that runs the background memory pipeline.
    - **codex** — OpenAI Codex CLI. Best for ChatGPT subscribers. Requires `codex login`.
    - **claude** — Anthropic Claude Code. Best for Claude subscribers. Uses existing OAuth or `ANTHROPIC_API_KEY`.
    - **pi** — pi coding agent. Open-source, provider-agnostic. Uses subscription or provider API keys.
+   - **opencode** — OpenCode. Open-source, provider-agnostic. Uses provider API keys via `opencode providers`.
 6. Ask which harness they want to switch to.
 7. Call `graph_memory(action="configure_runtime", workerProvider="<chosen>")`.
 8. Confirm and give restart instructions:

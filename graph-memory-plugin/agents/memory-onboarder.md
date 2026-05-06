@@ -66,11 +66,12 @@ Ask which agent harness should run the background pipeline (scribe → auditor �
 - `codex` (OpenAI Codex CLI) — requires `codex login` auth. Best for ChatGPT subscribers.
 - `claude` (Anthropic Claude Code) — requires `claude` CLI on PATH, uses existing OAuth or API key. Best for Claude subscribers.
 - `pi` (pi coding agent) — requires `pi` CLI on PATH, uses existing subscription or API key. Open-source, provider-agnostic.
+- `opencode` (OpenCode) — requires `opencode` CLI on PATH, uses provider API keys configured via `opencode providers`. Open-source, provider-agnostic.
 
 If the user isn't sure, recommend:
 - Codex if they have a ChatGPT subscription
 - Claude if they have a Claude subscription
-- pi as a provider-agnostic fallback
+- pi or opencode as provider-agnostic fallbacks
 
 Once chosen, hold this value for the configure_runtime call in the next step.
 
