@@ -8,7 +8,9 @@ RUN apt-get update \
 
 COPY package.json package-lock.json ./
 RUN npm ci --ignore-scripts
-RUN npm install -g @openai/codex @mariozechner/pi-coding-agent opencode
+RUN npm install -g @openai/codex @mariozechner/pi-coding-agent
+RUN curl -fsSL https://opencode.ai/install | bash \
+  && ln -s /root/.opencode/bin/opencode /usr/local/bin/opencode
 
 COPY tsconfig.json ./
 COPY src ./src

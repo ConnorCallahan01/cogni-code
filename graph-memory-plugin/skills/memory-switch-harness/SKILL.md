@@ -1,6 +1,6 @@
 ---
 name: memory-switch-harness
-description: Switch the background pipeline worker harness (codex, claude, pi) for an already-initialized graph memory system. Use when the user wants to change which agent runs the scribe/auditor/librarian/dreamer daemon pipeline.
+description: Switch the background pipeline worker harness (codex, claude, pi, opencode) for an already-initialized graph memory system. Use when the user wants to change which agent runs the scribe/auditor/librarian/dreamer daemon pipeline.
 ---
 
 # /memory-switch-harness
@@ -46,6 +46,7 @@ Available: codex | claude | pi | opencode
     ```
     (The `npm install` syncs the lockfile before the Docker build uses `npm ci`.)
 12. **For codex and claude**: These are already in the base image. No rebuild needed.
+13. **For opencode**: opencode is installed in the Dockerfile via the official install script. If the image was built before opencode support was added, rebuild it using the instructions in step 11.
 
 ### Phase 4: Restart the daemon
 
