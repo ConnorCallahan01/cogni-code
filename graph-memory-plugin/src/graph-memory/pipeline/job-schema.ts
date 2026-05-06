@@ -1,6 +1,6 @@
 import { randomUUID } from "crypto";
 
-export type GraphMemoryJobType = "scribe" | "working_update" | "auditor" | "librarian" | "dreamer" | "memory_analysis";
+export type GraphMemoryJobType = "scribe" | "working_update" | "auditor" | "librarian" | "dreamer" | "memory_analysis" | "skillforge" | "skillforge_refresh";
 export type GraphMemoryJobState = "queued" | "running" | "done" | "failed";
 
 export interface ScribeJobPayload {
@@ -37,13 +37,30 @@ export interface MemoryAnalysisJobPayload {
   reason: string;
 }
 
+export interface SkillforgeJobPayload {
+  nodePath: string;
+  project: string;
+  reason: string;
+  score: number;
+}
+
+export interface SkillforgeRefreshJobPayload {
+  manifestPath: string;
+  nodePath: string;
+  skillName: string;
+  project: string;
+  reason: string;
+}
+
 export type GraphMemoryJobPayload =
   | ScribeJobPayload
   | WorkingUpdateJobPayload
   | AuditorJobPayload
   | LibrarianJobPayload
   | DreamerJobPayload
-  | MemoryAnalysisJobPayload;
+  | MemoryAnalysisJobPayload
+  | SkillforgeJobPayload
+  | SkillforgeRefreshJobPayload;
 
 export interface GraphMemoryJob<TPayload = GraphMemoryJobPayload> {
   id: string;
@@ -81,6 +98,8 @@ export function defaultMaxAttempts(type: GraphMemoryJobType): number {
     case "librarian":
     case "dreamer":
     case "memory_analysis":
+    case "skillforge":
+    case "skillforge_refresh":
       return 2;
   }
 }

@@ -8,7 +8,7 @@
  *   - prompt: the user's message text
  *   - session_id: Claude Code session ID
  *
- * Appends directly to conversation.jsonl.
+ * Appends to the per-session conversation buffer.
  */
 import fs from "fs";
 import { CONFIG, isGraphInitialized } from "../graph-memory/config.js";
@@ -16,6 +16,7 @@ import { diffSessionContextState, readArtifactContent, RefreshArtifact, writeSes
 import { markDirty } from "../graph-memory/dirty-state.js";
 import { detectProject } from "../graph-memory/project.js";
 import { buildUserPromptAdditionalContext, clearMemoryGateState, writeMemoryGateState } from "../graph-memory/memory-gate.js";
+import { getConversationLogPath } from "../graph-memory/session-trace.js";
 import { overlap, recencyBoost, projectBoost } from "../graph-memory/scoring.js";
 import { somaBoost } from "../graph-memory/soma.js";
 
@@ -300,7 +301,7 @@ async function main() {
     entry.project = project.name;
   }
 
-  fs.appendFileSync(CONFIG.paths.conversationLog, JSON.stringify(entry) + "\n");
+  fs.appendFileSync(getConversationLogPath(sessionId), JSON.stringify(entry) + "\n");
 
   // Keep dirty state fresh
   markDirty(sessionId);

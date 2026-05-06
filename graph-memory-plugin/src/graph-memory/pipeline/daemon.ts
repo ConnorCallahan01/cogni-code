@@ -11,7 +11,8 @@ import { runPipelineWorker } from "./worker-runner.js";
 import { loadRuntimeConfig } from "../runtime.js";
 import { regenerateCoreContextFiles, regenerateDreamContext } from "./graph-ops.js";
 import { updateProjectWorkingFromSession } from "../project-working.js";
-import { getAssistantTracePath, getToolTracePath } from "../session-trace.js";
+import { scoreCandidates, computeNodeContentHash } from "./skillforge-score.js";
+import { listManifests, findDriftedManifests } from "./skillforge-manifest.js";import { getAssistantTracePath, getToolTracePath } from "../session-trace.js";
 import { getDailyBriefPaths } from "../briefs.js";
 import { loadExternalInputsConfig, readRecentClassifiedInputs } from "../external-inputs.js";
 import { getProjectWorkingPath, getProjectWorkingStatePath, getProjectWorkingUpdatePath } from "../working-files.js";
@@ -470,6 +471,17 @@ function createMemoryAnalysisInput(briefDate: string, timeZone: string): string 
       config: loadExternalInputsConfig(),
       classified_inputs: readRecentClassifiedInputs(6),
     },
+    skillforge: {
+      manifests: listManifests().map((m) => ({
+        source_node: m.source_node,
+        skill_name: m.skill_name,
+        generated_at: m.generated_at,
+        score: m.score,
+        project: m.project,
+        refresh_count: m.refresh_count,
+        last_refreshed_at: m.last_refreshed_at,
+      })),
+    },
   };
 
   fs.writeFileSync(inputPath, JSON.stringify(payload, null, 2));
@@ -781,6 +793,151 @@ async function runMemoryAnalysis(job: GraphMemoryJob): Promise<void> {
   }
 }
 
+async function runSkillforge(job: GraphMemoryJob): Promise<void> {
+  const payload = job.payload as { nodePath: string; project: string; reason: string; score: number };
+  const skillforgePath = path.join(AGENTS_DIR, "memory-skillforge.md");
+
+  const prompt = `Read the skillforge instructions at ${skillforgePath}, then follow them. Graph root: ${CONFIG.paths.graphRoot}. Source node path: ${payload.nodePath}. Project: ${payload.project}. Score: ${payload.score}. Reason: ${payload.reason}.`;
+
+  const result = await runPipelineWorker({
+    name: `skillforge-${job.id}`,
+    prompt,
+    graphRoot: CONFIG.paths.graphRoot,
+    logDir: CONFIG.paths.pipelineLogs,
+    addDirs: [AGENTS_DIR],
+    timeoutMs: 10 * 60_000,
+  });
+
+  job.logFile = result.logFile;
+  job.workerPid = result.pid;
+  updateRunningJob(job);
+
+  if (result.exitCode !== 0) {
+    throw new Error(`Skillforge worker exited with code ${result.exitCode}. See ${result.logFile}`);
+  }
+
+  const manifestDir = CONFIG.paths.skillforgeManifests;
+  const sanitizedPath = payload.nodePath.replace(/\//g, "-");
+  const manifestPath = path.join(manifestDir, `${sanitizedPath}.json`);
+  if (!fs.existsSync(manifestPath)) {
+    throw new Error(`Skillforge completed without writing manifest: ${manifestPath}`);
+  }
+
+  activityBus.log("skillforge:complete", `Skillforge complete: ${payload.nodePath}`, {
+    jobId: job.id,
+    nodePath: payload.nodePath,
+    project: payload.project,
+  });
+}
+
+async function runSkillforgeRefresh(job: GraphMemoryJob): Promise<void> {
+  const payload = job.payload as { manifestPath: string; nodePath: string; skillName: string; project: string; reason: string };
+  const skillforgePath = path.join(AGENTS_DIR, "memory-skillforge.md");
+
+  const manifestRaw = fs.readFileSync(payload.manifestPath, "utf-8");
+  const manifest = JSON.parse(manifestRaw);
+
+  const prompt = `Read the skillforge instructions at ${skillforgePath}, then follow them. This is a REFRESH of an existing skill. Graph root: ${CONFIG.paths.graphRoot}. Source node path: ${payload.nodePath}. Project: ${payload.project}. Skill name: ${payload.skillName}. Reason: ${payload.reason}. The skill files already exist — overwrite them with updated content. Increment refresh_count in the manifest and update content_hash and last_refreshed_at.`;
+
+  const result = await runPipelineWorker({
+    name: `skillforge-refresh-${job.id}`,
+    prompt,
+    graphRoot: CONFIG.paths.graphRoot,
+    logDir: CONFIG.paths.pipelineLogs,
+    addDirs: [AGENTS_DIR],
+    timeoutMs: 10 * 60_000,
+  });
+
+  job.logFile = result.logFile;
+  job.workerPid = result.pid;
+  updateRunningJob(job);
+
+  if (result.exitCode !== 0) {
+    throw new Error(`Skillforge refresh worker exited with code ${result.exitCode}. See ${result.logFile}`);
+  }
+
+  activityBus.log("skillforge:refresh", `Skillforge refresh complete: ${payload.nodePath}`, {
+    jobId: job.id,
+    nodePath: payload.nodePath,
+    skillName: payload.skillName,
+  });
+}
+
+function maybeEnqueueSkillforgeJobs(): void {
+  if (!CONFIG.skillforge.enabled) return;
+
+  const candidates = scoreCandidates();
+  if (candidates.length === 0) return;
+
+  const maxPerTick = CONFIG.skillforge.maxJobsPerTick;
+  let enqueued = 0;
+
+  for (const candidate of candidates) {
+    if (enqueued >= maxPerTick) break;
+    if (hasActiveJob("skillforge")) break;
+
+    const { job, created } = enqueueJob({
+      type: "skillforge",
+      payload: {
+        nodePath: candidate.nodePath,
+        project: candidate.project || "global",
+        reason: `skillforge score: ${candidate.score}`,
+        score: candidate.score,
+      },
+      triggerSource: "daemon:skillforge-scorer",
+      idempotencyKey: `skillforge:${candidate.nodePath}`,
+    });
+
+    if (created) {
+      enqueued++;
+      activityBus.log("skillforge:job_queued", `Queued skillforge job for ${candidate.nodePath}`, {
+        jobId: job.id,
+        nodePath: candidate.nodePath,
+        score: candidate.score,
+        project: candidate.project,
+      });
+    }
+  }
+}
+
+function maybeEnqueueSkillforgeRefresh(): void {
+  if (!CONFIG.skillforge.enabled) return;
+
+  const drifted = findDriftedManifests();
+  if (drifted.length === 0) return;
+
+  const maxPerTick = CONFIG.skillforge.maxJobsPerTick;
+  let enqueued = 0;
+
+  for (const entry of drifted) {
+    if (enqueued >= maxPerTick) break;
+    if (hasActiveJob("skillforge_refresh")) break;
+
+    const { job, created } = enqueueJob({
+      type: "skillforge_refresh",
+      payload: {
+        manifestPath: path.join(CONFIG.paths.skillforgeManifests, entry.fileName),
+        nodePath: entry.manifest.source_node,
+        skillName: entry.manifest.skill_name,
+        project: entry.manifest.project,
+        reason: `content hash drift: ${entry.manifestHash} → ${entry.currentHash}`,
+      },
+      triggerSource: "daemon:skillforge-drift",
+      idempotencyKey: `skillforge-refresh:${entry.manifest.source_node}:${entry.currentHash}`,
+    });
+
+    if (created) {
+      enqueued++;
+      activityBus.log("skillforge:drift_detected", `Skill drift detected for ${entry.manifest.source_node}`, {
+        jobId: job.id,
+        nodePath: entry.manifest.source_node,
+        oldHash: entry.manifestHash,
+        newHash: entry.currentHash,
+      });
+    }
+  }
+}
+
 async function processJob(job: GraphMemoryJob): Promise<void> {
   switch (job.type) {
     case "scribe":
@@ -795,7 +952,61 @@ async function processJob(job: GraphMemoryJob): Promise<void> {
       return runDreamer(job);
     case "memory_analysis":
       return runMemoryAnalysis(job);
+    case "skillforge":
+      return runSkillforge(job);
+    case "skillforge_refresh":
+      return runSkillforgeRefresh(job);
   }
+}
+
+function scavengeStaleBuffers(): void {
+  const bufferDir = CONFIG.paths.buffer;
+  if (!fs.existsSync(bufferDir)) return;
+
+  const maxAgeMs = 2 * 60 * 60 * 1000;
+  const now = Date.now();
+  let scavenged = 0;
+
+  for (const file of fs.readdirSync(bufferDir)) {
+    if (!file.startsWith("conversation-") || !file.endsWith(".jsonl")) continue;
+
+    const filePath = path.join(bufferDir, file);
+    const stat = fs.statSync(filePath);
+    if (now - stat.mtimeMs < maxAgeMs) continue;
+
+    const content = fs.readFileSync(filePath, "utf-8").trim();
+    if (!content) {
+      fs.unlinkSync(filePath);
+      continue;
+    }
+
+    const snapshotName = `snapshot_${Date.now()}.jsonl`;
+    const snapshotPath = path.join(bufferDir, snapshotName);
+    fs.writeFileSync(snapshotPath, content + "\n");
+    fs.unlinkSync(filePath);
+
+    enqueueJob({
+      type: "scribe",
+      payload: {
+        snapshotPath,
+        sessionId: `stale_scavenge_${Date.now()}`,
+      },
+      triggerSource: "daemon:stale-buffer-scavenge",
+      idempotencyKey: `scribe:${snapshotPath}`,
+    });
+
+    scavenged++;
+  }
+
+  if (scavenged > 0) {
+    activityBus.log("system:info", `Scavenged ${scavenged} stale session buffer(s)`, { scavenged });
+  }
+}
+
+const GRAPH_LEVEL_TYPES = new Set(["auditor", "librarian", "dreamer"]);
+
+function hasRunningGraphLevelJob(): boolean {
+  return listJobs("running").some((j) => GRAPH_LEVEL_TYPES.has(j.type));
 }
 
 export async function runDaemon({ once = false }: { once?: boolean } = {}): Promise<void> {
@@ -810,36 +1021,69 @@ export async function runDaemon({ once = false }: { once?: boolean } = {}): Prom
   process.on("SIGINT", () => { releaseDaemonLock(); process.exit(0); });
   process.on("SIGTERM", () => { releaseDaemonLock(); process.exit(0); });
 
-  activityBus.log("system:info", "Graph-memory daemon started", { once });
+  const concurrency = CONFIG.session.daemonConcurrency || 3;
+  const inFlight = new Map<string, Promise<void>>();
+
+  activityBus.log("system:info", "Graph-memory daemon started", { once, concurrency });
 
   try {
     do {
       maybeEnqueueDailyAnalysisJob();
       maybeEnqueueAuditorFromScribeBacklog();
       reconcileProjectWorkingBacklog();
+      maybeEnqueueSkillforgeJobs();
+      maybeEnqueueSkillforgeRefresh();
+      scavengeStaleBuffers();
 
       writeDaemonState({
         running: true,
         pid: process.pid,
         queued: countJobs("queued"),
         runningJobs: countJobs("running"),
+        concurrency,
+        inFlight: inFlight.size,
       });
 
-      const job = claimNextJob();
-      if (!job) {
-        if (once) break;
-        await sleep(CONFIG.session.daemonPollMs);
-        continue;
+      const graphLevelBlocked = hasRunningGraphLevelJob();
+
+      while (inFlight.size < concurrency) {
+        const job = claimNextJob();
+        if (!job) break;
+
+        if (GRAPH_LEVEL_TYPES.has(job.type) && graphLevelBlocked) {
+          const queuedPath = path.join(CONFIG.paths.jobsQueued, `${job.id}.json`);
+          const runningPath = path.join(CONFIG.paths.jobsRunning, `${job.id}.json`);
+          if (fs.existsSync(runningPath)) {
+            const j = JSON.parse(fs.readFileSync(runningPath, "utf-8"));
+            fs.writeFileSync(queuedPath, JSON.stringify({ ...j, state: "queued", updatedAt: new Date().toISOString() }, null, 2));
+            fs.unlinkSync(runningPath);
+          }
+          break;
+        }
+
+        const jobPromise = processJob(job)
+          .then(() => { completeRunningJob(job); })
+          .catch((err: any) => { failRunningJob(job, err?.message || String(err)); })
+          .finally(() => { inFlight.delete(job.id); });
+
+        inFlight.set(job.id, jobPromise);
       }
 
-      try {
-        await processJob(job);
-        completeRunningJob(job);
-      } catch (err: any) {
-        failRunningJob(job, err?.message || String(err));
+      if (inFlight.size === 0) {
+        if (once) break;
+        await sleep(CONFIG.session.daemonPollMs);
+      } else {
+        await Promise.race([
+          ...Array.from(inFlight.values()),
+          new Promise((resolve) => setTimeout(resolve, CONFIG.session.daemonPollMs)),
+        ]);
       }
     } while (!once);
   } finally {
+    if (inFlight.size > 0) {
+      activityBus.log("system:info", `Daemon shutting down, waiting for ${inFlight.size} in-flight job(s)`);
+      await Promise.allSettled(Array.from(inFlight.values()));
+    }
     writeDaemonState({ running: false, pid: process.pid });
     releaseDaemonLock();
   }

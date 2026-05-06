@@ -80,6 +80,7 @@ Use this exact section order:
 - `## External Inputs`
 - `## Yesterday`
 - `## Open Loops`
+- `## Skills`
 - `## 7-Day Trends`
 - `## Agent Friction`
 - `## Suggested CLAUDE.md Updates`
@@ -196,6 +197,11 @@ Write an object with this shape:
   "external_inputs": ["..."],
   "yesterday": ["..."],
   "open_loops": ["..."],
+  "skills": {
+    "active": [{"skill_name": "...", "source_node": "...", "project": "...", "generated_at": "...", "last_refreshed_at": "...", "refresh_count": 0}],
+    "stale": [{"skill_name": "...", "reason": "not refreshed in X days"}],
+    "unused": [{"skill_name": "...", "reason": "source node access declining"}]
+  },
   "seven_day_trends": ["..."],
   "agent_friction": ["..."],
   "suggested_claude_updates": ["..."],
@@ -238,6 +244,13 @@ Array items may include the same markdown graph-link syntax when grounded.
 - unfinished threads
 - sessions that appear to stop mid-stream
 - repeated references that never became closure
+
+### Skills
+- list any skillforged skills from the `skillforge.manifests` in the analysis input
+- for each skill: name, source node, project, when generated, last refreshed, refresh count
+- flag skills that haven't been refreshed in 7+ days (stale)
+- flag skills whose source node has low access recently (unused skill)
+- if no skills exist yet, note that the system will auto-generate them when nodes cross the scoring threshold
 
 ### 7-Day Trends
 - repeated blockers

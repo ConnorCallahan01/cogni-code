@@ -15,7 +15,7 @@ import { initializeGraph } from "../graph-memory/index.js";
 import { clearDirty } from "../graph-memory/dirty-state.js";
 import { readActiveProject, removeActiveProject } from "../graph-memory/project.js";
 import { enqueueJob, hasActiveJob } from "../graph-memory/pipeline/job-queue.js";
-import { getAssistantTracePath, getToolTracePath } from "../graph-memory/session-trace.js";
+import { getAssistantTracePath, getConversationLogPath, getToolTracePath } from "../graph-memory/session-trace.js";
 
 async function main() {
   if (process.env.GRAPH_MEMORY_PIPELINE_CHILD === "1" || process.env.GRAPH_MEMORY_WORKER === "1") return;
@@ -39,16 +39,16 @@ async function main() {
   const activeProject = readActiveProject(sessionId);
 
   // Flush any remaining buffer to snapshot and mark for scribe
-  const logPath = CONFIG.paths.conversationLog;
+  const resolvedSessionId = sessionId || `end_${Date.now()}`;
+
+  const logPath = getConversationLogPath(resolvedSessionId);
   if (fs.existsSync(logPath)) {
     const bufferContent = fs.readFileSync(logPath, "utf-8").trim();
     if (bufferContent) {
-      fs.writeFileSync(logPath, "");
-
       const snapshotName = `snapshot_${Date.now()}.jsonl`;
       const snapshotPath = path.join(CONFIG.paths.buffer, snapshotName);
       fs.writeFileSync(snapshotPath, bufferContent + "\n");
-      const resolvedSessionId = sessionId || `end_${Date.now()}`;
+      fs.unlinkSync(logPath);
       const assistantTracePath = getAssistantTracePath(resolvedSessionId);
       const toolTracePath = getToolTracePath(resolvedSessionId);
       const queued = enqueueJob({

@@ -92,6 +92,7 @@ function createConfig() {
       minSessionMessages: 3,
       pipelineCooldownMs: 300_000,
       daemonPollMs: 30_000,
+      daemonConcurrency: 3,
       dailyAnalysisHourLocal: 7,
       dailyAnalysisTimeZone: inferredTimeZone,
     },
@@ -130,6 +131,28 @@ function createConfig() {
       maxPinnedTokens: 3000,
     },
 
+    skillforge: {
+      enabled: true,
+      minAccessCount: 8,
+      minRecallActionCount: 3,
+      minDistinctSessions: 2,
+      scoreThreshold: 0.65,
+      cooldownDays: 14,
+      maxSkillsPerProject: 15,
+      maxJobsPerTick: 2,
+      accessCountWeight: 0.30,
+      recallActionWeight: 0.25,
+      sessionSpanWeight: 0.20,
+      pinnedBonus: 0.15,
+      proceduralWeight: 0.10,
+      proceduralKeywords: [
+        "run", "execute", "first", "then", "deploy", "build", "test",
+        "install", "configure", "create", "delete", "update", "ssh",
+        "commit", "push", "pull", "start", "stop", "restart", "verify",
+        "check", "navigate", "open", "copy", "set", "add", "remove",
+      ],
+    },
+
     paths: {
       graphRoot,
       nodes: path.join(graphRoot, "nodes"),
@@ -137,7 +160,6 @@ function createConfig() {
       deltas: path.join(graphRoot, ".deltas"),
       dreams: path.join(graphRoot, "dreams"),
       buffer: path.join(graphRoot, ".buffer"),
-      conversationLog: path.join(graphRoot, ".buffer/conversation.jsonl"),
       map: path.join(graphRoot, "MAP.md"),
       priors: path.join(graphRoot, "PRIORS.md"),
       index: path.join(graphRoot, ".index.json"),
@@ -180,6 +202,7 @@ function createConfig() {
       daemonLock: path.join(graphRoot, ".jobs/daemon.lock"),
       daemonState: path.join(graphRoot, ".jobs/daemon-state.json"),
       runtimeConfig: path.join(graphRoot, ".runtime-config.json"),
+      skillforgeManifests: path.join(graphRoot, ".skillforge"),
       // Prompts are bundled relative to dist/ (or src/ in dev)
       prompts: path.resolve(__dirname, "prompts"),
     },
