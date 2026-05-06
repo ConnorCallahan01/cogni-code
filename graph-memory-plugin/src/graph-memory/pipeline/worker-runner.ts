@@ -156,12 +156,42 @@ const piAdapter: HarnessAdapter = {
   },
 };
 
+// ── OpenCode Adapter ───────────────────────────────────────────────────────
+
+const opencodeAdapter: HarnessAdapter = {
+  buildPlan(prompt, opts, _runtime) {
+    const args = [
+      "run", prompt,
+      "--dir", opts.graphRoot,
+      "--dangerously-skip-permissions",
+    ];
+
+    if (opts.model) {
+      args.unshift("--model", opts.model);
+    }
+
+    return {
+      command: "opencode",
+      args,
+      spawnOptions: {
+        cwd: opts.graphRoot,
+        stdio: ["ignore", "pipe", "pipe"] as const,
+        env: {
+          ...process.env,
+          GRAPH_MEMORY_PIPELINE_CHILD: "1",
+        },
+      },
+    };
+  },
+};
+
 // ── Harness Dispatch ────────────────────────────────────────────────────────
 
 const ADAPTERS: Record<WorkerProvider, HarnessAdapter> = {
   codex: codexAdapter,
   claude: claudeAdapter,
   pi: piAdapter,
+  opencode: opencodeAdapter,
 };
 
 function resolveHarness(): WorkerProvider {

@@ -12,6 +12,11 @@ case "$HARNESS" in
       exit 0
     fi
     ;;
+  opencode)
+    if "$DIR/bin/docker-opencode-auth-status.sh"; then
+      exit 0
+    fi
+    ;;
   claude)
     echo "claude harness: no automated auth check yet. Ensure ANTHROPIC_API_KEY or OAuth is available."
     exit 0

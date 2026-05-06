@@ -5,6 +5,14 @@ All notable changes to graph-memory will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **OpenCode as a pipeline worker provider** — `opencode` is now a first-class harness option alongside codex, claude, and pi for the background daemon pipeline. The `opencodeAdapter` spawns `opencode run` in non-interactive mode with `--dangerously-skip-permissions`.
+- **OpenCode auth scripts** — `bin/docker-opencode-auth-status.sh` and `bin/docker-opencode-import-host-auth.sh` for checking and importing opencode provider credentials into the Docker daemon container.
+- OpenCode listed as a harness option in `/memory-onboard`, `/memory-switch-harness`, MCP tool description, and zod schema.
+
 ## [2.1.0] — 2026-05-06
 
 ### Added

@@ -20,13 +20,14 @@ Switch the agent harness that runs the background memory pipeline (scribe → au
 ```
 Current harness: <current>
 Runtime mode: <mode>
-Available: codex | claude | pi
+Available: codex | claude | pi | opencode
 ```
 
 6. Briefly explain what each harness means:
    - **codex** — OpenAI Codex CLI. Best for ChatGPT subscribers. Requires `codex login` or `OPENAI_API_KEY`.
    - **claude** — Anthropic Claude Code. Best for Claude subscribers. Uses existing OAuth or `ANTHROPIC_API_KEY`.
    - **pi** — pi coding agent. Open-source, provider-agnostic. Uses `/login` subscription or API keys (any supported provider: Anthropic, OpenAI, OpenRouter, etc.).
+   - **opencode** — OpenCode. Open-source, provider-agnostic. Uses provider API keys configured via `opencode providers`.
 
 7. Ask which harness they want to switch to.
 
@@ -90,30 +91,43 @@ Available: codex | claude | pi
        (copy host ~/.claude.json to the auth volume)
     ```
 
-    **For pi:**
-    ```
-    pi auth is not ready in the container. Choose a setup path:
+     **For pi:**
+     ```
+     pi auth is not ready in the container. Choose a setup path:
 
-    A) If you're already authenticated on the host:
-       <plugin_dir>/bin/docker-pi-import-host-auth.sh
+     A) If you're already authenticated on the host:
+        <plugin_dir>/bin/docker-pi-import-host-auth.sh
 
-    B) If you need to authenticate on the host first:
-       1. Run `pi` on the host
-       2. Use `/login` to authenticate with a subscription provider
-       3. Exit pi
-       4. Run <plugin_dir>/bin/docker-pi-import-host-auth.sh
+     B) If you need to authenticate on the host first:
+        1. Run `pi` on the host
+        2. Use `/login` to authenticate with a subscription provider
+        3. Exit pi
+        4. Run <plugin_dir>/bin/docker-pi-import-host-auth.sh
 
-    C) If you have an API key you want to use:
-       1. Create/edit ~/.pi/agent/auth.json on the host:
-          {
-            "<provider>": {
-              "type": "api_key",
-              "key": "sk-..."
-            }
-          }
-       2. Set your default provider/model in ~/.pi/agent/settings.json:
-          { "defaultProvider": "<provider>", "defaultModel": "<model>" }
-       3. Run <plugin_dir>/bin/docker-pi-import-host-auth.sh
-    ```
+     C) If you have an API key you want to use:
+        1. Create/edit ~/.pi/agent/auth.json on the host:
+           {
+             "<provider>": {
+               "type": "api_key",
+               "key": "sk-..."
+             }
+           }
+        2. Set your default provider/model in ~/.pi/agent/settings.json:
+           { "defaultProvider": "<provider>", "defaultModel": "<model>" }
+        3. Run <plugin_dir>/bin/docker-pi-import-host-auth.sh
+     ```
+
+     **For opencode:**
+     ```
+     opencode auth is not ready in the container. Choose a setup path:
+
+     A) If you're already authenticated on the host:
+        <plugin_dir>/bin/docker-opencode-import-host-auth.sh
+
+     B) If you need to configure a provider API key on the host first:
+        1. Run `opencode providers` on the host
+        2. Follow prompts to add a provider (Anthropic, OpenAI, OpenRouter, etc.)
+        3. Run <plugin_dir>/bin/docker-opencode-import-host-auth.sh
+     ```
 
 18. After the user completes auth setup, rerun `<plugin_dir>/bin/docker-auth-check.sh` to confirm.
