@@ -52,6 +52,8 @@ interface Props {
   health: MemoryHealth | null
 }
 
+const GRAPH_LEVEL_TYPES = new Set(['auditor', 'librarian', 'dreamer', 'memory_analysis'])
+
 export default function ActivityPanel({
   projectFilter,
   status,
@@ -71,6 +73,7 @@ export default function ActivityPanel({
     let filtered = jobs
     if (projectFilter) {
       filtered = jobs.filter((j) => {
+        if (GRAPH_LEVEL_TYPES.has(j.type)) return true
         const p = j.payload?.project
         if (typeof p === 'string') return p === projectFilter || p === 'global'
         return false
@@ -89,6 +92,7 @@ export default function ActivityPanel({
     if (projectFilter) {
       filtered = events.filter((e) => {
         const msg = (e.message || '').toLowerCase()
+        if (msg.includes('auditor') || msg.includes('librarian') || msg.includes('dreamer') || msg.includes('daemon')) return true
         return msg.includes(projectFilter.toLowerCase())
       })
     }
