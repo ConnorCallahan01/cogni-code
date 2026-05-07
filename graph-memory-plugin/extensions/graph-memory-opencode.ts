@@ -29,10 +29,16 @@ let _projectBoost: any;
 async function loadCore() {
   if (_handleGraphMemory) return;
   const rawDir = import.meta.dirname ?? path.dirname(new URL(import.meta.url).pathname);
-  const realDir = fs.realpathSync(rawDir);
+  let realDir = rawDir;
+  try {
+    const rawFile = new URL(import.meta.url).pathname;
+    realDir = path.dirname(fs.realpathSync(rawFile));
+  } catch {}
+  const home = process.env.HOME || process.env.USERPROFILE || "/tmp";
   const candidates = [
     path.resolve(realDir, "..", "dist", "graph-memory"),
     path.resolve(rawDir, "..", "dist", "graph-memory"),
+    path.join(home, "Desktop", "agent_memory", "graph-memory-plugin", "dist", "graph-memory"),
   ];
   const distDir = candidates.find((d) => fs.existsSync(path.join(d, "tools.js"))) || candidates[0];
   const tools = await import(path.join(distDir, "tools.js"));
