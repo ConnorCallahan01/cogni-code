@@ -159,6 +159,7 @@ function getPaths(graphRoot = getGraphRoot()) {
       daemonState: join(graphRoot, '.jobs', 'daemon-state.json'),
       daemonLock: join(graphRoot, '.jobs', 'daemon.lock'),
     },
+    skillforge: join(graphRoot, '.skillforge'),
   }
 }
 
@@ -536,6 +537,12 @@ function countCompletedProjectScopedScribes(jobs: ReturnType<typeof readAllJobs>
     .length
 }
 
+function countSkillforgeManifests(graphRoot = getGraphRoot()): number {
+  const dir = getPaths(graphRoot).skillforge
+  if (!existsSync(dir)) return 0
+  return readdirSync(dir).filter((f) => f.endsWith('.json')).length
+}
+
 function hasJobInFlight(jobs: ReturnType<typeof readAllJobs>, type: JobType): 'running' | 'queued' | null {
   if (jobs.running.some((job) => job.type === type)) return 'running'
   if (jobs.queued.some((job) => job.type === type)) return 'queued'
@@ -554,6 +561,11 @@ function buildPipelineCutoffs(graphRoot = getGraphRoot(), jobs = readAllJobs(gra
   const librarianState = hasJobInFlight(jobs, 'librarian')
   const dreamerState = hasJobInFlight(jobs, 'dreamer')
   const analysisState = hasJobInFlight(jobs, 'memory_analysis')
+  const skillforgeState = hasJobInFlight(jobs, 'skillforge')
+  const skillforgeRefreshState = hasJobInFlight(jobs, 'skillforge_refresh')
+  const skillforgeCompleted = jobs.byType.skillforge.done
+  const skillforgeRefreshCompleted = jobs.byType.skillforge_refresh.done
+  const skillforgeManifestCount = countSkillforgeManifests(graphRoot)
   const now = new Date()
   const analysisReady = now.getHours() >= DAILY_ANALYSIS_HOUR_LOCAL
   const todaysBriefExists = (() => {
@@ -633,7 +645,20 @@ function buildPipelineCutoffs(graphRoot = getGraphRoot(), jobs = readAllJobs(gra
             : 'No fresh librarian pass yet, so dreamer is idle.',
     },
     {
-      stage: 'memory_analysis',
+      stage: 'skillforge',
+      current: skillforgeManifestCount,
+      threshold: null,
+      remaining: null,
+      status: skillforgeState || skillforgeRefreshState || (skillforgeCompleted > 0 || skillforgeRefreshCompleted > 0 ? 'idle' : 'waiting'),
+      detail: skillforgeState
+        ? `Skillforge is ${skillforgeState} on a candidate node.`
+        : skillforgeRefreshState
+          ? `Skill refresh is ${skillforgeRefreshState} on a drifted skill.`
+          : skillforgeCompleted > 0
+            ? `${skillforgeCompleted} skill${skillforgeCompleted === 1 ? '' : 's'} generated. ${skillforgeManifestCount} manifest${skillforgeManifestCount === 1 ? '' : 's'} tracked.`
+            : 'No skills generated yet. Skillforge scores nodes by access patterns and generates installable agent skills.',
+    },
+    {
       current: todaysBriefExists ? 1 : 0,
       threshold: 1,
       remaining: todaysBriefExists ? 0 : 1,
@@ -1369,6 +1394,23 @@ for (const [route, fileKey] of [
 app.get('/api/working/projects', (_req, res) => {
   try {
     res.json(listProjectWorkingFiles())
+  } catch {
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
+app.get('/api/skills', (_req, res) => {
+  try {
+    const dir = getPaths().skillforge
+    if (!existsSync(dir)) { res.json([]); return }
+    const skills = readdirSync(dir)
+      .filter((f) => f.endsWith('.json'))
+      .map((f) => {
+        try { return JSON.parse(readFileSync(join(dir, f), 'utf-8')) }
+        catch { return null }
+      })
+      .filter(Boolean)
+    res.json(skills)
   } catch {
     res.status(500).json({ error: 'Internal server error' })
   }
