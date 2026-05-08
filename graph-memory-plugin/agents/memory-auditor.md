@@ -82,13 +82,19 @@ Look for nodes that overlap significantly:
 - One node is a clear subset of another
 - Two nodes covering the same topic from different sessions
 
+Also check for feature-arc clusters: multiple nodes about the same feature or project thread (e.g., `decisions/*-curated-news-*`). Recommend consolidating into a single comprehensive node.
+
 For each, note: `absorb` (the less-established node), `into` (the canonical node), and your reasoning.
 
 #### B. Gist Drift
-For nodes where recent stance updates or content changes may have made the gist inaccurate, note the current gist and suggest a replacement.
+For each gist drift flag, read the node and decide:
+- **Agree** — update the gist to the auditor's suggestion or write a better one
+- **Disagree** — the current gist is still accurate
+
+Also: scan ALL nodes in the manifest for gists exceeding 30 words. Add each to gist_drift with a suggested compact replacement. Gists over 50 words are high priority.
 
 #### C. Content Balance
-Count nodes per category from the manifest. Report the ratio of `architecture/` nodes to `patterns/ + concepts/ + decisions/` nodes. Flag if imbalanced (>1.5:1).
+Count nodes per category from the manifest. Report the ratio of `architecture/` nodes to `patterns/ + concepts/ + decisions/` nodes. Flag if imbalanced (>1.5:1). Also flag if any single category exceeds 80 nodes — this suggests extraction granularity is too fine.
 
 #### D. Soma Shifts
 Look at recent soma signals in the deltas. Note any patterns — nodes getting repeatedly reinforced, emotional engagement shifts, new high-intensity markers.

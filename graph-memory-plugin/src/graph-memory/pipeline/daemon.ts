@@ -667,7 +667,8 @@ async function runAuditor(job: GraphMemoryJob): Promise<void> {
   generatePreflightReport();
 
   const auditorPath = path.join(AGENTS_DIR, "memory-auditor.md");
-  const prompt = `Read the auditor instructions at ${auditorPath}, then follow them. Graph root: ${CONFIG.paths.graphRoot}. Read the preflight report at ${CONFIG.paths.preflightReport} first — it contains the full node manifest and flagged issues with their file contents included.`;
+  const graphOpsPath = path.resolve(__dirname, "graph-ops.js");
+  const prompt = `Read the auditor instructions at ${auditorPath}, then follow them. Graph root: ${CONFIG.paths.graphRoot}. Read the preflight report at ${CONFIG.paths.preflightReport} first — it contains the full node manifest and flagged issues with their file contents included. IMPORTANT: when rebuilding context files, use this absolute path for graph-ops: ${graphOpsPath}`;
   const result = await runPipelineWorker({
     name: `auditor-${job.id}`,
     prompt,
@@ -703,14 +704,15 @@ async function runAuditor(job: GraphMemoryJob): Promise<void> {
 async function runLibrarian(job: GraphMemoryJob): Promise<void> {
   clearConsolidationLock();
   const librarianPath = path.join(AGENTS_DIR, "memory-librarian.md");
-  const prompt = `Read the librarian instructions at ${librarianPath}, then follow them. Graph root: ${CONFIG.paths.graphRoot}. Read the audit brief at ${CONFIG.paths.auditBrief} and audit report at ${CONFIG.paths.auditReport} first — the auditor has already triaged mechanical fixes and prepared recommendations for you.`;
+  const graphOpsPath = path.resolve(__dirname, "graph-ops.js");
+  const prompt = `Read the librarian instructions at ${librarianPath}, then follow them. Graph root: ${CONFIG.paths.graphRoot}. Read the audit brief at ${CONFIG.paths.auditBrief} and audit report at ${CONFIG.paths.auditReport} first — the auditor has already triaged mechanical fixes and prepared recommendations for you. IMPORTANT: when rebuilding context files, use this absolute path for graph-ops: ${graphOpsPath}`;
   const result = await runPipelineWorker({
     name: `librarian-${job.id}`,
     prompt,
     graphRoot: CONFIG.paths.graphRoot,
     logDir: CONFIG.paths.pipelineLogs,
     addDirs: [AGENTS_DIR],
-    timeoutMs: 12 * 60_000,
+    timeoutMs: 20 * 60_000,
   });
 
   job.logFile = result.logFile;
@@ -737,7 +739,8 @@ async function runLibrarian(job: GraphMemoryJob): Promise<void> {
 async function runDreamer(job: GraphMemoryJob): Promise<void> {
   clearConsolidationLock();
   const dreamerPath = path.join(AGENTS_DIR, "memory-dreamer.md");
-  const prompt = `Read the dreamer instructions at ${dreamerPath}, then follow them. Graph root: ${CONFIG.paths.graphRoot}.`;
+  const graphOpsPath = path.resolve(__dirname, "graph-ops.js");
+  const prompt = `Read the dreamer instructions at ${dreamerPath}, then follow them. Graph root: ${CONFIG.paths.graphRoot}. IMPORTANT: when rebuilding DREAMS.md, use this absolute path for graph-ops: ${graphOpsPath}`;
   const result = await runPipelineWorker({
     name: `dreamer-${job.id}`,
     prompt,

@@ -61,12 +61,12 @@ Create dream fragments — speculative connections, inversions, what-if scenario
 
 **Dream strategies:**
 
+- **Self-model (PRIMARY)**: Look for patterns in how the user approaches problems across different projects. What is their cognitive signature? What would a model of their thinking predict they'd do next? Bridge project-specific observations into general cognitive patterns — the way they debug in project A might reveal the same instinct as how they design in project B.
 - **Connection**: Take two nodes that have no edge between them. What if they're deeply related in a way nobody noticed? What hidden thread connects them?
 - **Inversion**: Take something the user believes strongly (high confidence). What if the opposite were true? What would that imply? Where would the cracks show?
 - **Analogy**: Take a pattern from one domain and apply it to a completely different domain. The user's debugging approach applied to their relationship decisions. Their architectural preferences as a metaphor for how they think about organization.
 - **Emergence**: Look at 3+ nodes together. Is a new category or concept trying to emerge from their intersection? Something that isn't any one of them but is implied by all of them?
 - **Integration**: A pending dream has been sitting there for sessions. New evidence doesn't directly confirm it, but it rhymes. What if you pushed the dream further in light of new context?
-- **Self-model**: Look for patterns in how the user approaches problems across different projects. What is their cognitive signature? What would a model of their thinking predict they'd do next? Bridge project-specific observations into general cognitive patterns — the way they debug in project A might reveal the same instinct as how they design in project B.
 
 Each dream has:
 - **fragment**: The dream itself (1-3 sentences). Be vivid and specific, not vague.
@@ -74,7 +74,7 @@ Each dream has:
 - **nodes_referenced**: Which existing node paths this connects (minimum 2)
 - **type**: One of: `connection`, `inversion`, `analogy`, `emergence`, `integration`
 
-Generate at most 5 dream fragments per session.
+Generate 2-3 dream fragments per session. Prioritize quality over quantity — one genuinely insightful dream that reframes understanding is worth more than five speculative connections.
 
 ### 6. Write Dream Files
 

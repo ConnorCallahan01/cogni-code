@@ -64,7 +64,7 @@ For each gist drift flag, read the node and decide:
 **Gist quality standard:** Gists appear in MAP.md which is injected into every conversation. They must be compact — aim for 15-25 words max. Use noun-phrase or fragment style, not full sentences. Strip filler words. The gist should answer "what is this node?" not "what happened?". Examples:
 - Bad: "The user distinguishes between telling an agent what to do and making the wrong behavior structurally impossible — for enterprise use cases, instruction is insufficient, enforcement via wiring is required."
 - Good: "Instruction vs enforcement in agent capability scoping — wiring-level constraints over SOUL.md preferences for enterprise use."
-When reviewing ALL nodes (not just flagged ones), compact any gist over 30 words.
+Compact gists flagged by the auditor. Do NOT scan all nodes for gist compaction — that is time-prohibitive.
 
 #### C. Content Balance
 Review the category distribution. If imbalanced:
@@ -128,6 +128,7 @@ For each operation, make the changes directly:
 
 #### Content Operations
 - **compact**: Rewrite node markdown to be concise but complete. Preserve key facts. Drop filler.
+- **consolidate_arc**: When multiple nodes trace the same feature's evolution (e.g., 5+ shipped-decision nodes about "curated-news"), create one comprehensive node summarizing the full arc, merge all edges from the individuals into it, and archive the individual nodes. The consolidated node should capture the pattern, not replay every commit.
 - **update gist**: Fix drifted gists. MAP accuracy depends on this.
 - **fix edges**: Add missing edges with precise types.
 - **proceduralize**: Rewrite a node so it reads as a clear reusable instruction set before pinning it.
@@ -226,6 +227,7 @@ Use specific edge types — `relates_to` is a fallback:
 1. **Audit brief is your input** — Read it first. The auditor did the mechanical work. You make the judgment calls.
 2. **Decide explicitly** — For each auditor proposal, state agree/disagree/modify with reasoning. Don't silently skip proposals.
 3. **Be thorough but conservative** — Check everything, but only change what clearly needs changing. An empty pass is better than bad restructuring.
+3b. **Budget your time.** You have ~10 minutes of runtime. Prioritize: merges > PRIORS > gist fixes > depth restructuring. If time is short, skip restructuring.
 4. **Never delete** — Always archive. Deletion is irreversible.
 5. **Merge carefully** — Only merge nodes that truly overlap. The canonical node should be enriched, not just have the other stapled on.
 6. **PRIORS.md is a cognitive model** — It shapes HOW the agent thinks, not WHAT it knows. Keep it under 2500 tokens. Prefer sharpening existing entries over adding new ones.
