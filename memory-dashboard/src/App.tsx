@@ -8,11 +8,12 @@ import {
   GraphElement,
   GraphNode,
   LatestBrief,
+  MemoryHealth,
   PipelineJob,
   PipelineStatus,
   ProjectWorkingFile,
   SessionTraceSummary,
-  StartupContext,
+  SkillforgeManifest,
   WorkerLogSummary,
   fetchActivity,
   fetchArchive,
@@ -20,63 +21,72 @@ import {
   fetchAuditedDeltas,
   fetchDeltas,
   fetchDreams,
-  fetchDreamsContext,
   fetchGraph,
+  fetchHealth,
   fetchLatestBrief,
   fetchLogs,
-  fetchMap,
   fetchPipeline,
   fetchProjectWorkingFiles,
-  fetchPriors,
-  fetchSessionTraces,
-  fetchSoma,
-  fetchStartupContext,
+  fetchSkills,
   fetchStatus,
-  fetchWorking,
+  fetchSessionTraces,
   subscribeToEvents,
 } from './lib/api'
-import ActivityFeed from './components/ActivityFeed'
-import DeltaInspector from './components/DeltaInspector'
-import GraphView from './components/GraphView'
-import KnowledgeView from './components/KnowledgeView'
-import LogViewer from './components/LogViewer'
-import MorningBriefView from './components/MorningBriefView'
-import NodeDetail from './components/NodeDetail'
-import NodeList from './components/NodeList'
-import OverviewView from './components/OverviewView'
-import PipelineCutoffsView from './components/PipelineCutoffsView'
-import PipelineView from './components/PipelineView'
-import ProjectWorkingFilesView from './components/ProjectWorkingFilesView'
-import SessionTraceView from './components/SessionTraceView'
-import StartupContextView from './components/StartupContextView'
-import StatusBar from './components/StatusBar'
+import BriefView from './components/BriefView'
+import GraphExplorer from './components/GraphExplorer'
+import ActivityPanel from './components/ActivityPanel'
+import ContextView from './components/ContextView'
+import SessionReplay from './components/SessionReplay'
 
-type ViewTab = 'overview' | 'brief' | 'memory' | 'diagnostics' | 'agent' | 'graph'
+type ViewTab = 'brief' | 'graph' | 'context' | 'sessions'
+
+function deriveProjects(
+  workingFiles: ProjectWorkingFile[],
+): string[] {
+  const seen = new Set<string>()
+  const projects: string[] = []
+
+  for (const wf of workingFiles) {
+    if (wf.project && wf.project !== 'global' && !seen.has(wf.project)) {
+      seen.add(wf.project)
+      projects.push(wf.project)
+    }
+  }
+
+  return projects
+}
+
+function getHealthStatus(status: PipelineStatus | null) {
+  if (!status) return { level: 'ok' as const, label: 'Loading' }
+  if (status.failedJobs > 0) return { level: 'err' as const, label: `${status.failedJobs} failed` }
+  if (status.runningJobs > 0) return { level: 'ok' as const, label: 'Running' }
+  if (status.warnings.length > 0) return { level: 'warn' as const, label: `${status.warnings.length} warning${status.warnings.length > 1 ? 's' : ''}` }
+  return { level: 'ok' as const, label: 'Healthy' }
+}
 
 export default function App() {
-  const [view, setView] = useState<ViewTab>('overview')
+  const [view, setView] = useState<ViewTab>('brief')
+  const [projectFilter, setProjectFilter] = useState<string | null>(null)
   const [elements, setElements] = useState<GraphElement[]>([])
   const [nodes, setNodes] = useState<GraphNode[]>([])
+  const [archiveEntries, setArchiveEntries] = useState<ArchiveEntry[]>([])
   const [status, setStatus] = useState<PipelineStatus | null>(null)
-  const [startupContext, setStartupContext] = useState<StartupContext | null>(null)
-  const [latestBrief, setLatestBrief] = useState<LatestBrief | null>(null)
-  const [selectedNode, setSelectedNode] = useState<string | null>(null)
-  const [detailVersion, setDetailVersion] = useState(0)
+  const [brief, setBrief] = useState<LatestBrief | null>(null)
+  const [projects, setProjects] = useState<string[]>([])
   const [activityEvents, setActivityEvents] = useState<ActivityEvent[]>([])
   const [deltas, setDeltas] = useState<DeltaSummary[]>([])
-  const [dreams, setDreams] = useState<DreamsData | null>(null)
-  const [mapContent, setMapContent] = useState('')
-  const [priorsContent, setPriorsContent] = useState('')
-  const [somaContent, setSomaContent] = useState('')
-  const [workingContent, setWorkingContent] = useState('')
-  const [dreamsContextContent, setDreamsContextContent] = useState('')
   const [auditedDeltas, setAuditedDeltas] = useState<DeltaSummary[]>([])
-  const [auditData, setAuditData] = useState<AuditData>({ brief: null, report: null })
-  const [archiveEntries, setArchiveEntries] = useState<ArchiveEntry[]>([])
+  const [dreams, setDreams] = useState<DreamsData | null>(null)
   const [pipelineJobs, setPipelineJobs] = useState<PipelineJob[]>([])
   const [logs, setLogs] = useState<WorkerLogSummary[]>([])
   const [sessionTraces, setSessionTraces] = useState<SessionTraceSummary[]>([])
   const [projectWorkingFiles, setProjectWorkingFiles] = useState<ProjectWorkingFile[]>([])
+  const [auditData, setAuditData] = useState<AuditData>({ brief: null, report: null })
+  const [skills, setSkills] = useState<SkillforgeManifest[]>([])
+  const [health, setHealth] = useState<MemoryHealth | null>(null)
+  const [selectedNode, setSelectedNode] = useState<string | null>(null)
+  const [detailVersion, setDetailVersion] = useState(0)
+  const shellRef = useRef<HTMLDivElement>(null)
   const selectedNodeRef = useRef(selectedNode)
   selectedNodeRef.current = selectedNode
 
@@ -86,46 +96,23 @@ export default function App() {
       setElements(data.elements)
       setNodes(data.elements.filter((el): el is GraphNode => el.group === 'nodes'))
       setArchiveEntries(archive)
-    } catch (err) {
-      console.error('Failed to load graph:', err)
-    }
+    } catch {}
   }, [])
 
-  const loadKnowledge = useCallback(async () => {
-    const [mapResult, priorsResult, somaResult, workingResult, dreamsResult, startupResult, briefResult, projectWorkingResult] = await Promise.allSettled([
-      fetchMap(),
-      fetchPriors(),
-      fetchSoma(),
-      fetchWorking(),
-      fetchDreamsContext(),
-      fetchStartupContext(),
-      fetchLatestBrief(),
-      fetchProjectWorkingFiles(),
-    ])
-    setMapContent(mapResult.status === 'fulfilled' ? mapResult.value : '')
-    setPriorsContent(priorsResult.status === 'fulfilled' ? priorsResult.value : '')
-    setSomaContent(somaResult.status === 'fulfilled' ? somaResult.value : '')
-    setWorkingContent(workingResult.status === 'fulfilled' ? workingResult.value : '')
-    setDreamsContextContent(dreamsResult.status === 'fulfilled' ? dreamsResult.value : '')
-    setStartupContext(startupResult.status === 'fulfilled' ? startupResult.value : null)
-    setLatestBrief(briefResult.status === 'fulfilled' ? briefResult.value : null)
-    setProjectWorkingFiles(projectWorkingResult.status === 'fulfilled' ? projectWorkingResult.value : [])
+  const loadBrief = useCallback(async () => {
+    try { setBrief(await fetchLatestBrief()) } catch {}
   }, [])
 
   const loadStatus = useCallback(async () => {
-    try {
-      setStatus(await fetchStatus())
-    } catch (err) {
-      console.error('Failed to load status:', err)
-    }
+    try { setStatus(await fetchStatus()) } catch {}
+  }, [])
+
+  const loadWorkingFiles = useCallback(async () => {
+    try { setProjectWorkingFiles(await fetchProjectWorkingFiles()) } catch {}
   }, [])
 
   const loadActivity = useCallback(async () => {
-    try {
-      setActivityEvents(await fetchActivity())
-    } catch (err) {
-      console.error('Failed to load activity:', err)
-    }
+    try { setActivityEvents(await fetchActivity()) } catch {}
   }, [])
 
   const loadChanges = useCallback(async () => {
@@ -140,9 +127,7 @@ export default function App() {
       setDreams(dreamsResult)
       setAuditedDeltas(auditedResult)
       setAuditData(auditResult)
-    } catch (err) {
-      console.error('Failed to load changes:', err)
-    }
+    } catch {}
   }, [])
 
   const loadPipeline = useCallback(async () => {
@@ -155,236 +140,181 @@ export default function App() {
       setPipelineJobs(jobResult)
       setLogs(logResult)
       setSessionTraces(traceResult)
-    } catch (err) {
-      console.error('Failed to load pipeline/logs:', err)
-    }
+    } catch {}
+  }, [])
+
+  const loadSkills = useCallback(async () => {
+    try { setSkills(await fetchSkills()) } catch {}
+  }, [])
+
+  const loadHealth = useCallback(async () => {
+    try { setHealth(await fetchHealth()) } catch {}
   }, [])
 
   useEffect(() => {
     loadGraph()
-    loadKnowledge()
+    loadBrief()
     loadStatus()
+    loadWorkingFiles()
     loadActivity()
     loadChanges()
     loadPipeline()
-  }, [loadActivity, loadChanges, loadGraph, loadKnowledge, loadPipeline, loadStatus])
+    loadSkills()
+    loadHealth()
+  }, [loadGraph, loadBrief, loadStatus, loadWorkingFiles, loadActivity, loadChanges, loadPipeline, loadSkills, loadHealth])
+
+  useEffect(() => {
+    setProjects(deriveProjects(projectWorkingFiles))
+  }, [nodes, projectWorkingFiles, brief])
+
+  useEffect(() => {
+    if (projectFilter || projects.length === 0) return
+    const activeNames = status?.activeProjects?.map((p: any) => p.name).filter((n: string) => n && n !== 'global') || []
+    if (activeNames.length > 0 && projects.includes(activeNames[0])) {
+      setProjectFilter(activeNames[0])
+    } else {
+      setProjectFilter(projects[0])
+    }
+  }, [projects, status?.activeProjects])
 
   useEffect(() => {
     const unsub = subscribeToEvents((type) => {
-      if (type === 'graph') {
-        loadGraph()
-        loadKnowledge()
-      }
-      if (type === 'status') {
-        loadStatus()
-        loadKnowledge()
-      }
+      if (type === 'graph') { loadGraph(); loadBrief(); loadWorkingFiles(); loadSkills() }
+      if (type === 'status') { loadStatus(); loadBrief(); loadSkills() }
       if (type === 'activity') loadActivity()
       if (type === 'deltas') loadChanges()
-      if (type === 'pipeline' || type === 'logs') loadPipeline()
+      if (type === 'pipeline' || type === 'logs') { loadPipeline(); loadHealth() }
       if (type === 'node' && selectedNodeRef.current) {
-        setDetailVersion((value) => value + 1)
+        setDetailVersion((v) => v + 1)
       }
     })
     return unsub
-  }, [loadActivity, loadChanges, loadGraph, loadKnowledge, loadPipeline, loadStatus])
+  }, [loadGraph, loadBrief, loadStatus, loadWorkingFiles, loadActivity, loadChanges, loadPipeline])
 
-  const renderMainView = () => {
-    switch (view) {
-      case 'overview':
-        return (
-          <OverviewView
-            status={status}
-            latestBrief={latestBrief}
-            jobs={pipelineJobs}
-            onNavigate={(tab) => setView(tab)}
-          />
-        )
-      case 'brief':
-        return (
-          <MorningBriefView
-            brief={latestBrief}
-            onOpenGraphNode={(path) => {
-              setSelectedNode(path)
-              setView('graph')
-            }}
-          />
-        )
-      case 'memory':
-        return (
-          <div className="split-workspace">
-            <div className="workspace-pane wide">
-              <div className="memory-stack">
-                <StartupContextView context={startupContext} />
-                <ProjectWorkingFilesView files={projectWorkingFiles} />
-              </div>
-            </div>
-            <div className="workspace-pane">
-              <div className="memory-stack">
-                <div className="panel-card">
-                  <div className="section-header">
-                    <div>
-                      <div className="section-title">Memory Layers</div>
-                      <div className="section-subtitle">
-                        Generated artifacts and distilled memory state.
-                      </div>
-                    </div>
-                  </div>
-                  <KnowledgeView
-                    mapContent={mapContent}
-                    priorsContent={priorsContent}
-                    somaContent={somaContent}
-                    workingContent={workingContent}
-                    dreamsContextContent={dreamsContextContent}
-                  />
-                </div>
-                <div className="panel-card">
-                  <div className="section-header">
-                    <div>
-                      <div className="section-title">Recent Memory Changes</div>
-                      <div className="section-subtitle">
-                        Deltas, audited changes, and dream fragments for quick auditing.
-                      </div>
-                    </div>
-                  </div>
-                  <DeltaInspector
-                    deltas={deltas}
-                    dreams={dreams}
-                    auditedDeltas={auditedDeltas}
-                    auditBrief={auditData.brief}
-                  />
-                </div>
-              </div>
-            </div>
-          </div>
-        )
-      case 'diagnostics':
-        return (
-          <div className="split-workspace">
-            <div className="workspace-pane wide">
-              <div className="memory-stack">
-                <div className="panel-card">
-                  <div className="section-header">
-                    <div>
-                      <div className="section-title">Pipeline Cutoffs</div>
-                      <div className="section-subtitle">
-                        Live counters for when each stage will fire next.
-                      </div>
-                    </div>
-                  </div>
-                  <PipelineCutoffsView status={status} />
-                </div>
-                <div className="panel-card">
-                  <div className="section-header">
-                    <div>
-                      <div className="section-title">Pipeline Diagnostics</div>
-                      <div className="section-subtitle">
-                        Queue activity, failures, attempts, and active work.
-                      </div>
-                    </div>
-                  </div>
-                  <PipelineView jobs={pipelineJobs} />
-                </div>
-                <div className="panel-card">
-                  <div className="section-header">
-                    <div>
-                      <div className="section-title">Recent Activity</div>
-                      <div className="section-subtitle">
-                        Hook events and graph lifecycle events.
-                      </div>
-                    </div>
-                  </div>
-                  <ActivityFeed events={activityEvents} />
-                </div>
-              </div>
-            </div>
-            <div className="workspace-pane">
-              <div className="panel-card diagnostics-log-card">
-                <div className="section-header">
-                  <div>
-                    <div className="section-title">Worker Logs</div>
-                    <div className="section-subtitle">
-                      Full logs for debugging failed or suspicious jobs.
-                    </div>
-                  </div>
-                </div>
-                <LogViewer logs={logs} />
-              </div>
-            </div>
-          </div>
-        )
-      case 'agent':
-        return <SessionTraceView traces={sessionTraces} />
-      case 'graph':
-        return (
-          <div className="graph-workspace">
-            <NodeList
-              nodes={nodes}
-              archivedNodes={archiveEntries}
-              selectedNode={selectedNode}
-              onSelect={setSelectedNode}
-            />
-            <div className="graph-stage">
-              <div className="graph-stage-header">
-                <div>
-                  <div className="section-title">Graph Explorer</div>
-                  <div className="section-subtitle">Deep visualization and node topology drill-down.</div>
-                </div>
-              </div>
-              <GraphView
-                elements={elements}
-                selectedNode={selectedNode}
-                onSelect={setSelectedNode}
-              />
-            </div>
-            <div className="detail-stage">
-              <NodeDetail nodePath={selectedNode} version={detailVersion} onNavigate={setSelectedNode} />
-            </div>
-          </div>
-        )
-      default:
-        return null
-    }
+  const pipelineHealth = getHealthStatus(status)
+
+  const filteredNodes = projectFilter
+    ? nodes.filter((n) => n.data.project === projectFilter || !n.data.project)
+    : nodes
+
+  const filteredElements = projectFilter
+    ? (() => {
+        const nodeIds = new Set(filteredNodes.map((n) => n.data.id))
+        return elements.filter((el) => {
+          if (el.group === 'nodes') return nodeIds.has(el.data.id)
+          return nodeIds.has(el.data.source) && nodeIds.has(el.data.target)
+        })
+      })()
+    : elements
+
+  const projectNodeCounts = new Map<string, number>()
+  for (const n of nodes) {
+    const p = n.data.project || '__global__'
+    projectNodeCounts.set(p, (projectNodeCounts.get(p) || 0) + 1)
   }
 
+  const activeProjectNames = status?.activeProjects?.map((p: any) => p.name).filter((n: string) => n && n !== 'global') || []
+
   return (
-    <div className="dashboard cockpit-shell">
-      <StatusBar status={status} />
-      <div className="cockpit-header">
-        <div>
-          <div className="cockpit-title">Memory Cockpit</div>
-          <div className="cockpit-subtitle">
-            Operator surface for runtime health, startup context, jobs, and graph memory.
-          </div>
-        </div>
-        <div className="cockpit-tabs">
-          {[
-            ['overview', 'Overview'],
+    <div className="shell" ref={shellRef}>
+      <header className="topbar">
+        <div className="topbar-brand">Memory</div>
+        <nav className="topbar-nav">
+          {([
             ['brief', 'Brief'],
-            ['memory', 'Memory'],
-            ['diagnostics', 'Diagnostics'],
-            ['agent', 'Agent'],
             ['graph', 'Graph'],
-          ].map(([key, label]) => (
+            ['context', 'Context'],
+            ['sessions', 'Sessions'],
+          ] as const).map(([key, label]) => (
             <button
               key={key}
-              className={`cockpit-tab${view === key ? ' active' : ''}`}
-              onClick={() => setView(key as ViewTab)}
+              className={`topbar-tab${view === key ? ' active' : ''}`}
+              onClick={() => setView(key)}
             >
               {label}
             </button>
           ))}
+        </nav>
+        <div className="topbar-right">
+          <span className={`status-dot ${pipelineHealth.level}${status?.runningJobs ? ' pulse' : ''}`} />
+          <span className="status-label">{pipelineHealth.label}</span>
+          {status && (
+            <>
+              <span className="status-metric">{status.nodeCount} nodes</span>
+              {health?.tokenAccounting && (
+                <span className={`status-metric${health.tokenAccounting.overBudget ? ' status-metric-err' : ''}`}>
+                  {health.tokenAccounting.total.toLocaleString()}t/{health.tokenAccounting.budget.toLocaleString()}t
+                </span>
+              )}
+            </>
+          )}
         </div>
+      </header>
+
+      <div className="project-strip">
+        {projects.length === 0 ? (
+          <span className="project-empty">No projects detected</span>
+        ) : (
+          projects.map((p) => {
+            const isActive = activeProjectNames.includes(p)
+            const isSelected = projectFilter === p
+            const count = projectNodeCounts.get(p) || 0
+            const globalCount = projectNodeCounts.get('__global__') || 0
+            return (
+              <button
+                key={p}
+                className={`project-chip${isSelected ? ' active' : ''}${isActive ? ' live' : ''}`}
+                onClick={() => setProjectFilter(isSelected && projects.length > 1 ? (projects.find(x => x !== p) || null) : p)}
+              >
+                {p}
+                <span className="project-chip-count">{count > 0 ? `${count + globalCount}` : `${globalCount}`}</span>
+                {isActive && <span className="project-chip-dot" />}
+              </button>
+            )
+          })
+        )}
       </div>
-      <div className="cockpit-main">{renderMainView()}</div>
-      {view === 'overview' && (
-        <div className="cockpit-footer">
-          <div className="footer-section">
-            <div className="footer-title">Recent Activity</div>
-            <ActivityFeed events={activityEvents.slice(-12)} />
-          </div>
+
+      <main className="main">
+        <div className={`content-area${view === 'graph' || view === 'sessions' ? ' graph-mode' : ''}`}>
+          {view === 'brief' && (
+            <BriefView
+              brief={brief}
+              projectFilter={projectFilter}
+              status={status}
+              onNavigate={(v) => setView(v)}
+              workingFiles={projectWorkingFiles}
+            />
+          )}
+          {view === 'graph' && (
+            <GraphExplorer
+              elements={filteredElements}
+              nodes={filteredNodes}
+              archivedNodes={archiveEntries}
+              selectedNode={selectedNode}
+              onSelectNode={setSelectedNode}
+              detailVersion={detailVersion}
+              onNavigate={setSelectedNode}
+            />
+          )}
+          {view === 'context' && <ContextView activeProjects={status?.activeProjects ?? []} />}
+          {view === 'sessions' && <SessionReplay traces={sessionTraces} />}
         </div>
-      )}
+
+        <ActivityPanel
+          projectFilter={projectFilter}
+          status={status}
+          jobs={pipelineJobs}
+          logs={logs}
+          traces={sessionTraces}
+          events={activityEvents}
+          deltas={deltas}
+          auditBrief={auditData.brief}
+          dreams={dreams}
+          skills={skills}
+          health={health}
+        />
+      </main>
     </div>
   )
 }

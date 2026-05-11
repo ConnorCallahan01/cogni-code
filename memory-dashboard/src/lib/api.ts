@@ -42,13 +42,23 @@ export interface NodeDetail {
   indexEntry?: Record<string, any>
 }
 
+export interface ActiveProjectInfo {
+  name: string
+  sessionCount: number
+  gitRoot?: string
+  cwd?: string
+  startedAt?: string
+}
+
 export interface PipelineStatus {
   graphRoot: string
   initialized: boolean
   activeProject: string
+  activeProjects: ActiveProjectInfo[]
   nodeCount: number
   archiveCount: number
   bufferCount: number
+  bufferByProject: Array<{ project: string; count: number; sessionId: string; updatedAt: string }>
   pendingDreams: number
   queuedJobs: number
   runningJobs: number
@@ -58,7 +68,7 @@ export interface PipelineStatus {
   completedJobs: number
   jobCounts: Record<string, Record<string, number>>
   pipelineCutoffs: Array<{
-    stage: 'scribe' | 'working_update' | 'auditor' | 'librarian' | 'dreamer' | 'memory_analysis'
+    stage: 'scribe' | 'working_update' | 'auditor' | 'librarian' | 'dreamer' | 'skillforge' | 'memory_analysis'
     current: number
     threshold: number | null
     remaining: number | null
@@ -170,6 +180,23 @@ export interface ProjectWorkingFile {
   sessionCount: number
 }
 
+export interface SkillforgeManifest {
+  source_node: string
+  skill_name: string
+  generated_at: string
+  score: number
+  project: string
+  project_root: string | null
+  content_hash: string
+  files: {
+    claude_command: string
+    opencode_command: string
+  }
+  reference_nodes: string[]
+  refresh_count: number
+  last_refreshed_at: string | null
+}
+
 export interface WorkerLogSummary {
   filename: string
   size: number
@@ -222,6 +249,41 @@ export interface StartupContext {
   layers: StartupContextLayer[]
   pinnedNodes: StartupPinnedNode[]
   allPinnedNodeCount: number
+}
+
+export interface MemoryHealth {
+  nodeCount: number
+  archiveCount: number
+  staleCount: number
+  orphanCount: number
+  categories: Record<string, number>
+  mapTokens: number
+  mapBudget: number
+  mapUsage: number
+  balanceDominant: { category: string; ratio: number } | null
+  score: number
+  lowConfidenceCount: number
+  lowConfidenceRatio: number
+  pipelineStats: { scribe: number; auditor: number; librarian: number; dreamer: number; skillforge: number; failed: number }
+  tokenAccounting: {
+    priors: number
+    priorsBudget: number
+    map: number
+    mapBudget: number
+    soma: number
+    somaBudget: number
+    dreams: number
+    dreamsBudget: number
+    working: number
+    workingBudget: number
+    pinned: number
+    pinnedCount: number
+    pinnedBudget: number
+    total: number
+    budget: number
+    overBudget: boolean
+    efficiency: number
+  }
 }
 
 export interface LatestBrief {
@@ -297,12 +359,6 @@ export async function fetchLogs(): Promise<WorkerLogSummary[]> {
 
 export async function fetchLogDetail(filename: string): Promise<WorkerLogDetail> {
   const res = await fetch(`/api/logs/${encodeURIComponent(filename)}`)
-  if (!res.ok) throw new Error(`API error: ${res.status}`)
-  return res.json()
-}
-
-export async function fetchStartupContext(): Promise<StartupContext> {
-  const res = await fetch('/api/startup-context')
   if (!res.ok) throw new Error(`API error: ${res.status}`)
   return res.json()
 }
@@ -423,6 +479,44 @@ export async function fetchAuditedDeltas(): Promise<DeltaSummary[]> {
   const res = await fetch('/api/deltas/audited')
   if (!res.ok) return []
   return res.json()
+}
+
+export async function fetchSkills(): Promise<SkillforgeManifest[]> {
+  const res = await fetch('/api/skills')
+  if (!res.ok) return []
+  return res.json()
+}
+
+export async function fetchStartupContext(): Promise<StartupContext> {
+  const res = await fetch('/api/startup-context')
+  if (!res.ok) throw new Error(`API error: ${res.status}`)
+  return res.json()
+}
+
+export async function fetchHealth(): Promise<MemoryHealth> {
+  const res = await fetch('/api/health')
+  if (!res.ok) throw new Error(`API error: ${res.status}`)
+  return res.json()
+}
+
+export async function updateNode(path: string, updates: { gist?: string; confidence?: number; tags?: string[] }): Promise<NodeDetail> {
+  const res = await fetch(`/api/node/${path}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(updates),
+  })
+  if (!res.ok) throw new Error(`API error: ${res.status}`)
+  return res.json()
+}
+
+export async function integrateDream(bucket: string, filename: string): Promise<void> {
+  const res = await fetch(`/api/dreams/${bucket}/${filename}/integrate`, { method: 'POST' })
+  if (!res.ok) throw new Error(`API error: ${res.status}`)
+}
+
+export async function archiveDream(bucket: string, filename: string): Promise<void> {
+  const res = await fetch(`/api/dreams/${bucket}/${filename}/archive`, { method: 'POST' })
+  if (!res.ok) throw new Error(`API error: ${res.status}`)
 }
 
 export function subscribeToEvents(onEvent: (type: string) => void): () => void {

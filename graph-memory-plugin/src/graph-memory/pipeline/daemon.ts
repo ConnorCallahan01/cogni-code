@@ -10,6 +10,7 @@ import { GraphMemoryJob } from "./job-schema.js";
 import { runPipelineWorker } from "./worker-runner.js";
 import { loadRuntimeConfig } from "../runtime.js";
 import { regenerateCoreContextFiles, regenerateDreamContext } from "./graph-ops.js";
+import { runDecay } from "./decay.js";
 import { updateProjectWorkingFromSession } from "../project-working.js";
 import { scoreCandidates, computeNodeContentHash } from "./skillforge-score.js";
 import { listManifests, findDriftedManifests } from "./skillforge-manifest.js";import { getAssistantTracePath, getToolTracePath } from "../session-trace.js";
@@ -667,7 +668,8 @@ async function runAuditor(job: GraphMemoryJob): Promise<void> {
   generatePreflightReport();
 
   const auditorPath = path.join(AGENTS_DIR, "memory-auditor.md");
-  const prompt = `Read the auditor instructions at ${auditorPath}, then follow them. Graph root: ${CONFIG.paths.graphRoot}. Read the preflight report at ${CONFIG.paths.preflightReport} first — it contains the full node manifest and flagged issues with their file contents included.`;
+  const graphOpsPath = path.resolve(__dirname, "graph-ops.js");
+  const prompt = `Read the auditor instructions at ${auditorPath}, then follow them. Graph root: ${CONFIG.paths.graphRoot}. Read the preflight report at ${CONFIG.paths.preflightReport} first — it contains the full node manifest and flagged issues with their file contents included. IMPORTANT: when rebuilding context files, use this absolute path for graph-ops: ${graphOpsPath}`;
   const result = await runPipelineWorker({
     name: `auditor-${job.id}`,
     prompt,
@@ -703,14 +705,15 @@ async function runAuditor(job: GraphMemoryJob): Promise<void> {
 async function runLibrarian(job: GraphMemoryJob): Promise<void> {
   clearConsolidationLock();
   const librarianPath = path.join(AGENTS_DIR, "memory-librarian.md");
-  const prompt = `Read the librarian instructions at ${librarianPath}, then follow them. Graph root: ${CONFIG.paths.graphRoot}. Read the audit brief at ${CONFIG.paths.auditBrief} and audit report at ${CONFIG.paths.auditReport} first — the auditor has already triaged mechanical fixes and prepared recommendations for you.`;
+  const graphOpsPath = path.resolve(__dirname, "graph-ops.js");
+  const prompt = `Read the librarian instructions at ${librarianPath}, then follow them. Graph root: ${CONFIG.paths.graphRoot}. Read the audit brief at ${CONFIG.paths.auditBrief} and audit report at ${CONFIG.paths.auditReport} first — the auditor has already triaged mechanical fixes and prepared recommendations for you. IMPORTANT: when rebuilding context files, use this absolute path for graph-ops: ${graphOpsPath}`;
   const result = await runPipelineWorker({
     name: `librarian-${job.id}`,
     prompt,
     graphRoot: CONFIG.paths.graphRoot,
     logDir: CONFIG.paths.pipelineLogs,
     addDirs: [AGENTS_DIR],
-    timeoutMs: 12 * 60_000,
+    timeoutMs: 20 * 60_000,
   });
 
   job.logFile = result.logFile;
@@ -737,7 +740,8 @@ async function runLibrarian(job: GraphMemoryJob): Promise<void> {
 async function runDreamer(job: GraphMemoryJob): Promise<void> {
   clearConsolidationLock();
   const dreamerPath = path.join(AGENTS_DIR, "memory-dreamer.md");
-  const prompt = `Read the dreamer instructions at ${dreamerPath}, then follow them. Graph root: ${CONFIG.paths.graphRoot}.`;
+  const graphOpsPath = path.resolve(__dirname, "graph-ops.js");
+  const prompt = `Read the dreamer instructions at ${dreamerPath}, then follow them. Graph root: ${CONFIG.paths.graphRoot}. IMPORTANT: when rebuilding DREAMS.md, use this absolute path for graph-ops: ${graphOpsPath}`;
   const result = await runPipelineWorker({
     name: `dreamer-${job.id}`,
     prompt,
@@ -979,6 +983,39 @@ async function processJob(job: GraphMemoryJob): Promise<void> {
   }
 }
 
+function cleanupOrphanSnapshots(): void {
+  const bufferDir = CONFIG.paths.buffer;
+  if (!fs.existsSync(bufferDir)) return;
+
+  const MAX_AGE_MS = 4 * 60 * 60 * 1000;
+  const now = Date.now();
+  const runningJobs = listJobs("running");
+  const queuedJobs = listJobs("queued");
+  const activeSnapshotPaths = new Set<string>();
+  for (const j of [...runningJobs, ...queuedJobs]) {
+    const sp = (j.payload as any)?.snapshotPath;
+    if (sp) activeSnapshotPaths.add(sp);
+  }
+
+  let cleaned = 0;
+  for (const file of fs.readdirSync(bufferDir)) {
+    if (!file.startsWith("snapshot_") || !file.endsWith(".jsonl")) continue;
+
+    const filePath = path.join(bufferDir, file);
+    if (activeSnapshotPaths.has(filePath)) continue;
+
+    const stat = fs.statSync(filePath);
+    if (now - stat.mtimeMs < MAX_AGE_MS) continue;
+
+    fs.unlinkSync(filePath);
+    cleaned++;
+  }
+
+  if (cleaned > 0) {
+    activityBus.log("system:info", `Cleaned ${cleaned} orphan snapshot(s) older than 4 hours`);
+  }
+}
+
 function scavengeStaleBuffers(): void {
   const bufferDir = CONFIG.paths.buffer;
   if (!fs.existsSync(bufferDir)) return;
@@ -1054,7 +1091,23 @@ export async function runDaemon({ once = false }: { once?: boolean } = {}): Prom
       maybeEnqueueSkillforgeJobs();
       maybeEnqueueSkillforgeRefresh();
       scavengeStaleBuffers();
+      cleanupOrphanSnapshots();
       requeueStaleRunningJobs(30 * 60_000);
+
+      if (!hasRunningGraphLevelJob()) {
+        try {
+          const { decayed, archived } = runDecay();
+          if (decayed > 0 || archived > 0) {
+            regenerateCoreContextFiles();
+            activityBus.log("daemon:decay", `Tick decay: ${decayed} decayed, ${archived} archived`, {
+              decayed,
+              archived,
+            });
+          }
+        } catch (err: any) {
+          activityBus.log("system:error", `Decay pass failed: ${err.message}`);
+        }
+      }
 
       writeDaemonState({
         running: true,

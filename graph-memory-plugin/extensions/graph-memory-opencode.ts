@@ -26,6 +26,9 @@ let _recencyBoost: any;
 let _somaBoost: any;
 let _projectBoost: any;
 let _updateLastAccessed: any;
+let _detectProject: any;
+let _writeActiveProject: any;
+let _removeActiveProject: any;
 
 async function loadCore() {
   if (_handleGraphMemory) return;
@@ -48,6 +51,7 @@ async function loadCore() {
   const jobQueue = await import(path.join(distDir, "pipeline", "job-queue.js"));
   const scoring = await import(path.join(distDir, "scoring.js"));
   const soma = await import(path.join(distDir, "soma.js"));
+  const project = await import(path.join(distDir, "project.js"));
   _handleGraphMemory = tools.handleGraphMemory;
   _initializeGraph = index.initializeGraph;
   _CONFIG = config.CONFIG;
@@ -58,6 +62,9 @@ async function loadCore() {
   _somaBoost = soma.somaBoost;
   _projectBoost = scoring.projectBoost;
   _updateLastAccessed = tools.updateLastAccessed;
+  _detectProject = project.detectProject;
+  _writeActiveProject = project.writeActiveProject;
+  _removeActiveProject = project.removeActiveProject;
 }
 
 export const GraphMemoryPlugin: Plugin = async ({ project, client, directory, worktree }) => {
@@ -160,6 +167,10 @@ export const GraphMemoryPlugin: Plugin = async ({ project, client, directory, wo
 
   function detectCurrentProject(): string | undefined {
     if (!worktree) return undefined;
+    if (_detectProject) {
+      const info = _detectProject(worktree);
+      if (info && info.name && info.name !== "global") return info.name;
+    }
     return path.basename(worktree);
   }
 
@@ -381,6 +392,18 @@ SETUP:
 
         await ensureGraph();
         await loadCore();
+
+        if (_writeActiveProject && worktree && _detectProject) {
+          const proj = _detectProject(worktree);
+          if (proj) {
+            _writeActiveProject(captureSessionId || `opencode_session_${Date.now()}`, {
+              name: proj.name,
+              gitRoot: proj.gitRoot,
+              cwd: worktree,
+            });
+          }
+        }
+
         if (_CONFIG && messageCount > 0) {
           rotateAndQueue();
         }
@@ -544,6 +567,9 @@ SETUP:
         }
         captureEnabled = false;
         messageCount = 0;
+        if (_removeActiveProject && captureSessionId) {
+          try { _removeActiveProject(captureSessionId); } catch {}
+        }
         captureSessionId = "";
         activeSessionId = null;
         lastProcessedMessageCount = {};

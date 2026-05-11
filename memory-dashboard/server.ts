@@ -159,6 +159,7 @@ function getPaths(graphRoot = getGraphRoot()) {
       daemonState: join(graphRoot, '.jobs', 'daemon-state.json'),
       daemonLock: join(graphRoot, '.jobs', 'daemon.lock'),
     },
+    skillforge: join(graphRoot, '.skillforge'),
   }
 }
 
@@ -375,6 +376,46 @@ function readBufferCount(graphRoot = getGraphRoot()): number {
   return total
 }
 
+interface BufferProjectCount {
+  project: string
+  count: number
+  sessionId: string
+  updatedAt: string
+}
+
+function readBufferCountsByProject(graphRoot = getGraphRoot()): BufferProjectCount[] {
+  const bufferDir = join(getPaths(graphRoot).buffer)
+  if (!existsSync(bufferDir)) return []
+  const byProject = new Map<string, { count: number; sessionId: string; updatedAt: string }>()
+  for (const file of readdirSync(bufferDir)) {
+    if (!file.startsWith('conversation-') || !file.endsWith('.jsonl')) continue
+    const content = readFileSync(join(bufferDir, file), 'utf-8').trim()
+    if (!content) continue
+    const lines = content.split('\n').filter(Boolean)
+    const sessionId = file.replace('conversation-', '').replace('.jsonl', '')
+    let project = 'global'
+    let latestTs = ''
+    for (const line of lines) {
+      try {
+        const entry = JSON.parse(line)
+        if (entry.project) project = entry.project
+        if (entry.timestamp && entry.timestamp > latestTs) latestTs = entry.timestamp
+      } catch {}
+    }
+    const existing = byProject.get(project)
+    const count = lines.length
+    if (!existing || count > existing.count) {
+      byProject.set(project, { count: (existing?.count || 0) + count, sessionId, updatedAt: latestTs || new Date().toISOString() })
+    } else {
+      existing.count += count
+      if (latestTs > existing.updatedAt) existing.updatedAt = latestTs
+    }
+  }
+  return Array.from(byProject.entries())
+    .map(([project, data]) => ({ project, ...data }))
+    .sort((a, b) => b.count - a.count)
+}
+
 function readLatestActiveProjectEntry(graphRoot = getGraphRoot()): { name: string; gitRoot?: string; cwd?: string; updatedAt: string } | null {
   const activeProjectsDir = getPaths(graphRoot).activeProjects
   if (!existsSync(activeProjectsDir)) return null
@@ -447,6 +488,35 @@ function readActiveProject(graphRoot = getGraphRoot()): { name: string; gitRoot?
   }
 
   return active ? { name: active.name, gitRoot: active.gitRoot } : (trace ? { name: trace.name } : null)
+}
+
+function listAllActiveProjects(graphRoot = getGraphRoot()): Array<{ name: string; sessionCount: number; gitRoot?: string; cwd?: string; startedAt?: string }> {
+  const activeProjectsDir = getPaths(graphRoot).activeProjects
+  if (!existsSync(activeProjectsDir)) return []
+
+  const projectMap = new Map<string, { name: string; sessionCount: number; gitRoot?: string; cwd?: string; startedAt?: string }>()
+
+  for (const file of readdirSync(activeProjectsDir).filter((f) => f.endsWith('.json'))) {
+    const entry = safeJsonParse(join(activeProjectsDir, file))
+    if (!entry?.name) continue
+    const existing = projectMap.get(entry.name)
+    if (existing) {
+      existing.sessionCount++
+      if (entry.startedAt && (!existing.startedAt || entry.startedAt > existing.startedAt)) {
+        existing.startedAt = entry.startedAt
+      }
+    } else {
+      projectMap.set(entry.name, {
+        name: entry.name,
+        sessionCount: 1,
+        gitRoot: entry.gitRoot,
+        cwd: entry.cwd,
+        startedAt: entry.startedAt,
+      })
+    }
+  }
+
+  return Array.from(projectMap.values()).sort((a, b) => a.name.localeCompare(b.name))
 }
 
 function readJobs(state: JobState, graphRoot = getGraphRoot()): JobRecord[] {
@@ -536,6 +606,12 @@ function countCompletedProjectScopedScribes(jobs: ReturnType<typeof readAllJobs>
     .length
 }
 
+function countSkillforgeManifests(graphRoot = getGraphRoot()): number {
+  const dir = getPaths(graphRoot).skillforge
+  if (!existsSync(dir)) return 0
+  return readdirSync(dir).filter((f) => f.endsWith('.json')).length
+}
+
 function hasJobInFlight(jobs: ReturnType<typeof readAllJobs>, type: JobType): 'running' | 'queued' | null {
   if (jobs.running.some((job) => job.type === type)) return 'running'
   if (jobs.queued.some((job) => job.type === type)) return 'queued'
@@ -554,6 +630,11 @@ function buildPipelineCutoffs(graphRoot = getGraphRoot(), jobs = readAllJobs(gra
   const librarianState = hasJobInFlight(jobs, 'librarian')
   const dreamerState = hasJobInFlight(jobs, 'dreamer')
   const analysisState = hasJobInFlight(jobs, 'memory_analysis')
+  const skillforgeState = hasJobInFlight(jobs, 'skillforge')
+  const skillforgeRefreshState = hasJobInFlight(jobs, 'skillforge_refresh')
+  const skillforgeCompleted = jobs.byType.skillforge.done
+  const skillforgeRefreshCompleted = jobs.byType.skillforge_refresh.done
+  const skillforgeManifestCount = countSkillforgeManifests(graphRoot)
   const now = new Date()
   const analysisReady = now.getHours() >= DAILY_ANALYSIS_HOUR_LOCAL
   const todaysBriefExists = (() => {
@@ -633,7 +714,20 @@ function buildPipelineCutoffs(graphRoot = getGraphRoot(), jobs = readAllJobs(gra
             : 'No fresh librarian pass yet, so dreamer is idle.',
     },
     {
-      stage: 'memory_analysis',
+      stage: 'skillforge',
+      current: skillforgeManifestCount,
+      threshold: null,
+      remaining: null,
+      status: skillforgeState || skillforgeRefreshState || (skillforgeCompleted > 0 || skillforgeRefreshCompleted > 0 ? 'idle' : 'waiting'),
+      detail: skillforgeState
+        ? `Skillforge is ${skillforgeState} on a candidate node.`
+        : skillforgeRefreshState
+          ? `Skill refresh is ${skillforgeRefreshState} on a drifted skill.`
+          : skillforgeCompleted > 0
+            ? `${skillforgeCompleted} skill${skillforgeCompleted === 1 ? '' : 's'} generated. ${skillforgeManifestCount} manifest${skillforgeManifestCount === 1 ? '' : 's'} tracked.`
+            : 'No skills generated yet. Skillforge scores nodes by access patterns and generates installable agent skills.',
+    },
+    {
       current: todaysBriefExists ? 1 : 0,
       threshold: 1,
       remaining: todaysBriefExists ? 0 : 1,
@@ -1149,6 +1243,32 @@ app.get('/api/node/:path(*)', (req, res) => {
   }
 })
 
+app.put('/api/node/:path(*)', (req, res) => {
+  try {
+    const graphRoot = getGraphRoot()
+    const { nodes } = getPaths(graphRoot)
+    const fullPath = resolve(nodes, req.params.path.endsWith('.md') ? req.params.path : `${req.params.path}.md`)
+    if (!fullPath.startsWith(nodes)) return res.status(400).json({ error: 'Invalid path' })
+    if (!existsSync(fullPath)) return res.status(404).json({ error: 'Node not found' })
+
+    const raw = readFileSync(fullPath, 'utf-8')
+    const { data: fm, content: body } = matter(raw)
+
+    if (req.body.gist !== undefined) fm.gist = req.body.gist
+    if (req.body.confidence !== undefined) fm.confidence = req.body.confidence
+    if (req.body.tags !== undefined) fm.tags = req.body.tags
+
+    const updated = matter.stringify(body, fm)
+    writeFileSync(fullPath, updated)
+
+    const node = readNodeFileForGraph(graphRoot, req.params.path)
+    res.json(node)
+  } catch (err) {
+    console.error('Error in PUT /api/node:', err)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
 app.get('/api/status', (_req, res) => {
   try {
     const graphRoot = getGraphRoot()
@@ -1161,9 +1281,11 @@ app.get('/api/status', (_req, res) => {
       graphRoot,
       initialized: existsSync(getPaths(graphRoot).map),
       activeProject: activeProject?.name ?? 'global',
+      activeProjects: listAllActiveProjects(graphRoot),
       nodeCount,
       archiveCount: countMarkdownFiles(getPaths(graphRoot).archive),
       bufferCount: readBufferCount(graphRoot),
+      bufferByProject: readBufferCountsByProject(graphRoot),
       pendingDreams: countPendingDreams(graphRoot),
       queuedJobs: jobs.totals.queued,
       runningJobs: jobs.totals.running,
@@ -1178,6 +1300,165 @@ app.get('/api/status', (_req, res) => {
     })
   } catch (err) {
     console.error('Error in /api/status:', err)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
+app.get('/api/health', (_req, res) => {
+  try {
+    const graphRoot = getGraphRoot()
+    const paths = getPaths(graphRoot)
+    const nodeCount = countMarkdownFiles(paths.nodes)
+    const archiveCount = countMarkdownFiles(paths.archive)
+
+    const index = readIndex()
+    const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000
+    const categories: Record<string, number> = {}
+    let staleCount = 0
+    let orphanCount = 0
+    const edgeSources = new Set<string>()
+    const edgeTargets = new Set<string>()
+
+    const graphData = readGraphForDashboard(graphRoot)
+    for (const el of graphData.elements) {
+      if (el.group === 'edges') {
+        edgeSources.add(el.data.source)
+        edgeTargets.add(el.data.target)
+      }
+    }
+    const allConnected = new Set([...edgeSources, ...edgeTargets])
+
+    for (const entry of index) {
+      const cat = entry.category || 'uncategorized'
+      categories[cat] = (categories[cat] || 0) + 1
+
+      const lastAccessed = entry.last_accessed ? Date.parse(entry.last_accessed) : 0
+      if (lastAccessed > 0 && lastAccessed < thirtyDaysAgo) staleCount++
+
+      if (!allConnected.has(entry.path)) orphanCount++
+    }
+
+    let mapTokens = 0
+    if (existsSync(paths.map)) {
+      mapTokens = Math.ceil(readFileSync(paths.map, 'utf-8').length / 4)
+    }
+    const mapBudget = 12000
+    const mapUsage = mapTokens / mapBudget
+
+    let priorsTokens = 0
+    if (existsSync(paths.priors)) {
+      priorsTokens = Math.ceil(readFileSync(paths.priors, 'utf-8').length / 4)
+    }
+
+    let somaTokens = 0
+    if (existsSync(paths.soma)) {
+      somaTokens = Math.ceil(readFileSync(paths.soma, 'utf-8').length / 4)
+    }
+
+    let dreamsTokens = 0
+    if (existsSync(paths.dreamsContext)) {
+      dreamsTokens = Math.ceil(readFileSync(paths.dreamsContext, 'utf-8').length / 4)
+    }
+
+    let workingTokens = 0
+    const workingDir = join(graphRoot, 'working')
+    if (existsSync(workingDir)) {
+      for (const f of readdirSync(workingDir)) {
+        if (f.endsWith('.md')) {
+          workingTokens += Math.ceil(readFileSync(join(workingDir, f), 'utf-8').length / 4)
+        }
+      }
+    }
+
+    let pinnedTokens = 0
+    let pinnedCount = 0
+    for (const entry of index) {
+      if (entry.pinned) {
+        pinnedCount++
+        const nodePath = join(paths.nodes, `${entry.path}.md`)
+        if (existsSync(nodePath)) {
+          pinnedTokens += Math.ceil(readFileSync(nodePath, 'utf-8').length / 4)
+        }
+      }
+    }
+
+    const totalInjectionTokens = priorsTokens + mapTokens + somaTokens + dreamsTokens + workingTokens + pinnedTokens
+    const injectionBudget = 15000
+
+    const topCategory = Object.entries(categories).sort((a, b) => b[1] - a[1])[0]
+    const balanceRatio = topCategory ? topCategory[1] / Math.max(nodeCount, 1) : 0
+
+    let pipelineStats = { scribe: 0, auditor: 0, librarian: 0, dreamer: 0, skillforge: 0, failed: 0 }
+    try {
+      const doneDir = join(graphRoot, '.jobs', 'done')
+      if (existsSync(doneDir)) {
+        for (const f of readdirSync(doneDir)) {
+          if (!f.endsWith('.json')) continue
+          try {
+            const job = JSON.parse(readFileSync(join(doneDir, f), 'utf-8'))
+            const type = job.type || ''
+            if (type in pipelineStats) (pipelineStats as any)[type]++
+            if (job.state === 'failed') pipelineStats.failed++
+          } catch { /* skip */ }
+        }
+      }
+    } catch { /* skip */ }
+
+    let lowConfidenceCount = 0
+    let noDecayRateCount = 0
+    for (const entry of index) {
+      if ((entry.confidence || 0.5) < 0.4) lowConfidenceCount++
+    }
+
+    const injectionEfficiency = totalInjectionTokens > 0 ? Math.min(totalInjectionTokens / injectionBudget, 2) : 0
+
+    const score = Math.round(
+      (nodeCount > 0 ? Math.min(nodeCount / 50, 1) * 15 : 0) +
+      (staleCount === 0 ? 15 : Math.max(0, 15 - (staleCount / nodeCount) * 30)) +
+      (orphanCount === 0 ? 10 : Math.max(0, 10 - (orphanCount / nodeCount) * 20)) +
+      (mapUsage < 0.8 ? 10 : Math.max(0, 10 - (mapUsage - 0.8) * 100)) +
+      (priorsTokens < 1500 ? 15 : Math.max(0, 15 - (priorsTokens - 1500) / 200)) +
+      (pinnedTokens < 3000 ? 15 : Math.max(0, 15 - (pinnedTokens - 3000) / 500)) +
+      (lowConfidenceCount / Math.max(nodeCount, 1) < 0.2 ? 10 : Math.max(0, 10 - (lowConfidenceCount / Math.max(nodeCount, 1)) * 50)) +
+      (totalInjectionTokens < injectionBudget ? 10 : 0)
+    )
+
+    res.json({
+      nodeCount,
+      archiveCount,
+      staleCount,
+      orphanCount,
+      categories,
+      mapTokens,
+      mapBudget,
+      mapUsage: Math.round(mapUsage * 100),
+      balanceDominant: topCategory ? { category: topCategory[0], ratio: Math.round(balanceRatio * 100) } : null,
+      score: Math.min(score, 100),
+      lowConfidenceCount,
+      lowConfidenceRatio: nodeCount > 0 ? Math.round((lowConfidenceCount / nodeCount) * 100) : 0,
+      pipelineStats,
+      tokenAccounting: {
+        priors: priorsTokens,
+        priorsBudget: 1500,
+        map: mapTokens,
+        mapBudget,
+        soma: somaTokens,
+        somaBudget: 800,
+        dreams: dreamsTokens,
+        dreamsBudget: 400,
+        working: workingTokens,
+        workingBudget: 2000,
+        pinned: pinnedTokens,
+        pinnedCount,
+        pinnedBudget: 3000,
+        total: totalInjectionTokens,
+        budget: injectionBudget,
+        overBudget: totalInjectionTokens > injectionBudget,
+        efficiency: Math.round(injectionEfficiency * 100),
+      },
+    })
+  } catch (err) {
+    console.error('Error in /api/health:', err)
     res.status(500).json({ error: 'Internal server error' })
   }
 })
@@ -1339,6 +1620,50 @@ app.get('/api/dreams', (_req, res) => {
   }
 })
 
+app.post('/api/dreams/:bucket/:filename/integrate', (req, res) => {
+  try {
+    const dreamsDir = getPaths().dreams
+    const srcDir = join(dreamsDir, req.params.bucket)
+    const srcPath = resolve(srcDir, req.params.filename)
+    if (!srcPath.startsWith(resolve(dreamsDir))) return res.status(403).json({ error: 'Forbidden' })
+    if (!existsSync(srcPath)) return res.status(404).json({ error: 'Not found' })
+
+    const destDir = join(dreamsDir, 'integrated')
+    if (!existsSync(destDir)) mkdirSync(destDir, { recursive: true })
+    const destPath = join(destDir, req.params.filename)
+
+    if (resolve(srcPath) !== resolve(destPath)) {
+      renameSync(srcPath, destPath)
+    }
+    res.json({ ok: true })
+  } catch (err) {
+    console.error('Error integrating dream:', err)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
+app.post('/api/dreams/:bucket/:filename/archive', (req, res) => {
+  try {
+    const dreamsDir = getPaths().dreams
+    const srcDir = join(dreamsDir, req.params.bucket)
+    const srcPath = resolve(srcDir, req.params.filename)
+    if (!srcPath.startsWith(resolve(dreamsDir))) return res.status(403).json({ error: 'Forbidden' })
+    if (!existsSync(srcPath)) return res.status(404).json({ error: 'Not found' })
+
+    const destDir = join(dreamsDir, 'archived')
+    if (!existsSync(destDir)) mkdirSync(destDir, { recursive: true })
+    const destPath = join(destDir, req.params.filename)
+
+    if (resolve(srcPath) !== resolve(destPath)) {
+      renameSync(srcPath, destPath)
+    }
+    res.json({ ok: true })
+  } catch (err) {
+    console.error('Error archiving dream:', err)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
 app.get('/api/archive', (_req, res) => {
   try {
     const archiveIndex = safeJsonParse(getPaths().archiveIndex)
@@ -1369,6 +1694,23 @@ for (const [route, fileKey] of [
 app.get('/api/working/projects', (_req, res) => {
   try {
     res.json(listProjectWorkingFiles())
+  } catch {
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
+app.get('/api/skills', (_req, res) => {
+  try {
+    const dir = getPaths().skillforge
+    if (!existsSync(dir)) { res.json([]); return }
+    const skills = readdirSync(dir)
+      .filter((f) => f.endsWith('.json'))
+      .map((f) => {
+        try { return JSON.parse(readFileSync(join(dir, f), 'utf-8')) }
+        catch { return null }
+      })
+      .filter(Boolean)
+    res.json(skills)
   } catch {
     res.status(500).json({ error: 'Internal server error' })
   }

@@ -61,12 +61,12 @@ Create dream fragments — speculative connections, inversions, what-if scenario
 
 **Dream strategies:**
 
+- **Self-model (PRIMARY)**: Look for patterns in how the user approaches problems across different projects. What is their cognitive signature? What would a model of their thinking predict they'd do next? Bridge project-specific observations into general cognitive patterns — the way they debug in project A might reveal the same instinct as how they design in project B.
 - **Connection**: Take two nodes that have no edge between them. What if they're deeply related in a way nobody noticed? What hidden thread connects them?
 - **Inversion**: Take something the user believes strongly (high confidence). What if the opposite were true? What would that imply? Where would the cracks show?
 - **Analogy**: Take a pattern from one domain and apply it to a completely different domain. The user's debugging approach applied to their relationship decisions. Their architectural preferences as a metaphor for how they think about organization.
 - **Emergence**: Look at 3+ nodes together. Is a new category or concept trying to emerge from their intersection? Something that isn't any one of them but is implied by all of them?
 - **Integration**: A pending dream has been sitting there for sessions. New evidence doesn't directly confirm it, but it rhymes. What if you pushed the dream further in light of new context?
-- **Self-model**: Look for patterns in how the user approaches problems across different projects. What is their cognitive signature? What would a model of their thinking predict they'd do next? Bridge project-specific observations into general cognitive patterns — the way they debug in project A might reveal the same instinct as how they design in project B.
 
 Each dream has:
 - **fragment**: The dream itself (1-3 sentences). Be vivid and specific, not vague.
@@ -74,7 +74,7 @@ Each dream has:
 - **nodes_referenced**: Which existing node paths this connects (minimum 2)
 - **type**: One of: `connection`, `inversion`, `analogy`, `emergence`, `integration`
 
-Generate at most 5 dream fragments per session.
+Generate 2-3 dream fragments per session. Prioritize quality over quantity — one genuinely insightful dream that reframes understanding is worth more than five speculative connections.
 
 ### 6. Write Dream Files
 
@@ -94,7 +94,7 @@ Name files: `dream_{timestamp}_{random4chars}.json`
 
 ### 7. Handle Promotions
 
-For dreams reaching confidence >= 0.5 after reinforcement across 3+ sessions:
+For dreams reaching confidence >= 0.4 after reinforcement across 2+ sessions:
 1. Create a real node under the first referenced node's category (or a new appropriate category)
 2. Move the dream file from `pending/` to `integrated/`
 3. Add `dream_refs` to referenced nodes' frontmatter
@@ -105,11 +105,12 @@ For dreams reaching confidence >= 0.5 after reinforcement across 3+ sessions:
 For pending dreams affected by new evidence:
 - Read the dream file
 - Update the `confidence` field
+- **Implicit reinforcement**: if a node referenced by a pending dream was recalled, updated, or received a confidence boost in recent deltas, boost the dream's confidence by +0.05. The dream is connected to active thinking, which is a form of subconscious reinforcement.
 - If confidence drops below 0.1, archive it to `dreams/archived/`
 
 ### 9. Enforce Hard Cap
 
-Maximum 20 pending dreams. If over the limit:
+Maximum 15 pending dreams. If over the limit:
 1. Sort pending dreams by confidence (lowest first)
 2. Archive lowest-confidence dreams to `dreams/archived/`
 3. Remove `dream_refs` from their referenced nodes

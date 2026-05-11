@@ -191,9 +191,11 @@ echo '{"type":"skillforge:complete","message":"Skillforge complete for {nodePath
 
 1. **Skills are workflows, not documentation** — every step must be actionable
 2. **Reference nodes, don't copy them** — use `graph_memory` recall calls for live context
-3. **Keep skills under 2000 tokens** — this is an orchestration layer, not a knowledge base
+3. **Keep skills under 2000 tokens** — this is an orchestration layer, not a knowledge base; most skills should be 500-800 tokens
 4. **Exact commands matter** — include the real CLI commands and tool calls found in the source node
 5. **Error handling is critical** — every skill should include common failure modes
 6. **One skill per node** — don't merge multiple nodes into one skill
 7. **Never overwrite existing skills** — if a command file already exists, skip and log a warning
 8. **Content hash for drift detection** — compute a simple hash of the source node content for the manifest
+9. **Skip short procedures** — if the source node describes fewer than 5 steps or is under 200 words of procedural content, skip skillforging. Note it in the manifest with `"skipped": true, "reason": "procedure too short for skill file"`. Short procedures are better served as pinned nodes.
+10. **Access tracking** — the scoring relies on `access_count`, `recall_action_count`, and `distinct_sessions` being accurate. If you notice these fields are missing or obviously stale (e.g., a frequently-discussed topic has access_count: 0), note it in the manifest but do not attempt to repair the counts.
