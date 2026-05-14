@@ -212,6 +212,7 @@ function createConfig() {
       daemonLock: path.join(graphRoot, ".jobs/daemon.lock"),
       daemonState: path.join(graphRoot, ".jobs/daemon-state.json"),
       runtimeConfig: path.join(graphRoot, ".runtime-config.json"),
+      notionSyncState: path.join(graphRoot, ".notion-sync-state.json"),
       skillforgeManifests: path.join(graphRoot, ".skillforge"),
       // Prompts are bundled relative to dist/ (or src/ in dev)
       prompts: path.resolve(__dirname, "prompts"),
@@ -236,6 +237,13 @@ function createConfig() {
 
     externalInputs: {
       enabled: local.externalInputs?.enabled ?? true,
+    },
+
+    notionSync: {
+      enabled: (local as any).notionSync?.enabled ?? false,
+      syncHourLocal: (local as any).notionSync?.syncHourLocal ?? 8,
+      maxBatchSize: (local as any).notionSync?.maxBatchSize ?? 30,
+      skipInbound: (local as any).notionSync?.skipInbound ?? false,
     },
 
     /** Path to the global config pointer file */
