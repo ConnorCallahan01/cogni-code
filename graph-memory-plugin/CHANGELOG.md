@@ -1,6 +1,6 @@
 # Changelog
 
-## 2026-05-14 — Mental Model Architecture + Pipeline Improvements
+## 2.4.0 (2026-05-14) — Mental Model Architecture + Pipeline Improvements
 
 ### Mental Model System (folded into v2 pipeline)
 
