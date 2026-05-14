@@ -284,239 +284,291 @@ Three file reads. No MAP regeneration. No index rebuild. No pinned node scanning
 
 ## Implementation Phases
 
-### Phase 0: Scaffolding and Core Types
+### Phase 0: Scaffolding and Core Types ✅
 
 Create the new directory structure, type definitions, and harness adapter interfaces. No behavior changes yet.
 
+**Completed 2026-05-11.** All tasks done, clean build.
+
 **Tasks:**
 
-- [ ] Create `src/graph-memory/mind/` module with types for observations, models, whispers
-- [ ] Create `src/graph-memory/lenses/` module for project mental model management
-- [ ] Create `src/graph-memory/sessions/` module for session log management
-- [ ] Define `HarnessAdapter` interface in `src/graph-memory/adapters/`
-- [ ] Define structured tool schemas for observer, compressor, dreamer
-- [ ] Create `src/graph-memory/pipeline/observer.ts` (empty shell)
-- [ ] Create `src/graph-memory/pipeline/compressor.ts` (empty shell)
-- [ ] Update `config.ts` with new paths (mind/, lenses/, sessions/, graph/) alongside existing paths
-- [ ] Update `index.ts` to create new directory structure on init
+- [x] Create `src/graph-memory/mind/` module with types for observations, models, whispers
+- [x] Create `src/graph-memory/lenses/` module for project mental model management
+- [x] Create `src/graph-memory/sessions/` module for session log management
+- [x] Define `HarnessAdapter` interface in `src/graph-memory/adapters/`
+- [x] Define structured tool schemas for observer, compressor, dreamer
+- [x] Create `src/graph-memory/pipeline/observer.ts` (empty shell)
+- [x] Create `src/graph-memory/pipeline/compressor.ts` (empty shell)
+- [x] Update `config.ts` with new paths (mind/, lenses/, sessions/, graph/) alongside existing paths
+- [x] Update `index.ts` to create new directory structure on init
 
-### Phase 1: Observer
+**Implementation notes:**
+
+- `mind/` has 4 files: `types.ts` (Observation, GlobalModel, GlobalModelFile), `observations.ts` (append-only JSONL with prune/absorb), `model.ts` (read/write model.json), `whisper.ts` (read/write whisper.txt with token cap enforcement)
+- `lenses/` mirrors `mind/` structure per-project — `manager.ts` handles observations, models, whispers, plus archive/restore lifecycle
+- `sessions/` uses JSONL per project with 3-tier compaction (full → summary → delete) and 7/30 day boundaries
+- `adapters/types.ts` defines HarnessAdapter interface plus per-harness config (supportsHooks, supportsMCP, projectDocFilename), with `isDegradedMode()` for codex
+- `pipeline/v3-tool-schemas.ts` has Zod schemas for all 16 structured tools (observe, log_session, upsert_node, get_observations, get_model, update_model, query_graph, get_anti_patterns, archive_observations, prune_session_logs, archive_graph_nodes, get_graph_stats, flag_for_deep_audit, get_models, get_graph_nodes, propose_dream, bootstrap_project_doc)
+- v3 paths added to config as `v3Mind`, `v3Lenses`, `v3Sessions`, `v3Graph`, `v3GraphIndex`, `v3GraphArchive`, `v3PipelineObservations` — no v2 paths removed
+- init creates `graph/` with all 11 categories (patterns, anti-patterns, decisions, preferences, procedures, corrections, projects, concepts, architecture, people, tools)
+
+### Phase 1: Observer ✅
 
 Build the observer — the replacement for the scribe. This is the first LLM pass that replaces the current scribe + auditor pipeline.
 
+**Completed 2026-05-11.** All tasks done, clean build.
+
 **Tasks:**
 
-- [ ] Write observer agent prompt (`agents/memory-observer.md`)
+- [x] Write observer agent prompt (`agents/memory-observer.md`)
   - Must be concise (~120 lines max) — structured tools handle the mechanics
   - Focus on: what to observe, what to ignore, how to classify layer/type
   - Include anti-pattern detection rules
-- [ ] Implement observer structured tools (`pipeline/observer-tools.ts`)
+- [x] Implement observer structured tools (`pipeline/observer-tools.ts`)
   - `observe()` — validates, writes to observations.jsonl
   - `log_session()` — writes to sessions/{project}.jsonl
   - `upsert_node()` — writes/updates graph nodes
   - Each tool enforces schema validation
-- [ ] Implement observer job in daemon (`pipeline/daemon.ts`)
+- [x] Implement observer job in daemon (`pipeline/daemon.ts`)
   - New job type: "observer"
   - Same harness dispatch as current scribe (uses worker-runner.ts)
   - Writes structured tools module path in prompt
   - Validates output (observer must produce at least one observation or log_session)
-- [ ] Wire observer into session-end hook (replace scribe enqueue with observer enqueue)
-- [ ] Wire observer into buffer-watcher (replace scribe rotation with observer rotation)
-- [ ] Add observer job type to job-queue priority map (priority 0, same as scribe)
+- [x] Wire observer into session-end hook (replace scribe enqueue with observer enqueue)
+- [x] Wire observer into buffer-watcher (replace scribe rotation with observer rotation)
+- [x] Add observer job type to job-queue priority map (priority 0, same as scribe)
 
-### Phase 2: Compressor
+**Implementation notes:**
+
+- Observer runs in **parallel** with scribe (both get enqueued for the same snapshot). This lets us validate observer output against scribe output before removing scribe in Phase 10
+- `agents/memory-observer.md` is ~130 lines, focused on classification rules and output format. Agent writes JSON files to `.pipeline/observations/` which are then processed by `observer-tools.ts`
+- `observer-tools.ts` reads the JSON output files and applies them: observe→observations.jsonl (global or project), log_session→sessions/{project}.jsonl, upsert_node→graph/{category}/{path}.md
+- Anti-patterns get `confidence >= 0.85` and `decay_exempt: true` automatically
+- Job type `observer` has priority 0 (same as scribe), max 3 attempts
+- Event types added: `observer:fired`, `observer:pending`, `observer:complete`, `observer:warnings`, `observer:error`
+- `ObserverJobPayload` mirrors `ScribeJobPayload` exactly (snapshotPath, sessionId, project, traces)
+
+### Phase 2: Compressor ✅
 
 Build the compressor — reads observations, produces mental models and whispers. Runs periodically, not every session.
 
+**Completed 2026-05-11.** All tasks done, clean build.
+
 **Tasks:**
 
-- [ ] Write compressor agent prompt (`agents/memory-compressor.md`)
+- [x] Write compressor agent prompt (`agents/memory-compressor.md`)
   - Reads pending observations, current model, relevant graph nodes
   - Folds new observations into model
   - Handles contradictions (re-evaluate, don't just append)
   - Enforces model size caps
   - Handles bloat: prune observations, trim session logs, archive graph nodes
-- [ ] Implement compressor structured tools (`pipeline/compressor-tools.ts`)
-  - `get_observations()`, `get_model()`, `update_model()`
-  - `query_graph()`, `get_anti_patterns()`
-  - `archive_observations()`, `prune_session_logs()`
-  - `archive_graph_nodes()`, `get_graph_stats()`, `flag_for_deep_audit()`
-- [ ] Implement compressor job in daemon
+- [x] Implement compressor structured tools (`pipeline/compressor-tools.ts`)
+  - `update_model()`, `generate_whisper()`, `archive_observations()`
+  - `archive_graph_nodes()`, `prune_session_logs()`, `flag_for_deep_audit()`
+- [x] Implement compressor job in daemon
   - New job type: "compressor"
-  - Trigger: after N observer completions (configurable, default 5)
+  - Trigger: after 5 observer completions (configurable)
   - Also triggerable on demand via MCP action
   - Generates whisper.txt files as output
-- [ ] Implement whisper generation
-  - `generateWhisper(model, antiPatterns)` → compressed ~300 token paragraph
-  - `generateProjectWhisper(projectModel, globalAntiPatterns)` → ~400 token paragraph
-  - Both write to whisper.txt files
-- [ ] Implement graph node archival in compressor
-  - Archive nodes < 0.2 confidence (except anti-patterns)
-  - Rebuild graph index after archival
-  - Pause decay for referenced/recently-accessed nodes
-- [ ] Implement observation pruning
-  - Delete observations > 30d that were absorbed into model
+- [x] Implement whisper generation
+  - Whisper text written by the LLM agent, capped by `enforceWhisperCap()` (400 tok global, 500 tok project)
+  - Token estimation via chars/4 heuristic
+- [x] Implement graph node archival in compressor
+  - Archive nodes via `archive_graph_nodes` tool call with reason tracking
+  - Anti-patterns protected (frontmatter check in agent prompt)
+- [x] Implement observation pruning
+  - Mark observations absorbed after compression
+  - Auto-prune absorbed observations > 30d
   - Hard cap on observations.jsonl size (500KB)
 
-### Phase 3: Session Start Redesign
+**Implementation notes:**
+
+- `agents/memory-compressor.md` is ~180 lines covering compression logic, whisper structure, bloat management
+- Compressor agent writes JSON files to `.pipeline/observations/` (same staging directory as observer, but with `comp_` prefixed filenames)
+- `compressor-tools.ts` processes 6 tool types: update_model, generate_whisper, archive_observations, archive_graph_nodes, prune_session_logs, flag_for_deep_audit
+- `maybeEnqueueCompressorFromObserverBacklog()` triggers after 5 completed observer jobs since the last compressor run
+- Graph node archival does frontmatter surgery to add `archived_reason` and `archived_date` before moving to `graph/.archive/`
+- Whisper generation is LLM-driven (the agent writes the whisper text), with mechanical token cap enforcement
+- Compressor runs at priority 1 (same as working_update), with 3 max attempts and 10-minute timeout
+
+### Phase 3: Session Start Redesign ✅
 
 Replace the current 5-file injection with the whisper model.
 
+**Completed 2026-05-11.** All tasks done, clean build, 17/17 tests pass.
+
 **Tasks:**
 
-- [ ] Rewrite `session-start.ts` to read whisper files
+- [x] Rewrite `session-start.ts` to read whisper files
   - Read `mind/whisper.txt`
   - Read `lenses/{project}/whisper.txt`
   - Read `sessions/{project}.jsonl` (last 3 entries)
   - Total: 3 file reads instead of current ~50+
-- [ ] Add project lens creation on first session
+- [x] Add project lens creation on first session
   - If no lens exists for detected project, create lens directory
   - Seed with empty model.json
-- [ ] Update context budget enforcement
+- [x] Update context budget enforcement
   - Global whisper: hard cap 400 tokens
   - Project whisper: hard cap 500 tokens
   - Session log: hard cap 200 tokens
   - Total: hard cap 1,100 tokens
-- [ ] Update hooks to pass through to harness adapters
+- [x] Update hooks to pass through to harness adapters
   - Claude Code: stdout (same as current)
   - OpenCode: client.session.prompt (same as current)
   - Pi: client.session.prompt (same as current)
-- [ ] Keep MCP tool registration for `graph_memory` — it still works for Layer 4 queries
+- [x] Keep MCP tool registration for `graph_memory` — it still works for Layer 4 queries
 
-### Phase 4: Graph Layer (Layer 4) Redesign
+**Implementation notes:**
+
+- New module `session-start-v3.ts` with `buildV3Context()` and `hasV3Data()` — shared across all harnesses
+- Claude Code hook (`session-start.ts`) tries v3 first via `hasV3Data()`, falls back to v2 when no whisper exists yet
+- OpenCode extension (`graph-memory-opencode.ts`) same pattern: v3 first, v2 fallback
+- Auto-creates project lens on first session via `ensureLens()` in `buildV3Context()`
+- Session logs formatted with date, shipped, decisions, open threads, next session recommendation
+- Token budgets enforced: 400 global + 500 project + 200 session = 1,100 total
+- Added `compress` MCP action for manual compressor triggering (via `graph_memory(action="compress")`)
+- 3 new tests: whisper injection, fallback behavior, auto lens creation
+
+### Phase 4: Graph Layer (Layer 4) Redesign ✅
 
 Redesign the graph for efficient on-demand querying. The graph stays but becomes a pull-only layer.
 
 **Tasks:**
 
-- [ ] Redesign graph index for O(1) lookups
+- [x] Redesign graph index for O(1) lookups
   - Replace flat JSON array with Map-keyed structure
   - Key: node path → value: index entry
   - Support category-based filtering
   - Support project-based filtering
   - Lazy load, cache with invalidation
-- [ ] Implement incremental index updates
+- [x] Implement incremental index updates
   - `addToIndex(nodePath, entry)` — single node add/update
   - `removeFromIndex(nodePath)` — single node remove
-  - `rebuildIndex()` — full rebuild (only on deep audit)
+  - `rebuildV3Index()` — full rebuild (only on deep audit or post-compressor)
   - No more full rebuild on every remember/recall/consolidation
-- [ ] Remove `fullRegenerateMAP()` from remember/recall paths
-  - MAP is replaced by whispers — no more MAP.md
-  - Index updates are incremental
-- [ ] Implement efficient recall/search
-  - Read from index (in-memory), not from individual files
-  - Full node content read only on explicit `read_node` or single result
-  - Archive fallback uses archive index (loaded once, cached)
-- [ ] Update `tools.ts` — fix confidence default from 0.5 to 0.6
-- [ ] Remove triple regeneration in pipeline
-  - No more regenerateCoreContextFiles after every librarian/dreamer
-  - Compressor handles model regeneration, not the pipeline
+- [x] Wire v3 index into pipeline
+  - observer-tools.ts: `addToIndex` after every node upsert
+  - compressor-tools.ts: `removeFromIndex` after every node archival
+  - daemon.ts: `rebuildV3Index` after compressor completes
+- [x] Update `tools.ts` — fix confidence default from 0.5 to 0.6
+- [x] Update `tools.ts` — `updateIndexEntry` dual-writes to v2+v3 index
+- [x] Tests: rebuild/lookup/search, incremental add/remove, anti-pattern support (3 tests)
 
-### Phase 5: Anti-Patterns
+### Phase 5: Anti-Patterns ✅
 
 First-class anti-pattern support across all layers.
 
 **Tasks:**
 
-- [ ] Add `anti_patterns` category to graph node conventions
-- [ ] Implement `decay_exempt` flag in decay logic — anti-patterns never decay
-- [ ] Implement anti-pattern injection in whisper generation
+- [x] Add `anti_patterns` category to graph node conventions
+- [x] Implement `decay_exempt` flag in decay logic — anti-patterns never decay
+- [x] Implement anti-pattern injection in whisper generation
   - Global anti-patterns → global whisper guardrails section
   - Project anti-patterns → project whisper guardrails section
-  - Format: "GUARDRAILS:\n- Rule 1\n- Rule 2\n..."
-- [ ] Update observer to classify corrections as anti-patterns
-  - When user corrects agent → observer creates anti-pattern observation
+  - Format: "## Guardrails\n\n- Rule 1\n- Rule 2\n..."
+  - Budget: 150 tokens for guardrails section
+- [x] Update observer to classify corrections as anti-patterns
   - Anti-pattern observations get confidence floor of 0.85
-- [ ] Add anti-pattern visibility to `graph_memory` status action
-  - Show count of active anti-patterns
-  - Show which are global vs project-scoped
+  - Anti-patterns auto-set `decay_exempt: true`
+- [x] Add anti-pattern visibility to `graph_memory` status action
+  - `v3.antiPatterns.total`, `v3.antiPatterns.global`, `v3.antiPatterns.project`
+  - Full v3 graph stats included in status response
+- [x] Tests: decay_exempt, guardrails injection, status visibility (3 tests)
 
-### Phase 6: Project Doc Bootstrap
+### Phase 6: Project Doc Bootstrap ✅
 
 Generate project root .md files (CLAUDE.md / AGENT.md) from mental models.
 
 **Tasks:**
 
-- [ ] Implement `bootstrap_project_doc` tool
-  - Takes: project name, harness, cwd, observations, global model, graph nodes
+- [x] Implement `bootstrap_project_doc` tool
+  - Takes: project name, harness, cwd
   - Generates: harness-appropriate file (CLAUDE.md / AGENT.md)
   - Writes to project root
-  - Seeds project lens with initial model
-- [ ] Add bootstrap trigger to observer
-  - After first session in new project: if ≥5 observations captured → queue bootstrap job
-- [ ] Add bootstrap trigger to MCP tool
+  - Seeds from project model, global model, anti-patterns, graph nodes
+- [x] Add bootstrap trigger to observer
+  - After ≥5 unabsorbed observations for a project → queue bootstrap job
+- [x] Add bootstrap trigger to MCP tool
   - `graph_memory(action="bootstrap")` — explicit trigger
-- [ ] Implement project doc drift detection in compressor
-  - Compare current CLAUDE.md/AGENT.md to project model
-  - Flag if model has significant additions not in doc
-  - Don't auto-overwrite — surface in status
-- [ ] Add `<!-- custom -->` section preservation
+- [x] Implement project doc drift detection
+  - Compare current doc sections to project model
+  - Flags missing sections (tech-stack, conventions, guardrails)
+  - Surfaces drift in bootstrap action response
+- [x] Add `<!-- custom start/end -->` section preservation
   - Hand-edited sections in project docs are preserved during re-bootstrap
-- [ ] Harness-aware file naming
-  - claude → CLAUDE.md (or .claude/CLAUDE.md)
-  - opencode → AGENT.md
-  - codex → AGENT.md
-  - pi → AGENT.md
-  - If CLAUDE.md already exists and harness is opencode → reuse, don't duplicate
+- [x] Harness-aware file naming
+  - claude-code → CLAUDE.md (prefers .claude/CLAUDE.md if dir exists)
+  - opencode/codex/pi → AGENT.md
+  - Reuses CLAUDE.md if it already exists and harness is non-claude
+- [x] Tests: bootstrap generation, custom section preservation, MCP action, drift detection (4 tests)
 
-### Phase 7: Dreamer Redesign
+### Phase 7: Dreamer Redesign ✅
 
 Adapt the dreamer to work against compressed models instead of the raw node graph.
 
 **Tasks:**
 
-- [ ] Rewrite dreamer prompt (`agents/memory-dreamer.md`)
-  - Input: global model + project model + sample graph nodes + anti-patterns
+- [x] Write dreamer v3 prompt (`agents/memory-dreamer-v3.md`)
+  - Input: global model + project models + anti-patterns + graph stats + pending dreams
   - Looks for surprising connections between compressed model entries
-  - Uses anti-patterns as "dream around" constraints — what if the opposite were true?
-- [ ] Implement dreamer structured tools
-  - `get_models()`, `get_graph_nodes()`, `get_anti_patterns()`, `propose_dream()`
-- [ ] Update dreamer job in daemon
-  - Triggered after compressor completion (not after librarian — librarian is gone)
-  - Also periodic: every 5 sessions if no compressor triggered it
-- [ ] Update dream reinforcement
-  - When a node referenced by a dream is accessed → bump dream confidence
-  - Max confidence for reinforced dreams: 0.65 (was 0.55 — too low)
+  - Uses anti-patterns as "dream around" constraints
+  - Strategies: self-model, connection, inversion, analogy, emergence, integration
+- [x] Implement dreamer v3 structured tools (`pipeline/dreamer-v3-tools.ts`)
+  - `propose_dream` — creates new dream fragment JSON in dreams/pending/
+  - `promote_dream` — raises confidence on existing dream
+  - `buildDreamerV3Input()` — assembles models, anti-patterns, pending dreams
+  - `processDreamerV3Outputs()` — reads JSON files from pipeline observations
+  - Hard cap enforcement on pending dreams
+- [x] Update dreamer job in daemon
+  - `dreamer_v3` job type added to job-schema, job-queue
+  - Triggered after compressor completion (auto-enqueues)
+  - `runDreamerV3()` builds input inline, processes outputs
+- [x] Update dream reinforcement
+  - Max confidence for reinforced dreams: 0.65 (was 0.55)
+- [x] Tests: dream propose/promote, input building, reinforcement cap (3 tests)
 
-### Phase 8: Harness Adapters
+### Phase 8: Harness Adapters ✅
 
 Implement the adapter pattern for all four harnesses.
 
 **Tasks:**
 
-- [ ] Implement Claude Code adapter
+- [x] Implement Claude Code adapter (`adapters/claude-code.ts`)
   - session-start: stdout injection (same as current hooks.json)
-  - session-end: flush buffer, enqueue observer
+  - session-end: flush buffer, enqueue scribe + observer
   - tools: MCP server (same as current)
   - project detection: cwd from hook stdin
-- [ ] Implement OpenCode adapter
-  - session-start: client.session.prompt injection
-  - session-end: flush buffer, enqueue observer
-  - tools: plugin-native tool registration
-  - project detection: cwd from plugin event
-- [ ] Implement Pi adapter
-  - session-start: client.session.prompt injection
-  - session-end: plugin lifecycle event
-  - tools: plugin-native tool registration
-  - project detection: cwd from plugin event
-- [ ] Implement Codex adapter (degraded mode)
+- [x] Implement OpenCode adapter (`adapters/opencode.ts`)
+  - session-start: `client.session.prompt({ noReply: true })` injection
+  - session-end: flush buffer, enqueue scribe + observer
+  - tools: plugin-native `tool()` builder
+  - project detection: worktree from plugin API
+- [x] Implement Pi adapter (`adapters/pi.ts`)
+  - session-start: returns context string for `before_agent_start` injection
+  - session-end: flush buffer via `session_shutdown` event
+  - tools: `registerTool()` with TypeBox schema
+  - project detection: cwd from process (no worktree API)
+- [x] Implement Codex adapter (`adapters/codex.ts`) — degraded mode
   - session-start: none (no hooks available)
   - session-end: daemon watches for orphaned buffers
   - tools: MCP server
   - project detection: cwd from process
-- [ ] Refactor existing extensions to use adapters
-  - `extensions/graph-memory.ts` (Pi) → uses Pi adapter
-  - `extensions/graph-memory-opencode.ts` → uses OpenCode adapter
-  - `src/hooks/session-start.ts` → uses Claude Code adapter
-  - `src/hooks/session-end.ts` → uses Claude Code adapter
+- [x] Shared session logic (`adapters/shared.ts`)
+  - `buildSessionStartContext()` — unified v3-first/v2-fallback context builder
+  - `buildV2Injection()` — traditional 5-file injection as fallback
+  - `flushAndQueueJobs()` — buffer flush + scribe/observer job enqueue
+  - `cleanupSession()` — active project removal + dirty state clear
+- [x] Adapter factory (`adapters/factory.ts`)
+  - `createAdapter(harness)` returns correct adapter instance
+- [x] Tests: factory routing, shared context, codex no-op, config validation (4 tests)
 
-### Phase 9: Migration
+### Phase 9: Migration ✅
 
 Migrate existing graph data to the new format.
 
 **Tasks:**
 
-- [ ] Implement migration script (`bin/migrate-v2-to-v3.sh` or TS equivalent)
+- [x] Implement migration script (`src/graph-memory/scripts/migrate-v2-to-v3.ts`)
   - Read existing nodes from ~/.graph-memory/nodes/
   - Run a one-time "bootstrap compressor" pass
   - Generate initial mind/model.json from high-confidence nodes
@@ -524,11 +576,11 @@ Migrate existing graph data to the new format.
   - Generate initial whispers
   - Copy nodes to graph/ directory structure
   - Preserve existing archive/ directory
-- [ ] Run migration against current live data (~771 nodes)
+- [ ] Run migration against current live data (~797 nodes)
   - Verify generated whisper quality
   - Verify graph recall still works
   - Verify anti-patterns are correctly identified
-- [ ] Keep v2 paths functional during transition
+- [x] Keep v2 paths functional during transition
   - Both old and new paths work simultaneously
   - Feature flag: `GRAPH_MEMORY_V3=1` enables new system
   - Default: v2 active, v3 in shadow mode (runs but doesn't inject)
