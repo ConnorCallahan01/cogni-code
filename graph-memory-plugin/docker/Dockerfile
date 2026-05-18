@@ -31,6 +31,7 @@ RUN npm run build \
 ENV GRAPH_MEMORY_DAEMON=1
 ENV GRAPH_MEMORY_ROOT=/graph-memory
 ENV HOME=/graph-memory-auth
+ENV TZ=America/Los_Angeles
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=20s --retries=3 \
   CMD ["/usr/local/bin/graph-memory-healthcheck"]

@@ -130,7 +130,7 @@ export function computeNodeContentHash(nodePath: string): string {
   try {
     const raw = fs.readFileSync(fullPath, "utf-8");
     const parsed = matter(raw);
-    const volatileKeys = ["access_count", "recall_action_count", "distinct_sessions", "access_sessions", "last_accessed", "skillforged_at", "skillforge_manifest"];
+    const volatileKeys = ["access_count", "recall_action_count", "distinct_sessions", "access_sessions", "last_accessed", "skillforged_at", "skillforge_refreshed_at", "skillforge_manifest", "confidence", "last_decay_at", "updated", "decay_rate"];
     for (const key of volatileKeys) {
       delete parsed.data[key];
     }

@@ -83,7 +83,8 @@ export type ActivityEventType =
   | "notion-webhook:started"
   | "notion-webhook:task-update"
   | "notion-webhook:content-update"
-  | "notion-webhook:comment";
+  | "notion-webhook:comment"
+  | "notion-webhook:event";
 
 export interface ActivityEvent {
   type: ActivityEventType;

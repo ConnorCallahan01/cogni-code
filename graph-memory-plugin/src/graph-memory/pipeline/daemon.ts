@@ -5,8 +5,8 @@ import { CONFIG, isGraphInitialized } from "../config.js";
 import { initializeGraph } from "../index.js";
 import { activityBus } from "../events.js";
 import { generatePreflightReport } from "./preflight.js";
-import { claimNextJob, completeRunningJob, countJobs, enqueueJob, ensureJobDirectories, failRunningJob, hasActiveJob, listJobs, requeueStaleRunningJobs, updateRunningJob } from "./job-queue.js";
-import { GraphMemoryJob } from "./job-schema.js";
+import { claimNextJob, completeRunningJob, countJobs, enqueueJob, ensureJobDirectories, failRunningJob, hasActiveJob, hasActiveJobForProject, hasActiveProjectChainJob, hasActiveGlobalChainJob, getActiveProjectChainProjects, countDeltasForProject, listJobs, requeueStaleRunningJobs, updateRunningJob, PROJECT_CHAIN_TYPES, GLOBAL_CHAIN_TYPES, PRIORITY } from "./job-queue.js";
+import { GraphMemoryJob, GraphMemoryJobState } from "./job-schema.js";
 import { runPipelineWorker } from "./worker-runner.js";
 import { loadRuntimeConfig } from "../runtime.js";
 import { regenerateCoreContextFiles, regenerateDreamContext } from "./graph-ops.js";
@@ -16,12 +16,11 @@ import { scoreCandidates, computeNodeContentHash } from "./skillforge-score.js";
 import { listManifests, findDriftedManifests } from "./skillforge-manifest.js";import { getAssistantTracePath, getToolTracePath } from "../session-trace.js";
 import { getDailyBriefPaths } from "../briefs.js";
 import { loadExternalInputsConfig, readRecentClassifiedInputs } from "../external-inputs.js";
-import { getProjectWorkingPath, getProjectWorkingStatePath, getProjectWorkingUpdatePath, getFileInteractionPath } from "../working-files.js";
+import { getProjectWorkingPath, getProjectWorkingStatePath, getProjectWorkingUpdatePath, getFileInteractionPath, getProjectAuditDir, getProjectPreflightPath, getProjectAuditReportPath, getProjectAuditBriefPath, getProjectDreamsDir, getProjectDreamSummaryPath, getProjectLockPath, getGlobalLockPath, ensureAuditDirectories, ensureDreamDirectories, ensureLockDirectories, sanitizeProjectSlug } from "../working-files.js";
 import { processObserverOutputs } from "./observer-tools.js";
 import { processCompressorOutputs } from "./compressor-tools.js";
 import { rebuildV3Index } from "./graph-index-v3.js";
 import { bootstrapProjectDoc, detectDocDrift } from "./bootstrap.js";
-import { buildDreamerV3Input, processDreamerV3Outputs } from "./dreamer-v3-tools.js";
 import { readNotionSyncState, writeNotionSyncState, buildNotionDiff, writeDiffReport, readSyncPlan, executeNotionSync } from "./notion-sync.js";
 import { detectInboundEdits, writeInboundInput, readInboundPlan, applyInboundDeltas, writeInboundDeltas, writeMergeInput, readMergeResult, detectNewComments, buildCommentDetections, detectNewNotionTasks, InboundEdit } from "./notion-inbound.js";
 import { startWebhookServer } from "./notion-webhook.js";
@@ -29,13 +28,6 @@ import { addNotionPickupItem } from "../project-working.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const AGENTS_DIR = path.resolve(__dirname, "../../../agents");
-const LEGACY_MARKERS = [
-  CONFIG.paths.scribePending,
-  CONFIG.paths.consolidationPending,
-  CONFIG.paths.librarianPending,
-  CONFIG.paths.dreamerPending,
-];
-const CONSOLIDATION_LOCK_PATH = path.join(CONFIG.paths.graphRoot, ".consolidation.lock");
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -78,19 +70,72 @@ function releaseDaemonLock(): void {
   } catch { /* ignore */ }
 }
 
-function clearLegacyMarkers(): void {
-  for (const marker of LEGACY_MARKERS) {
+function acquireProjectChainLock(project: string): void {
+  ensureLockDirectories();
+  const lockPath = getProjectLockPath(project);
+  if (fs.existsSync(lockPath)) {
     try {
-      if (fs.existsSync(marker)) fs.unlinkSync(marker);
-    } catch { /* ignore */ }
+      const lock = JSON.parse(fs.readFileSync(lockPath, "utf-8"));
+      const ageMs = Date.now() - (lock.startedAtMs || 0);
+      if (ageMs < 30 * 60 * 1000) {
+        throw new Error(`Project chain lock held for ${project}`);
+      }
+      fs.unlinkSync(lockPath);
+    } catch (err) {
+      if (fs.existsSync(lockPath)) {
+        fs.unlinkSync(lockPath);
+      }
+      if (err instanceof Error && err.message.startsWith("Project chain lock held")) {
+        throw err;
+      }
+    }
   }
+  fs.writeFileSync(lockPath, JSON.stringify({
+    project,
+    pid: process.pid,
+    startedAtMs: Date.now(),
+    startedAt: new Date().toISOString(),
+  }, null, 2));
 }
 
-function clearConsolidationLock(): void {
+function releaseProjectChainLock(project: string): void {
   try {
-    if (fs.existsSync(CONSOLIDATION_LOCK_PATH)) {
-      fs.unlinkSync(CONSOLIDATION_LOCK_PATH);
+    const lockPath = getProjectLockPath(project);
+    if (fs.existsSync(lockPath)) fs.unlinkSync(lockPath);
+  } catch { /* ignore */ }
+}
+
+function acquireGlobalChainLock(): void {
+  ensureLockDirectories();
+  const lockPath = getGlobalLockPath();
+  if (fs.existsSync(lockPath)) {
+    try {
+      const lock = JSON.parse(fs.readFileSync(lockPath, "utf-8"));
+      const ageMs = Date.now() - (lock.startedAtMs || 0);
+      if (ageMs < 30 * 60 * 1000) {
+        throw new Error("Global chain lock held");
+      }
+      fs.unlinkSync(lockPath);
+    } catch (err) {
+      if (fs.existsSync(lockPath)) {
+        fs.unlinkSync(lockPath);
+      }
+      if (err instanceof Error && err.message === "Global chain lock held") {
+        throw err;
+      }
     }
+  }
+  fs.writeFileSync(lockPath, JSON.stringify({
+    pid: process.pid,
+    startedAtMs: Date.now(),
+    startedAt: new Date().toISOString(),
+  }, null, 2));
+}
+
+function releaseGlobalChainLock(): void {
+  try {
+    const lockPath = getGlobalLockPath();
+    if (fs.existsSync(lockPath)) fs.unlinkSync(lockPath);
   } catch { /* ignore */ }
 }
 
@@ -141,6 +186,55 @@ function maybeEnqueueAuditorFromScribeBacklog(reasonPrefix = "successful scribe 
     payload: { reason: count + " " + reasonPrefix },
     triggerSource: "daemon:scribe-threshold",
     idempotencyKey: "auditor:scribe-runs:" + latestCompletedAt,
+  });
+}
+
+function countCompletedScribesSinceLastAuditorForProject(project: string): { count: number; latestCompletedAt: string | null } {
+  const completedAuditors = listJobs("done")
+    .filter((job) => job.type === "auditor")
+    .filter((job) => {
+      const payload = (job.payload as unknown) as Record<string, unknown>;
+      return payload?.project === project;
+    })
+    .map((job) => job.completedAt || job.updatedAt || job.createdAt)
+    .filter((value): value is string => Boolean(value))
+    .sort((a, b) => Date.parse(b) - Date.parse(a));
+
+  const lastAuditorAtMs = completedAuditors[0] ? Date.parse(completedAuditors[0]) : 0;
+  let count = 0;
+  let latestCompletedAt: string | null = null;
+
+  for (const job of listJobs("done")) {
+    if (job.type !== "scribe") continue;
+    const payload = (job.payload as unknown) as Record<string, unknown>;
+    if (payload?.project !== project) continue;
+    const completedAt = job.completedAt || job.updatedAt || job.createdAt;
+    const completedAtMs = Date.parse(completedAt);
+    if (Number.isNaN(completedAtMs) || completedAtMs <= lastAuditorAtMs) continue;
+    count += 1;
+    if (!latestCompletedAt || completedAtMs > Date.parse(latestCompletedAt)) {
+      latestCompletedAt = completedAt;
+    }
+  }
+
+  return { count, latestCompletedAt };
+}
+
+function maybeEnqueueAuditorForProject(project: string, reasonPrefix = "successful scribe runs accumulated"): void {
+  if (!project || project === "global") return;
+  if (hasActiveJobForProject("auditor", project)) return;
+
+  const deltaCount = countDeltasForProject(project);
+  if (deltaCount === 0) return;
+
+  const { count, latestCompletedAt } = countCompletedScribesSinceLastAuditorForProject(project);
+  if (count < CONFIG.session.auditScribeFileThreshold || !latestCompletedAt) return;
+
+  enqueueJob({
+    type: "auditor",
+    payload: { reason: count + " " + reasonPrefix, project },
+    triggerSource: "daemon:project-scribe-threshold",
+    idempotencyKey: "auditor:" + project + ":scribe-runs:" + latestCompletedAt,
   });
 }
 
@@ -804,7 +898,11 @@ async function runScribe(job: GraphMemoryJob): Promise<void> {
     });
   }
 
-  maybeEnqueueAuditorFromScribeBacklog("successful scribe runs accumulated");
+  if (payload.project && payload.project !== "global") {
+    maybeEnqueueAuditorForProject(payload.project, "successful scribe run");
+  } else {
+    maybeEnqueueAuditorFromScribeBacklog("successful scribe runs accumulated");
+  }
 }
 
 async function runObserver(job: GraphMemoryJob): Promise<void> {
@@ -934,15 +1032,6 @@ async function runCompressor(job: GraphMemoryJob): Promise<void> {
     graphNodesArchived: toolResult.graphNodesArchived,
     errors: toolResult.errors.length,
   });
-
-  if (!hasActiveJob("dreamer_v3") && !hasActiveJob("dreamer")) {
-    enqueueJob({
-      type: "dreamer_v3",
-      payload: { reason: "compressor completed" },
-      triggerSource: "daemon:compressor-complete",
-      idempotencyKey: "dreamer-v3:" + Date.now(),
-    });
-  }
 }
 
 async function runWorkingUpdate(job: GraphMemoryJob): Promise<void> {
@@ -1012,17 +1101,55 @@ async function runWorkingUpdate(job: GraphMemoryJob): Promise<void> {
 }
 
 async function runAuditor(job: GraphMemoryJob): Promise<void> {
-  if (countActiveDeltaFiles() === 0) {
-    activityBus.log("system:info", "Skipping auditor job with no active deltas", { jobId: job.id });
-    return;
+  const payload = (job.payload as unknown) as { reason: string; project?: string };
+  const project = payload.project;
+
+  if (project && project !== "global") {
+    const deltaCount = countDeltasForProject(project);
+    if (deltaCount === 0) {
+      activityBus.log("system:info", "Skipping auditor job with no project deltas", {
+        jobId: job.id,
+        project,
+      });
+      return;
+    }
+  } else {
+    if (countActiveDeltaFiles() === 0) {
+      activityBus.log("system:info", "Skipping auditor job with no active deltas", { jobId: job.id });
+      return;
+    }
   }
 
-  clearConsolidationLock();
-  generatePreflightReport();
+  if (project && project !== "global") {
+    acquireProjectChainLock(project);
+  }
+  generatePreflightReport(project);
 
   const auditorPath = path.join(AGENTS_DIR, "memory-auditor.md");
   const graphOpsPath = path.resolve(__dirname, "graph-ops.js");
-  const prompt = `Read the auditor instructions at ${auditorPath}, then follow them. Graph root: ${CONFIG.paths.graphRoot}. Read the preflight report at ${CONFIG.paths.preflightReport} first — it contains the full node manifest and flagged issues with their file contents included. IMPORTANT: when rebuilding context files, use this absolute path for graph-ops: ${graphOpsPath}`;
+
+  let preflightReportPath: string;
+  let auditReportPath: string;
+  let auditBriefPath: string;
+  let projectCtx: string;
+
+  if (project && project !== "global") {
+    ensureAuditDirectories(project);
+    preflightReportPath = toWorkerPath(getProjectPreflightPath(project));
+    auditReportPath = getProjectAuditReportPath(project);
+    auditBriefPath = getProjectAuditBriefPath(project);
+    projectCtx = ` Project: ${project}. Only process deltas and nodes relevant to this project.`;
+  } else {
+    preflightReportPath = toWorkerPath(CONFIG.paths.preflightReport);
+    auditReportPath = CONFIG.paths.auditReport;
+    auditBriefPath = CONFIG.paths.auditBrief;
+    projectCtx = "";
+  }
+
+  const auditReportPathForWorker = toWorkerPath(auditReportPath);
+  const auditBriefPathForWorker = toWorkerPath(auditBriefPath);
+
+  const prompt = `Read the auditor instructions at ${auditorPath}, then follow them. Graph root: ${CONFIG.paths.graphRoot}.${projectCtx} Read the preflight report at ${preflightReportPath} first — it contains the full node manifest and flagged issues with their file contents included. Write the audit report to ${auditReportPathForWorker} and the audit brief to ${auditBriefPathForWorker}. IMPORTANT: when rebuilding context files, use this absolute path for graph-ops: ${graphOpsPath}`;
   const result = await runPipelineWorker({
     name: `auditor-${job.id}`,
     prompt,
@@ -1037,29 +1164,49 @@ async function runAuditor(job: GraphMemoryJob): Promise<void> {
   updateRunningJob(job);
 
   if (result.exitCode !== 0) {
+    if (project && project !== "global") releaseProjectChainLock(project);
     throw new Error(`Auditor worker exited with code ${result.exitCode}. See ${result.logFile}`);
   }
 
-  if (!fs.existsSync(CONFIG.paths.auditReport) || !fs.existsSync(CONFIG.paths.auditBrief)) {
+  if (!fs.existsSync(auditReportPath) || !fs.existsSync(auditBriefPath)) {
+    if (project && project !== "global") releaseProjectChainLock(project);
     throw new Error("Auditor completed without writing audit artifacts");
   }
 
-  clearLegacyMarkers();
-  if (!hasActiveJob("librarian")) {
+  if (!hasActiveJobForProject("librarian", project || "global")) {
     enqueueJob({
       type: "librarian",
-      payload: { reason: "auditor completed" },
+      payload: { reason: "auditor completed", project },
       triggerSource: "daemon:auditor-complete",
-      idempotencyKey: `librarian:${fs.statSync(CONFIG.paths.auditReport).mtimeMs}`,
+      idempotencyKey: `librarian:${project || "global"}:${fs.statSync(auditReportPath).mtimeMs}`,
     });
   }
 }
 
 async function runLibrarian(job: GraphMemoryJob): Promise<void> {
-  clearConsolidationLock();
+  const payload = (job.payload as unknown) as { reason: string; project?: string };
+  const project = payload.project;
+
+  let auditBriefPath: string;
+  let auditReportPath: string;
+  let projectCtx: string;
+
+  if (project && project !== "global") {
+    auditBriefPath = getProjectAuditBriefPath(project);
+    auditReportPath = getProjectAuditReportPath(project);
+    projectCtx = ` Project: ${project}. Only apply changes relevant to this project.`;
+  } else {
+    auditBriefPath = CONFIG.paths.auditBrief;
+    auditReportPath = CONFIG.paths.auditReport;
+    projectCtx = "";
+  }
+
+  const auditBriefPathForWorker = toWorkerPath(auditBriefPath);
+  const auditReportPathForWorker = toWorkerPath(auditReportPath);
+
   const librarianPath = path.join(AGENTS_DIR, "memory-librarian.md");
   const graphOpsPath = path.resolve(__dirname, "graph-ops.js");
-  const prompt = `Read the librarian instructions at ${librarianPath}, then follow them. Graph root: ${CONFIG.paths.graphRoot}. Read the audit brief at ${CONFIG.paths.auditBrief} and audit report at ${CONFIG.paths.auditReport} first — the auditor has already triaged mechanical fixes and prepared recommendations for you. IMPORTANT: when rebuilding context files, use this absolute path for graph-ops: ${graphOpsPath}`;
+  const prompt = `Read the librarian instructions at ${librarianPath}, then follow them. Graph root: ${CONFIG.paths.graphRoot}.${projectCtx} Read the audit brief at ${auditBriefPathForWorker} and audit report at ${auditReportPathForWorker} first — the auditor has already triaged mechanical fixes and prepared recommendations for you. IMPORTANT: when rebuilding context files, use this absolute path for graph-ops: ${graphOpsPath}`;
   const result = await runPipelineWorker({
     name: `librarian-${job.id}`,
     prompt,
@@ -1074,27 +1221,37 @@ async function runLibrarian(job: GraphMemoryJob): Promise<void> {
   updateRunningJob(job);
 
   if (result.exitCode !== 0) {
+    if (project && project !== "global") releaseProjectChainLock(project);
     throw new Error(`Librarian worker exited with code ${result.exitCode}. See ${result.logFile}`);
   }
 
-  regenerateCoreContextFiles();
+  regenerateCoreContextFiles(project);
 
-  clearLegacyMarkers();
-  if (!hasActiveJob("dreamer")) {
+  if (!hasActiveJobForProject("dreamer", project || "global")) {
     enqueueJob({
       type: "dreamer",
-      payload: { reason: "librarian completed" },
+      payload: { reason: "librarian completed", project },
       triggerSource: "daemon:librarian-complete",
-      idempotencyKey: `dreamer:${Date.now()}`,
+      idempotencyKey: `dreamer:${project || "global"}:${Date.now()}`,
     });
   }
 }
 
 async function runDreamer(job: GraphMemoryJob): Promise<void> {
-  clearConsolidationLock();
+  const payload = (job.payload as unknown) as { reason: string; project?: string };
+  const project = payload.project;
+
+  let projectCtx: string;
+  if (project && project !== "global") {
+    ensureDreamDirectories(project);
+    projectCtx = ` Project: ${project}. Focus on project-specific associative memory. Write dream artifacts to ${toWorkerPath(getProjectDreamsDir(project))}.`;
+  } else {
+    projectCtx = "";
+  }
+
   const dreamerPath = path.join(AGENTS_DIR, "memory-dreamer.md");
   const graphOpsPath = path.resolve(__dirname, "graph-ops.js");
-  const prompt = `Read the dreamer instructions at ${dreamerPath}, then follow them. Graph root: ${CONFIG.paths.graphRoot}. IMPORTANT: when rebuilding DREAMS.md, use this absolute path for graph-ops: ${graphOpsPath}`;
+  const prompt = `Read the dreamer instructions at ${dreamerPath}, then follow them. Graph root: ${CONFIG.paths.graphRoot}.${projectCtx} IMPORTANT: when rebuilding DREAMS.md, use this absolute path for graph-ops: ${graphOpsPath}`;
   const result = await runPipelineWorker({
     name: `dreamer-${job.id}`,
     prompt,
@@ -1109,51 +1266,15 @@ async function runDreamer(job: GraphMemoryJob): Promise<void> {
   updateRunningJob(job);
 
   if (result.exitCode !== 0) {
+    if (project && project !== "global") releaseProjectChainLock(project);
     throw new Error(`Dreamer worker exited with code ${result.exitCode}. See ${result.logFile}`);
   }
 
   regenerateDreamContext();
 
-  clearLegacyMarkers();
-}
-
-async function runDreamerV3(job: GraphMemoryJob): Promise<void> {
-  const payload = job.payload as { reason: string };
-  const dreamerPromptPath = path.join(AGENTS_DIR, "memory-dreamer-v3.md");
-  const input = buildDreamerV3Input();
-
-  const obsDir = CONFIG.paths.v3PipelineObservations;
-  if (!fs.existsSync(obsDir)) fs.mkdirSync(obsDir, { recursive: true });
-  const obsDirForWorker = toWorkerPath(obsDir);
-
-  const prompt = "Read the dreamer v3 instructions at " + dreamerPromptPath + ", then follow them. Graph root: " + CONFIG.paths.graphRoot + ". Write dream JSON files to " + obsDirForWorker + ". Reason: " + payload.reason + "\n\n" + input;
-
-  const result = await runPipelineWorker({
-    name: "dreamer-v3-" + job.id,
-    prompt,
-    graphRoot: CONFIG.paths.graphRoot,
-    logDir: CONFIG.paths.pipelineLogs,
-    addDirs: [AGENTS_DIR],
-    timeoutMs: 15 * 60_000,
-  });
-
-  job.logFile = result.logFile;
-  job.workerPid = result.pid;
-  updateRunningJob(job);
-
-  if (result.exitCode !== 0) {
-    throw new Error("Dreamer v3 worker exited with code " + result.exitCode + ". See " + result.logFile);
+  if (project && project !== "global") {
+    releaseProjectChainLock(project);
   }
-
-  const toolResult = processDreamerV3Outputs();
-
-  activityBus.log("system:info", "Dreamer v3 run complete", {
-    jobId: job.id,
-    reason: payload.reason,
-    dreamsProposed: toolResult.dreamsProposed,
-    dreamsPromoted: toolResult.dreamsPromoted,
-    errors: toolResult.errors.length,
-  });
 }
 
 async function runMemoryAnalysis(job: GraphMemoryJob): Promise<void> {
@@ -1435,7 +1556,7 @@ async function runNotionSync(job: GraphMemoryJob): Promise<void> {
     return;
   }
 
-  const CHUNK_SIZE = 100;
+  const CHUNK_SIZE = CONFIG.notionSync.maxBatchSize;
   const batchIndex = payload.batchIndex ?? 0;
   const start = batchIndex * CHUNK_SIZE;
   const chunk = changedItems.slice(start, start + CHUNK_SIZE);
@@ -1753,8 +1874,6 @@ async function processJob(job: GraphMemoryJob): Promise<void> {
       return runLibrarian(job);
     case "dreamer":
       return runDreamer(job);
-    case "dreamer_v3":
-      return runDreamerV3(job);
     case "memory_analysis":
       return runMemoryAnalysis(job);
     case "skillforge":
@@ -1853,12 +1972,16 @@ function scavengeStaleBuffers(): void {
   }
 }
 
+let lastLogRotation = 0;
 function rotatePipelineLogs(maxAgeDays: number = 30): void {
+  const now = Date.now();
+  if (now - lastLogRotation < 60 * 60 * 1000) return;
+  lastLogRotation = now;
+
   const logDir = CONFIG.paths.pipelineLogs;
   if (!fs.existsSync(logDir)) return;
 
   const maxAgeMs = maxAgeDays * 24 * 60 * 60 * 1000;
-  const now = Date.now();
   let removed = 0;
 
   for (const file of fs.readdirSync(logDir)) {
@@ -1907,10 +2030,38 @@ function pruneSessionDirectories(maxAgeDays: number = 14): void {
   }
 }
 
-const GRAPH_LEVEL_TYPES = new Set(["auditor", "librarian", "dreamer"]);
+function getInFlightProjectChains(inFlight: Map<string, Promise<void>>): Set<string> {
+  const projects = new Set<string>();
+  for (const job of listJobs("running")) {
+    if (!PROJECT_CHAIN_TYPES.has(job.type)) continue;
+    const project = (job.payload as unknown as Record<string, unknown>)?.project;
+    if (typeof project === "string" && project !== "global") {
+      projects.add(project);
+    }
+  }
+  return projects;
+}
 
-function hasRunningGraphLevelJob(): boolean {
-  return listJobs("running").some((j) => GRAPH_LEVEL_TYPES.has(j.type));
+function maybeEnqueueProjectAuditorsFromBacklog(): void {
+  const activeProjects = new Set<string>();
+
+  for (const file of fs.readdirSync(CONFIG.paths.deltas).filter((f) => f.endsWith(".json"))) {
+    try {
+      const raw = JSON.parse(fs.readFileSync(path.join(CONFIG.paths.deltas, file), "utf-8")) as {
+        scribes?: Array<{ deltas?: Array<{ project?: string }> }>;
+      };
+      for (const scribe of raw.scribes || []) {
+        for (const delta of scribe.deltas || []) {
+          const p = String(delta.project || "").trim();
+          if (p && p !== "global") activeProjects.add(p);
+        }
+      }
+    } catch { /* skip */ }
+  }
+
+  for (const project of activeProjects) {
+    maybeEnqueueAuditorForProject(project);
+  }
 }
 
 export async function runDaemon({ once = false }: { once?: boolean } = {}): Promise<void> {
@@ -1941,7 +2092,7 @@ export async function runDaemon({ once = false }: { once?: boolean } = {}): Prom
       try {
         maybeEnqueueDailyAnalysisJob();
         maybeEnqueueNotionSync();
-        maybeEnqueueAuditorFromScribeBacklog();
+        maybeEnqueueProjectAuditorsFromBacklog();
         maybeEnqueueObserverFromScribeBacklog();
         maybeEnqueueCompressorFromObserverBacklog();
         reconcileProjectWorkingBacklog();
@@ -1956,19 +2107,17 @@ export async function runDaemon({ once = false }: { once?: boolean } = {}): Prom
         activityBus.log("system:error", `Tick housekeeping error: ${err.message}`);
       }
 
-      if (!hasRunningGraphLevelJob()) {
-        try {
-          const { decayed, archived } = runDecay();
-          if (decayed > 0 || archived > 0) {
-            regenerateCoreContextFiles();
-            activityBus.log("daemon:decay", `Tick decay: ${decayed} decayed, ${archived} archived`, {
-              decayed,
-              archived,
-            });
-          }
-        } catch (err: any) {
-          activityBus.log("system:error", `Decay pass failed: ${err.message}`);
+      try {
+        const { decayed, archived } = runDecay();
+        if (decayed > 0 || archived > 0) {
+          regenerateCoreContextFiles();
+          activityBus.log("daemon:decay", `Tick decay: ${decayed} decayed, ${archived} archived`, {
+            decayed,
+            archived,
+          });
         }
+      } catch (err: any) {
+        activityBus.log("system:error", `Decay pass failed: ${err.message}`);
       }
 
       writeDaemonState({
@@ -1980,11 +2129,11 @@ export async function runDaemon({ once = false }: { once?: boolean } = {}): Prom
         inFlight: inFlight.size,
       });
 
-      const graphLevelBlocked = hasRunningGraphLevelJob();
+      const activeProjectChains = getInFlightProjectChains(inFlight);
+      const globalChainRunning = hasActiveGlobalChainJob();
 
       while (inFlight.size < concurrency) {
-        const blockedTypes = graphLevelBlocked ? GRAPH_LEVEL_TYPES : undefined;
-        const job = claimNextJob(blockedTypes);
+        const job = claimNextProjectAwareJob(activeProjectChains, globalChainRunning);
         if (!job) break;
 
         const jobPromise = processJob(job)
@@ -1993,6 +2142,11 @@ export async function runDaemon({ once = false }: { once?: boolean } = {}): Prom
           .finally(() => { inFlight.delete(job.id); });
 
         inFlight.set(job.id, jobPromise);
+
+        const jobProject = (job.payload as unknown as Record<string, unknown>)?.project;
+        if (typeof jobProject === "string" && jobProject !== "global" && PROJECT_CHAIN_TYPES.has(job.type)) {
+          activeProjectChains.add(jobProject);
+        }
       }
 
       if (inFlight.size === 0) {
@@ -2016,6 +2170,73 @@ export async function runDaemon({ once = false }: { once?: boolean } = {}): Prom
     }
     writeDaemonState({ running: false, pid: process.pid });
     releaseDaemonLock();
+  }
+}
+
+function claimNextProjectAwareJob(
+  activeProjectChains: Set<string>,
+  globalChainRunning: boolean,
+): GraphMemoryJob | null {
+  ensureJobDirectories();
+  const sorted = listJobs("queued")
+    .sort((a, b) => {
+      const priority = PRIORITY[a.type] - PRIORITY[b.type];
+      if (priority !== 0) return priority;
+      return a.createdAt.localeCompare(b.createdAt);
+    });
+
+  for (const job of sorted) {
+    if (!canClaimJob(job, activeProjectChains, globalChainRunning)) continue;
+
+    const queuedPath = jobFilePath(job, "queued");
+    if (!fs.existsSync(queuedPath)) continue;
+
+    const runningJob: GraphMemoryJob = {
+      ...job,
+      state: "running",
+      startedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      attempt: job.attempt + 1,
+    };
+
+    fs.renameSync(queuedPath, jobFilePath(runningJob, "running"));
+    fs.writeFileSync(jobFilePath(runningJob, "running"), JSON.stringify(runningJob, null, 2));
+    return runningJob;
+  }
+
+  return null;
+}
+
+function canClaimJob(
+  job: GraphMemoryJob,
+  activeProjectChains: Set<string>,
+  globalChainRunning: boolean,
+): boolean {
+  if (PROJECT_CHAIN_TYPES.has(job.type)) {
+    const project = (job.payload as unknown as Record<string, unknown>)?.project;
+    if (typeof project === "string" && project !== "global") {
+      return !activeProjectChains.has(project);
+    }
+    return true;
+  }
+
+  if (GLOBAL_CHAIN_TYPES.has(job.type)) {
+    return !globalChainRunning;
+  }
+
+  return true;
+}
+
+function jobFilePath(job: Pick<GraphMemoryJob, "id">, state: GraphMemoryJobState): string {
+  return path.join(stateDir(state), `${job.id}.json`);
+}
+
+function stateDir(state: GraphMemoryJobState): string {
+  switch (state) {
+    case "queued": return CONFIG.paths.jobsQueued;
+    case "running": return CONFIG.paths.jobsRunning;
+    case "done": return CONFIG.paths.jobsDone;
+    case "failed": return CONFIG.paths.jobsFailed;
   }
 }
 

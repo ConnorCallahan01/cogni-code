@@ -258,6 +258,24 @@ async function main() {
     ensureProjectWorkingFile(project.name);
   } catch { /* best effort */ }
 
+  if (hasV3Data()) {
+    try {
+      const v3 = buildV3Context(project.name);
+      if (!v3.sources.fallback && v3.context) {
+        const v3Parts = project.name !== "global"
+          ? [`[graph-memory] Active project: ${project.name} (auto-detected)`, v3.context]
+          : [v3.context];
+        console.log(v3Parts.join("\n\n---\n\n"));
+        console.error(`[graph-memory] Injection: ${v3.tokensUsed}/${1100} tokens (v3=yes)`);
+        markDirty(sessionId);
+        writeSessionContextState(sessionId, project.name);
+        return;
+      }
+    } catch (err: any) {
+      console.error(`[graph-memory] v3 session context failed, falling back to full context: ${err.message}`);
+    }
+  }
+
   const maxSessionTokens = CONFIG.graph.maxSessionStartTokens || 8000;
   let totalTokens = 0;
 

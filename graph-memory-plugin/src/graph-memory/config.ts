@@ -87,13 +87,15 @@ function createConfig() {
   const graphRoot = resolveGraphRoot();
   const local = loadLocalConfig(graphRoot);
   const inferredTimeZone = process.env.TZ || Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+  const nodesPath = path.join(graphRoot, "nodes");
+  const archivePath = path.join(graphRoot, "archive");
 
-  const v3Enabled = process.env.GRAPH_MEMORY_V3 === "1";
+  const v3Enabled = process.env.GRAPH_MEMORY_V3 !== "0";
 
   return {
     v3: {
       enabled: v3Enabled,
-      shadow: v3Enabled && process.env.GRAPH_MEMORY_V3_SHADOW !== "0",
+      shadow: v3Enabled && process.env.GRAPH_MEMORY_V3_SHADOW === "1",
     },
 
     session: {
@@ -172,8 +174,8 @@ function createConfig() {
 
     paths: {
       graphRoot,
-      nodes: path.join(graphRoot, "nodes"),
-      archive: path.join(graphRoot, "archive"),
+      nodes: nodesPath,
+      archive: archivePath,
       deltas: path.join(graphRoot, ".deltas"),
       dreams: path.join(graphRoot, "dreams"),
       buffer: path.join(graphRoot, ".buffer"),
@@ -224,13 +226,23 @@ function createConfig() {
       // Prompts are bundled relative to dist/ (or src/ in dev)
       prompts: path.resolve(__dirname, "prompts"),
 
+      // v4 project-scoped paths
+      auditRoot: path.join(graphRoot, "audit"),
+      auditProjects: path.join(graphRoot, "audit", "projects"),
+      dreamsProjects: path.join(graphRoot, "dreams", "projects"),
+      projectLocks: path.join(graphRoot, ".jobs", "project-locks"),
+      globalLock: path.join(graphRoot, ".jobs", "global.lock"),
+
       // v3 paths (Layer 1-4)
       v3Mind: path.join(graphRoot, "mind"),
       v3Lenses: path.join(graphRoot, "lenses"),
       v3Sessions: path.join(graphRoot, "sessions"),
-      v3Graph: path.join(graphRoot, "graph"),
+      // Unified graph storage: v2 nodes and v3 Layer 4 are the same durable
+      // markdown files. Older installs may still have an empty graph/ shadow
+      // directory, but new pipeline code should read and write nodes/.
+      v3Graph: nodesPath,
       v3GraphIndex: path.join(graphRoot, "graph", ".index.json"),
-      v3GraphArchive: path.join(graphRoot, "graph", ".archive"),
+      v3GraphArchive: archivePath,
       v3PipelineObservations: path.join(graphRoot, ".pipeline", "observations"),
     },
 

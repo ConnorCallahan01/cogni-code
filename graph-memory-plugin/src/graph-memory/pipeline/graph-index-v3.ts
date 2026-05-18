@@ -74,7 +74,11 @@ function loadIndex(): GraphIndex {
 
 function writeIndex(index: GraphIndex): void {
   index.builtAt = new Date().toISOString();
-  fs.writeFileSync(indexPath(), JSON.stringify(index, null, 2));
+  const filePath = indexPath();
+  if (!fs.existsSync(path.dirname(filePath))) {
+    fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  }
+  fs.writeFileSync(filePath, JSON.stringify(index, null, 2));
   indexCache = { data: index, mtime: fs.statSync(indexPath()).mtimeMs };
 }
 

@@ -5,6 +5,7 @@ import { ensureRuntimeConfig } from "./runtime.js";
 import { ensureWorkingDirectories } from "./working-files.js";
 import { ensureExternalInputsConfig } from "./external-inputs.js";
 import fs from "fs";
+import path from "path";
 
 export { activityBus } from "./events.js";
 export { CONFIG, saveGlobalConfig, isGraphInitialized, reloadConfig } from "./config.js";
@@ -49,6 +50,7 @@ export function initializeGraph() {
     CONFIG.paths.v3Lenses,
     `${CONFIG.paths.v3Lenses}/_archived`,
     CONFIG.paths.v3Sessions,
+    path.dirname(CONFIG.paths.v3GraphIndex),
     CONFIG.paths.v3Graph,
     CONFIG.paths.v3GraphArchive,
     CONFIG.paths.v3PipelineObservations,

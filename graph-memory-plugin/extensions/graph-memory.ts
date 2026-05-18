@@ -27,6 +27,8 @@ let _enqueueJob: any;
 let _somaBoost: any;
 let _listManifests: any;
 let _ambientRecall: any;
+let _hasV3Data: any;
+let _buildV3Context: any;
 
 async function loadCore() {
   if (_handleGraphMemory) return;
@@ -40,6 +42,7 @@ async function loadCore() {
   const scoring = await import(path.join(distDir, "scoring.js"));
   const soma = await import(path.join(distDir, "soma.js"));
   const manifest = await import(path.join(distDir, "pipeline", "skillforge-manifest.js"));
+  const sessionStartV3 = await import(path.join(distDir, "session-start-v3.js"));
   _handleGraphMemory = tools.handleGraphMemory;
   _initializeGraph = index.initializeGraph;
   _CONFIG = config.CONFIG;
@@ -48,6 +51,8 @@ async function loadCore() {
   _somaBoost = soma.somaBoost;
   _ambientRecall = scoring.ambientRecall;
   _listManifests = manifest.listManifests;
+  _hasV3Data = sessionStartV3.hasV3Data;
+  _buildV3Context = sessionStartV3.buildV3Context;
 }
 
 export default function (pi: ExtensionAPI) {
@@ -338,9 +343,8 @@ SETUP:
 
     // v3 path: try whisper-based injection first
     try {
-      const { hasV3Data, buildV3Context } = require("../dist/graph-memory/session-start-v3.js");
-      if (hasV3Data()) {
-        const v3 = buildV3Context("global");
+      if (_hasV3Data && _hasV3Data()) {
+        const v3 = _buildV3Context("global");
         if (!v3.sources.fallback && v3.context) {
           const v3Parts: string[] = [];
           const recallBlock = doAmbientRecall(event.prompt);

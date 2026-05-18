@@ -223,9 +223,10 @@ export interface WorkerLogDetail extends WorkerLogSummary {
 
 export interface StartupContextLayer {
   id: 'priors' | 'soma' | 'map' | 'working_global' | 'working_project' | 'dreams'
+    | 'global_whisper' | 'project_whisper' | 'session_log' | 'guardrails'
   label: string
   subtitle: string
-  owner: 'librarian' | 'dreamer'
+  owner: 'librarian' | 'dreamer' | 'compressor' | 'observer'
   injected: boolean
   updatedAt: string | null
   tokens: number
@@ -520,8 +521,9 @@ export async function fetchSkillContent(name: string): Promise<{ content: string
   return res.json()
 }
 
-export async function fetchStartupContext(): Promise<StartupContext> {
-  const res = await fetch('/api/startup-context')
+export async function fetchStartupContext(project?: string): Promise<StartupContext> {
+  const url = project ? `/api/startup-context?project=${encodeURIComponent(project)}` : '/api/startup-context'
+  const res = await fetch(url)
   if (!res.ok) throw new Error(`API error: ${res.status}`)
   return res.json()
 }

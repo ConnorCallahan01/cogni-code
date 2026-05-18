@@ -23,6 +23,7 @@ export interface NotionSyncPageState {
   lastSyncedHash: string;
   lastNotionHash: string;
   lastCommentAt?: string;
+  deleted?: boolean;
 }
 
 export interface NotionSyncRowState {
@@ -33,6 +34,7 @@ export interface NotionSyncRowState {
   lastSyncedHash: string;
   lastSourceHash?: string;
   lastCommentAt?: string;
+  deleted?: boolean;
 }
 
 export interface NotionSyncDatabaseState {
@@ -199,7 +201,7 @@ function normalizeSourceNodeToNodePath(src: string): string {
 }
 
 function scanGraphNodes(state: NotionSyncState, items: DiffItem[], lastSyncMs: number): void {
-  const graphDir = CONFIG.paths.v3Graph;
+  const graphDir = CONFIG.paths.nodes;
   if (!fs.existsSync(graphDir)) return;
 
   const knownRows = new Set(Object.keys(state.rows));
@@ -411,9 +413,13 @@ function scanWorkingState(
       }
     } catch {}
 
+    const rowKey = `working/${project}`;
+    const syncedHash = lookupSyncedHash(state, rowKey);
+    const classification: DiffClassification = syncedHash === hash ? "unchanged" : syncedHash ? "updated" : "new";
+
     items.push({
-      key: `working/${project}`,
-      classification: "updated",
+      key: rowKey,
+      classification,
       batch: `project:${project}`,
       filePath: statePath,
       contentHash: hash,
@@ -455,23 +461,24 @@ function scanDreams(state: NotionSyncState, items: DiffItem[]): void {
     const subPath = path.join(dreamsDir, subDir);
     if (!fs.existsSync(subPath)) continue;
 
-    const content = fs.readdirSync(subPath)
-      .filter((f) => f.endsWith(".json"))
-      .map((f) => fs.readFileSync(path.join(subPath, f), "utf-8"))
-      .join("\n");
+    const dreamFiles = fs.readdirSync(subPath).filter((f) => f.endsWith(".json"));
+    if (dreamFiles.length === 0) continue;
 
-    if (!content) continue;
-
+    const contents = dreamFiles.map((f) => fs.readFileSync(path.join(subPath, f), "utf-8"));
+    const content = contents.join("\n");
     const hash = computeContentHash(content);
     const pageKey = `dreams/${subDir}`;
     const syncedHash = lookupSyncedHash(state, pageKey);
+
+    const sourcePaths = dreamFiles.map((f) => path.join(subPath, f));
 
     items.push({
       key: pageKey,
       classification: syncedHash === hash ? "unchanged" : syncedHash ? "updated" : "new",
       batch: "dreams",
-      filePath: subPath,
+      filePath: sourcePaths[0],
       contentHash: hash,
+      sourcePaths,
     });
   }
 }

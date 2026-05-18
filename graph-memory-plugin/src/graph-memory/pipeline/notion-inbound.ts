@@ -6,6 +6,8 @@ import { CONFIG } from "../config.js";
 import { activityBus } from "../events.js";
 import { computeContentHash, NotionSyncState, readNotionSyncState, writeNotionSyncState } from "./notion-sync.js";
 import { getPage, getComments, searchDatabaseRows } from "./notion-cli.js";
+import { appendObservation } from "../mind/observations.js";
+import { appendObservation as appendProjectObservation, ensureLens } from "../lenses/manager.js";
 
 export type InboundEditType =
   | "preference_edit"
@@ -328,99 +330,75 @@ export function applyInboundDeltas(deltas: InboundDelta[]): { applied: number; e
 
   for (const delta of deltas) {
     try {
-      switch (delta.action) {
-        case "create_observation": {
-          const obsDir = getObservationDir(delta.notionKey);
-          if (!fs.existsSync(obsDir)) fs.mkdirSync(obsDir, { recursive: true });
+      const project = resolveProjectFromSourceNodes(delta.sourceNodes);
+      const observationText = buildInboundObservationText(delta);
 
-          const obsLine = JSON.stringify({
-            type: "observation",
-            source: "notion-inbound",
-            notionKey: delta.notionKey,
-            content: delta.observation,
-            tags: ["source:notion-inbound"],
-            timestamp: new Date().toISOString(),
-            ...delta.payload,
-          });
-          atomicAppendFile(path.join(obsDir, "observations.jsonl"), obsLine + "\n");
-          applied++;
-          break;
-        }
-        case "update_node": {
-          if (!fs.existsSync(delta.targetFile)) {
-            errors.push(`Target file not found: ${delta.targetFile}`);
-            break;
-          }
-          const raw = fs.readFileSync(delta.targetFile, "utf-8");
-          if (isArchivedNode(raw)) {
-            break;
-          }
-          const parsed = matter(raw);
-          parsed.content = parsed.content.trimEnd() + "\n\n<!-- notion-inbound update -->\n" + delta.observation;
-          atomicWriteFile(delta.targetFile, matter.stringify(parsed.content, parsed.data));
-          applied++;
-          break;
-        }
-        case "lower_confidence": {
-          if (!fs.existsSync(delta.targetFile)) {
-            errors.push(`Target file not found: ${delta.targetFile}`);
-            break;
-          }
-          const raw = fs.readFileSync(delta.targetFile, "utf-8");
-          if (isArchivedNode(raw)) break;
-          const parsed = matter(raw);
-          if (typeof parsed.data.confidence === "number") {
-            parsed.data.confidence = typeof delta.payload.newConfidence === "number"
-              ? delta.payload.newConfidence
-              : 0.3;
-          }
-          atomicWriteFile(delta.targetFile, matter.stringify(parsed.content, parsed.data));
-          applied++;
-          break;
-        }
-        case "update_model": {
-          if (!fs.existsSync(delta.targetFile)) {
-            errors.push(`Model file not found: ${delta.targetFile}`);
-            break;
-          }
-          const model = JSON.parse(fs.readFileSync(delta.targetFile, "utf-8"));
-          if (delta.payload.field && delta.payload.value !== undefined) {
-            const parts = String(delta.payload.field).split(".");
-            let target: any = model;
-            for (let i = 0; i < parts.length - 1; i++) {
-              if (!target[parts[i]]) target[parts[i]] = {};
-              target = target[parts[i]];
-            }
-            target[parts[parts.length - 1]] = delta.payload.value;
-          }
-          atomicWriteFile(delta.targetFile, JSON.stringify(model, null, 2));
-          applied++;
-          break;
-        }
-        case "log_conflict": {
-          const obsDir = getObservationDir(delta.notionKey);
-          if (!fs.existsSync(obsDir)) fs.mkdirSync(obsDir, { recursive: true });
-
-          const obsLine = JSON.stringify({
-            type: "merge_conflict",
-            source: "notion-inbound",
-            notionKey: delta.notionKey,
-            content: delta.observation,
-            tags: ["source:notion-inbound", "merge-conflict"],
-            timestamp: new Date().toISOString(),
-            ...delta.payload,
-          });
-          atomicAppendFile(path.join(obsDir, "observations.jsonl"), obsLine + "\n");
-          applied++;
-          break;
-        }
+      if (project && project !== "global") {
+        ensureLens(project);
+        appendProjectObservation(project, {
+          type: "notion_inbound",
+          observation: observationText,
+          evidence: [delta.notionKey],
+          confidence: 0.7,
+          sessionId: "notion-inbound",
+        });
+      } else {
+        appendObservation({
+          layer: "global",
+          type: "notion_inbound",
+          observation: observationText,
+          evidence: [delta.notionKey],
+          confidence: 0.7,
+          sessionId: "notion-inbound",
+        });
       }
+
+      applied++;
     } catch (err: any) {
-      errors.push(`Failed to apply delta for ${delta.notionKey}: ${err.message}`);
+      errors.push(`Failed to write observation for ${delta.notionKey}: ${err.message}`);
     }
   }
 
   return { applied, errors };
+}
+
+function resolveProjectFromSourceNodes(sourceNodes: string[]): string | null {
+  if (!sourceNodes || sourceNodes.length === 0) return null;
+  for (const nodePath of sourceNodes) {
+    const nodeFilePath = findNodeFile(nodePath);
+    if (!nodeFilePath) continue;
+    try {
+      const raw = fs.readFileSync(nodeFilePath, "utf-8");
+      const parsed = matter(raw);
+      if (parsed.data.project && typeof parsed.data.project === "string") {
+        return parsed.data.project;
+      }
+    } catch { /* skip */ }
+  }
+  return null;
+}
+
+function findNodeFile(nodePath: string): string | null {
+  const directPath = path.join(CONFIG.paths.nodes, nodePath + ".md");
+  if (fs.existsSync(directPath)) return directPath;
+
+  const nodesDir = CONFIG.paths.nodes;
+  if (!fs.existsSync(nodesDir)) return null;
+
+  for (const category of fs.readdirSync(nodesDir)) {
+    const candidate = path.join(nodesDir, category, nodePath + ".md");
+    if (fs.existsSync(candidate)) return candidate;
+  }
+  return null;
+}
+
+function buildInboundObservationText(delta: InboundDelta): string {
+  const parts: string[] = [`[Notion inbound] ${delta.editType} on ${delta.notionKey}`];
+  if (delta.observation) parts.push(delta.observation);
+  if (delta.action !== "create_observation" && delta.action !== "log_conflict") {
+    parts.push(`Action: ${delta.action}`);
+  }
+  return parts.join(". ");
 }
 
 function isArchivedNode(content: string): boolean {
@@ -493,9 +471,10 @@ function resolveSourceFilePath(sourcePath: string): string | null {
   if (sourcePath.startsWith("dreams/")) {
     return CONFIG.paths.dreams;
   }
-  const graphDir = CONFIG.paths.v3Graph;
-  const candidate = path.join(graphDir, sourcePath + ".md");
-  if (fs.existsSync(candidate)) return candidate;
+  const nodesCandidate = path.join(CONFIG.paths.nodes, sourcePath + ".md");
+  if (fs.existsSync(nodesCandidate)) return nodesCandidate;
+  const archiveCandidate = path.join(CONFIG.paths.archive, sourcePath + ".md");
+  if (fs.existsSync(archiveCandidate)) return archiveCandidate;
   return null;
 }
 

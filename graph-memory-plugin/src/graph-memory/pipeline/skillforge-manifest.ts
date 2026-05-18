@@ -1,5 +1,6 @@
 import fs from "fs";
 import path from "path";
+import matter from "gray-matter";
 import { CONFIG } from "../config.js";
 import { computeNodeContentHash } from "./skillforge-score.js";
 
@@ -48,9 +49,25 @@ export interface DriftedManifest {
 
 export function findDriftedManifests(): DriftedManifest[] {
   const drifted: DriftedManifest[] = [];
+  const REFRESH_COOLDOWN_MS = 6 * 60 * 60 * 1000;
+
   for (const manifest of listManifests()) {
+    if (manifest.last_refreshed_at) {
+      const elapsed = Date.now() - new Date(manifest.last_refreshed_at).getTime();
+      if (!Number.isNaN(elapsed) && elapsed < REFRESH_COOLDOWN_MS) continue;
+    }
+
     const currentHash = computeNodeContentHash(manifest.source_node);
     if (!currentHash || currentHash === manifest.content_hash) continue;
+
+    const nodeFullPath = path.join(CONFIG.paths.nodes, manifest.source_node + ".md");
+    if (fs.existsSync(nodeFullPath)) {
+      try {
+        const raw = fs.readFileSync(nodeFullPath, "utf-8");
+        const parsed = matter(raw);
+        if (parsed.data?.archived === true) continue;
+      } catch { /* skip check */ }
+    }
 
     const sanitizedPath = manifest.source_node.replace(/\//g, "-");
     const fileName = `${sanitizedPath}.json`;

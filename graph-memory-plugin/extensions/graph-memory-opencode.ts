@@ -27,6 +27,8 @@ let _detectProject: any;
 let _writeActiveProject: any;
 let _removeActiveProject: any;
 let _ambientRecall: any;
+let _hasV3Data: any;
+let _buildV3Context: any;
 
 async function loadCore() {
   if (_handleGraphMemory) return;
@@ -50,6 +52,7 @@ async function loadCore() {
   const scoring = await import(path.join(distDir, "scoring.js"));
   const soma = await import(path.join(distDir, "soma.js"));
   const project = await import(path.join(distDir, "project.js"));
+  const sessionStartV3 = await import(path.join(distDir, "session-start-v3.js"));
   _handleGraphMemory = tools.handleGraphMemory;
   _initializeGraph = index.initializeGraph;
   _CONFIG = config.CONFIG;
@@ -61,6 +64,8 @@ async function loadCore() {
   _detectProject = project.detectProject;
   _writeActiveProject = project.writeActiveProject;
   _removeActiveProject = project.removeActiveProject;
+  _hasV3Data = sessionStartV3.hasV3Data;
+  _buildV3Context = sessionStartV3.buildV3Context;
 }
 
 export const GraphMemoryPlugin: Plugin = async ({ project, client, directory, worktree }) => {
@@ -163,19 +168,14 @@ export const GraphMemoryPlugin: Plugin = async ({ project, client, directory, wo
 
   // ── Build context injection block ─────────────────────────────────
   function hasV3DataOpencode(): boolean {
-    if (!_CONFIG) return false;
-    const fs = require("fs");
-    const path = require("path");
-    const mindDir = _CONFIG.paths.v3Mind;
-    if (!fs.existsSync(mindDir)) return false;
-    return fs.existsSync(path.join(mindDir, "whisper.txt"));
+    if (!_CONFIG || !_hasV3Data) return false;
+    return _hasV3Data();
   }
 
   function buildV3ContextOpencode(): { context: string; tokensUsed: number; sources: { globalWhisper: boolean; projectWhisper: boolean; sessionLog: boolean; fallback: boolean } } {
     try {
-      const { buildV3Context: buildV3 } = require("../dist/graph-memory/session-start-v3.js");
       const currentProject = detectCurrentProject();
-      const result = buildV3(currentProject || "global");
+      const result = _buildV3Context(currentProject || "global");
       return {
         context: result.context,
         tokensUsed: result.tokensUsed,

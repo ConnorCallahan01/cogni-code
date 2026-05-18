@@ -17,7 +17,8 @@ import { appendObservation as appendProjectObservation } from "../lenses/manager
 import { appendSessionLog } from "../sessions/manager.js";
 import { ensureLens } from "../lenses/manager.js";
 import { safePath } from "../utils.js";
-import { validateEdgeType } from "./graph-ops.js";
+import { rebuildIndex, validateEdgeType } from "./graph-ops.js";
+import { addToIndex as addToV3Index } from "./graph-index-v3.js";
 import { ObservationType } from "../mind/types.js";
 
 export interface ObserverToolResult {
@@ -87,7 +88,7 @@ export function processObserverOutputs(
       const raw = JSON.parse(fs.readFileSync(filePath, "utf-8"));
       const call = parseToolCall(raw);
       if (!call) {
-        result.errors.push(`Unknown tool call in ${file}`);
+        fs.unlinkSync(filePath);
         continue;
       }
 
@@ -110,6 +111,12 @@ export function processObserverOutputs(
     } catch (err: any) {
       result.errors.push(`Error processing ${file}: ${err.message}`);
       try { fs.unlinkSync(filePath); } catch { /* already gone */ }
+    }
+  }
+
+  if (result.nodesUpserted > 0) {
+    try { rebuildIndex(); } catch (err: any) {
+      result.errors.push(`Index rebuild failed after observer upserts: ${err.message}`);
     }
   }
 
@@ -174,9 +181,6 @@ function processLogSession(call: LogSessionCall, sessionId: string): void {
 }
 
 function processUpsertNode(call: UpsertNodeCall): void {
-  const categoryDir = path.join(CONFIG.paths.nodes, call.category);
-  if (!fs.existsSync(categoryDir)) fs.mkdirSync(categoryDir, { recursive: true });
-
   const nodePath = safePath(CONFIG.paths.nodes, call.path, ".md");
   if (!nodePath) return;
 
@@ -218,6 +222,7 @@ function processUpsertNode(call: UpsertNodeCall): void {
       parsed.data.updated = now;
 
       fs.writeFileSync(nodePath, matter.stringify(parsed.content, parsed.data));
+      addToV3Index(call.path, nodePath);
     } catch (err: any) {
       activityBus.log("observer:error", `Failed to update node ${call.path}: ${err.message}`);
     }
@@ -254,4 +259,5 @@ function processUpsertNode(call: UpsertNodeCall): void {
 
   const body = "# " + (call.path.split("/").pop() || call.path) + "\n\n" + (call.content || "");
   fs.writeFileSync(nodePath, matter.stringify(body, fm));
+  addToV3Index(call.path, nodePath);
 }

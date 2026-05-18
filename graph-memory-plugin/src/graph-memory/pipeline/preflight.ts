@@ -10,6 +10,7 @@ import path from "path";
 import matter from "gray-matter";
 import { CONFIG } from "../config.js";
 import { walkNodes, getNodeDepth } from "../utils.js";
+import { getProjectPreflightPath, ensureAuditDirectories } from "../working-files.js";
 
 export interface PreflightManifestEntry {
   path: string;
@@ -44,7 +45,7 @@ export interface PreflightReport {
  * Generate a preflight report by scanning all nodes in the graph.
  * Pure filesystem — no LLM, no network. Typically completes in <1s.
  */
-export function generatePreflightReport(): PreflightReport {
+export function generatePreflightReport(project?: string): PreflightReport {
   const validPaths = new Set<string>();
   const manifest: PreflightManifestEntry[] = [];
   const categoryCounts: Record<string, number> = {};
@@ -96,6 +97,11 @@ export function generatePreflightReport(): PreflightReport {
     const edges: Array<{ target: string }> = parsed.data.edges || [];
     const depth = getNodeDepth(nodePath);
     const updated = parsed.data.updated || parsed.data.created || "";
+
+    if (project) {
+      const nodeProject = String(parsed.data.project || "").trim();
+      if (nodeProject && nodeProject !== project) continue;
+    }
 
     manifest.push({
       path: nodePath,
@@ -218,7 +224,11 @@ export function generatePreflightReport(): PreflightReport {
   };
 
   // Write to disk
-  fs.writeFileSync(CONFIG.paths.preflightReport, JSON.stringify(report, null, 2));
+  const reportPath = project ? getProjectPreflightPath(project) : CONFIG.paths.preflightReport;
+  if (project) ensureAuditDirectories(project);
+  const reportDir = path.dirname(reportPath);
+  if (!fs.existsSync(reportDir)) fs.mkdirSync(reportDir, { recursive: true });
+  fs.writeFileSync(reportPath, JSON.stringify(report, null, 2));
 
   return report;
 }
