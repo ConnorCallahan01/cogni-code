@@ -553,7 +553,7 @@ function resolveSourceFilePath(sourcePath: string): string | null {
     return path.join(CONFIG.paths.sessions, `${sanitizeProjectSlug(project)}.jsonl`);
   }
   if (sourcePath.startsWith("dreams/")) {
-    return CONFIG.paths.dreams;
+    return null;
   }
   const nodesCandidate = path.join(CONFIG.paths.nodes, sourcePath + ".md");
   if (fs.existsSync(nodesCandidate)) return nodesCandidate;

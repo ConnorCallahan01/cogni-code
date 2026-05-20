@@ -389,7 +389,7 @@ export default function App() {
                         </div>
                         <div className="skill-card-meta">
                           <span className="skill-card-project">{skill.project}</span>
-                          <span className="skill-card-node">{skill.source_node}</span>
+                          <span className="skill-card-node">{skill.source_nodes?.join(', ')}</span>
                           {skill.refresh_count > 0 && (
                             <span className="skill-card-refresh">{skill.refresh_count} refreshes</span>
                           )}

@@ -2183,13 +2183,21 @@ app.get('/api/skills/:name/content', (req, res) => {
     })
     if (!manifestFile) { res.status(404).json({ error: 'Skill not found' }); return }
     const manifest = JSON.parse(readFileSync(join(dir, manifestFile), 'utf-8'))
-    const cmdPath = manifest.files?.claude_command || manifest.files?.opencode_command
-    if (!cmdPath) { res.status(404).json({ error: 'No command file path' }); return }
-    const projectRoot = manifest.project_root
-    if (!projectRoot) { res.status(404).json({ error: 'No project root' }); return }
-    const fullPath = join(projectRoot, cmdPath)
-    if (!existsSync(fullPath)) { res.status(404).json({ error: 'Command file not found on disk' }); return }
-    res.json({ content: readFileSync(fullPath, 'utf-8'), manifest })
+    const contentPath = manifest.canonical_content_path
+      ? join(getPaths().graphRoot, manifest.canonical_content_path)
+      : null
+    if (!contentPath || !existsSync(contentPath)) {
+      const legacyPath = manifest.files?.claude_command || manifest.files?.opencode_command
+      if (legacyPath && manifest.project_root) {
+        const fullPath = join(manifest.project_root, legacyPath)
+        if (existsSync(fullPath)) {
+          res.json({ content: readFileSync(fullPath, 'utf-8'), manifest })
+          return
+        }
+      }
+      res.status(404).json({ error: 'No skill content found' }); return
+    }
+    res.json({ content: readFileSync(contentPath, 'utf-8'), manifest })
   } catch (err) {
     res.status(500).json({ error: 'Internal server error' })
   }

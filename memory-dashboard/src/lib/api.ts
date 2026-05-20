@@ -181,17 +181,17 @@ export interface ProjectWorkingFile {
 }
 
 export interface SkillforgeManifest {
-  source_node: string
+  version?: number
+  source_nodes: string[]
   skill_name: string
   generated_at: string
   score: number
   project: string
   project_root: string | null
   content_hash: string
-  files: {
-    claude_command: string
-    opencode_command: string
-  }
+  candidate_type: "cluster" | "single_node"
+  canonical_content_path: string
+  installed_harnesses: Record<string, string>
   reference_nodes: string[]
   refresh_count: number
   last_refreshed_at: string | null

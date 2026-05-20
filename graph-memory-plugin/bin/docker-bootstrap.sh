@@ -69,7 +69,8 @@ until "$DIR/bin/docker-healthcheck.sh" >/dev/null 2>&1; do
 done
 echo "  Healthy."
 
-echo "[4/5] Importing auth..."
+echo "[4/5] Importing auth + updating plugin..."
+docker cp "$DIR/extensions/graph-memory-opencode.ts" "$GRAPH_MEMORY_DOCKER_CONTAINER:$GRAPH_MEMORY_CONTAINER_AUTH_PATH/.config/opencode/plugins/graph-memory.ts" 2>/dev/null && echo "  plugin: updated" || echo "  plugin: no extension found (skipped)"
 AUTH_IMPORTED=false
 
 if [ "$PROVIDER" = "opencode" ] || [ "$PROVIDER" = "auto" ] || [ -z "$PROVIDER" ]; then

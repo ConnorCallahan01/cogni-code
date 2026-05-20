@@ -605,9 +605,13 @@ SETUP:
     event: async ({ event }) => {
       const type = event.type;
 
+      const isPipelineChild = !!(process.env.GRAPH_MEMORY_PIPELINE_CHILD || process.env.GRAPH_MEMORY_WORKER || process.env.GRAPH_MEMORY_DAEMON);
+
       try {
 
-      if (type === "session.created") {
+      if (isPipelineChild && type !== "message.updated") return;
+
+      if (type === "session.created" && !isPipelineChild) {
         const sessionId = (event.properties as any)?.info?.id;
         if (sessionId) {
           activeSessionId = sessionId;
@@ -658,7 +662,7 @@ SETUP:
       }
 
       // ── session.idle: capture messages from completed turn, rotate if threshold ──
-      if (type === "session.idle") {
+      if (type === "session.idle" && !isPipelineChild) {
         try {
           const debugPath = path.join(process.env.HOME || "/tmp", ".graph-memory", ".idle-debug.jsonl");
           fs.appendFileSync(debugPath, JSON.stringify({
@@ -752,7 +756,7 @@ SETUP:
       }
 
       // ── message.updated: ambient recall injection for user messages ──
-      if (type === "message.updated") {
+      if (type === "message.updated" && !isPipelineChild) {
         const info = (event.properties as any)?.info;
         const eventSessionId = (event.properties as any)?.sessionID;
         if (!info) return;
@@ -833,7 +837,7 @@ SETUP:
       }
 
       // ── session.deleted: final flush + cleanup ──
-      if (type === "session.deleted") {
+      if (type === "session.deleted" && !isPipelineChild) {
         const sessionId = (event.properties as any)?.sessionID;
         if (sessionId) {
           delete lastProcessedMessageCount[sessionId];
@@ -869,7 +873,8 @@ SETUP:
 
     // ── Tool execution tracing ─────────────────────────────────────
     "tool.execute.before": async (input, output) => {
-      if (!captureSessionId) bootstrapCapture(input.sessionID);
+      const isPipelineChild = !!(process.env.GRAPH_MEMORY_PIPELINE_CHILD || process.env.GRAPH_MEMORY_WORKER || process.env.GRAPH_MEMORY_DAEMON);
+      if (!captureSessionId && !isPipelineChild) bootstrapCapture(input.sessionID);
       if (!captureSessionId) return;
       try {
         await loadCore();

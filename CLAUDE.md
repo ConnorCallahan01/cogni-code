@@ -44,27 +44,49 @@ memory-dashboard/
     lib/api.ts            # Typed API client
     styles.css            # OKLCH design system
 
-~/.graph-memory/          # The actual graph data (outside this repo)
-  nodes/                  # Active knowledge nodes (canonical store)
-  mind/                   # v3 global mental model
-    model.json            # cognitive style, preferences, guardrails
-    whisper.txt           # pre-generated injection paragraph
-    observations.jsonl    # append-only observation feed
-  lenses/                 # v3 project models
-    {project}/            # model.json, whisper.txt, observations.jsonl
-  sessions/               # v3 session logs
+~/.graph-memory/                    # The actual graph data (outside this repo)
+  nodes/                            # Active knowledge nodes (canonical store, 22 category dirs)
+  mind/                             # Global mental model
+    model.json                      # cognitive style, preferences, guardrails
+    whisper.txt                     # pre-generated injection paragraph
+    observations.jsonl              # append-only observation feed
+  lenses/                           # Per-project models
+    {project}/                      # model.json, whisper.txt
+    _archived/                      # decommissioned project lenses
+  sessions/                         # Session logs
     {project}.jsonl
-  archive/                # Archived nodes
-  dreams/                 # pending/, integrated/, archived/
-  briefs/                 # Daily brief outputs
-  working/                # Per-project working state with key files
-  .deltas/                # Scribe output
-  .jobs/                  # Background queue state
-  .pipeline-logs/         # Worker logs
-  .skillforge/            # Generated skill manifests
-  .notion-sync-state.json # Notion workspace sync state
-  MAP.md, WORKING.md, DREAMS.md          # Context files (PRIORS.md/SOMA.md replaced by mental model)
-  archive/v3-graph-backup/               # Archived diverged v3 graph directory
+  archive/                          # Archived nodes + legacy docs
+    v3-graph-backup/                # Archived diverged v3 graph directory
+  dreams/                           # pending/, integrated/, archived/, projects/
+  briefs/                           # Daily brief outputs
+    daily/
+  working/                          # Per-project working state
+    global.md
+    projects/                       # {project}.md + {project}.state.json per active project
+      _updates/                     # incremental working state updates
+  graph/                            # Legacy graph directory (superseded by nodes/)
+  .sessions/                        # Per-session capture buffers (UUID + opencode_session dirs)
+  .session-context/                 # Session context snapshots (JSON)
+  .active-projects/                 # Active project session mappings
+  .buffer/                          # Raw hook capture buffer
+  .deltas/                          # Scribe output
+  .jobs/                            # Background queue state
+  .pipeline-logs/                   # Worker logs
+  .pipeline/                        # Pipeline intermediate state
+    observations/absorbed/          # Absorbed observation deltas
+  .logs/                            # Activity log + input-refresh logs
+  .inputs/                          # External brief inputs
+    gmail/, calendar/, slack/       # Per-source classified/normalized/
+    config.json
+  .skillforge/                      # Generated skill manifests
+  .notion-sync-state.json           # Notion workspace sync state
+  .notion-sync-input.json           # Notion sync input staging
+  .notion-sync-plan.json            # Notion sync execution plan
+  .notion-webhook-token             # Notion webhook token
+  config.yml                        # Graph memory runtime config
+  manifest.yml                      # Service manifest
+  MAP.md, WORKING.md, DREAMS.md    # Context files
+  PRIORS.md, SOMA.md               # Legacy context files (superseded by mental model)
 ```
 
 ## Build & Verify

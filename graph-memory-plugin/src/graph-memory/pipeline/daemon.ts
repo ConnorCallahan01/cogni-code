@@ -12,8 +12,8 @@ import { loadRuntimeConfig } from "../runtime.js";
 import { regenerateCoreContextFiles, regenerateDreamContext } from "./graph-ops.js";
 import { runDecay } from "./decay.js";
 import { updateProjectWorkingFromSession, collectFileInteractions } from "../project-working.js";
-import { scoreCandidates, computeNodeContentHash } from "./skillforge-score.js";
-import { listManifests, findDriftedManifests } from "./skillforge-manifest.js";import { getAssistantTracePath, getToolTracePath } from "../session-trace.js";
+import { scoreCandidates, computeNodeContentHash, computeMultiNodeContentHash } from "./skillforge-score.js";
+import { listManifests, findDriftedManifests, manifestKeyForNodes } from "./skillforge-manifest.js";import { getAssistantTracePath, getToolTracePath } from "../session-trace.js";
 import { getDailyBriefPaths } from "../briefs.js";
 import { loadExternalInputsConfig, readRecentClassifiedInputs } from "../external-inputs.js";
 import { getProjectWorkingPath, getProjectWorkingStatePath, getProjectWorkingUpdatePath, getFileInteractionPath, getProjectAuditDir, getProjectPreflightPath, getProjectAuditReportPath, getProjectAuditBriefPath, getProjectDreamsDir, getProjectDreamSummaryPath, getProjectLockPath, getGlobalLockPath, ensureAuditDirectories, ensureDreamDirectories, ensureLockDirectories, sanitizeProjectSlug } from "../working-files.js";
@@ -725,11 +725,12 @@ function createMemoryAnalysisInput(briefDate: string, timeZone: string): string 
     },
     skillforge: {
       manifests: listManifests().map((m) => ({
-        source_node: m.source_node,
+        source_nodes: m.source_nodes,
         skill_name: m.skill_name,
         generated_at: m.generated_at,
         score: m.score,
         project: m.project,
+        candidate_type: m.candidate_type,
         refresh_count: m.refresh_count,
         last_refreshed_at: m.last_refreshed_at,
       })),
@@ -1652,6 +1653,7 @@ async function runNotionSync(job: GraphMemoryJob): Promise<void> {
       jobId: job.id,
       errors: syncResult.errors,
     });
+    notionState.lastSyncAt = new Date().toISOString();
     writeNotionSyncState(notionState);
     throw new Error(`Notion sync failed with ${syncResult.errors.length} error(s)`);
   }
@@ -1675,10 +1677,16 @@ async function runNotionSync(job: GraphMemoryJob): Promise<void> {
 }
 
 async function runSkillforge(job: GraphMemoryJob): Promise<void> {
-  const payload = job.payload as { nodePath: string; project: string; reason: string; score: number };
+  const payload = job.payload as { nodePath: string; project: string; reason: string; score: number; sourceNodes?: string[]; candidateType?: string };
   const skillforgePath = path.join(AGENTS_DIR, "memory-skillforge.md");
 
-  const prompt = `Read the skillforge instructions at ${skillforgePath}, then follow them. Graph root: ${CONFIG.paths.graphRoot}. Source node path: ${payload.nodePath}. Project: ${payload.project}. Score: ${payload.score}. Reason: ${payload.reason}.`;
+  const sourceNodes = payload.sourceNodes || [payload.nodePath];
+  const candidateType = payload.candidateType || "single_node";
+  const contentHash = sourceNodes.length > 1
+    ? computeMultiNodeContentHash(sourceNodes)
+    : computeNodeContentHash(sourceNodes[0]);
+
+  const prompt = `Read the skillforge instructions at ${skillforgePath}, then follow them. Graph root: ${CONFIG.paths.graphRoot}. Source node paths: ${sourceNodes.join(", ")}. Candidate type: ${candidateType}. Project: ${payload.project}. Score: ${payload.score}. Content hash: ${contentHash}. Reason: ${payload.reason}.`;
 
   const result = await runPipelineWorker({
     name: `skillforge-${job.id}`,
@@ -1697,38 +1705,43 @@ async function runSkillforge(job: GraphMemoryJob): Promise<void> {
     throw new Error(`Skillforge worker exited with code ${result.exitCode}. See ${result.logFile}`);
   }
 
-  const manifestDir = CONFIG.paths.skillforgeManifests;
-  const sanitizedPath = payload.nodePath.replace(/\//g, "-");
-  const manifestPath = path.join(manifestDir, `${sanitizedPath}.json`);
+  const expectedKey = manifestKeyForNodes(sourceNodes);
+  const manifestPath = path.join(CONFIG.paths.skillforgeManifests, expectedKey);
   if (!fs.existsSync(manifestPath)) {
     throw new Error(`Skillforge completed without writing manifest: ${manifestPath}`);
   }
 
-  activityBus.log("skillforge:complete", `Skillforge complete: ${payload.nodePath}`, {
+  activityBus.log("skillforge:complete", `Skillforge complete: ${sourceNodes.join(", ")}`, {
     jobId: job.id,
-    nodePath: payload.nodePath,
+    sourceNodes,
+    candidateType,
     project: payload.project,
   });
 
   try {
     const indexPath = CONFIG.paths.index;
     const index = JSON.parse(fs.readFileSync(indexPath, "utf-8"));
-    const entry = index.find((e: any) => e.path === payload.nodePath);
-    if (entry) {
-      entry.skillforged_at = new Date().toISOString();
-      fs.writeFileSync(indexPath, JSON.stringify(index, null, 2));
+    const now = new Date().toISOString();
+    let updated = false;
+    for (const nodePath of sourceNodes) {
+      const entry = index.find((e: any) => e.path === nodePath);
+      if (entry) {
+        entry.skillforged_at = now;
+        updated = true;
+      }
     }
+    if (updated) fs.writeFileSync(indexPath, JSON.stringify(index, null, 2));
   } catch { /* non-critical */ }
 }
 
 async function runSkillforgeRefresh(job: GraphMemoryJob): Promise<void> {
-  const payload = job.payload as { manifestPath: string; nodePath: string; skillName: string; project: string; reason: string };
+  const payload = job.payload as { manifestPath: string; nodePath: string; skillName: string; project: string; reason: string; sourceNodes?: string[] };
   const skillforgePath = path.join(AGENTS_DIR, "memory-skillforge.md");
 
-  const manifestRaw = fs.readFileSync(payload.manifestPath, "utf-8");
-  const manifest = JSON.parse(manifestRaw);
+  const sourceNodes = payload.sourceNodes || [payload.nodePath];
+  const candidateType = sourceNodes.length > 1 ? "cluster" : "single_node";
 
-  const prompt = `Read the skillforge instructions at ${skillforgePath}, then follow them. This is a REFRESH of an existing skill. Graph root: ${CONFIG.paths.graphRoot}. Source node path: ${payload.nodePath}. Project: ${payload.project}. Skill name: ${payload.skillName}. Reason: ${payload.reason}. The skill files already exist — overwrite them with updated content. Increment refresh_count in the manifest and update content_hash and last_refreshed_at.`;
+  const prompt = `Read the skillforge instructions at ${skillforgePath}, then follow them. This is a REFRESH of an existing skill. Graph root: ${CONFIG.paths.graphRoot}. Source node paths: ${sourceNodes.join(", ")}. Candidate type: ${candidateType}. Project: ${payload.project}. Skill name: ${payload.skillName}. Reason: ${payload.reason}. The skill files already exist — overwrite them with updated content. Increment refresh_count in the manifest and update content_hash and last_refreshed_at.`;
 
   const result = await runPipelineWorker({
     name: `skillforge-refresh-${job.id}`,
@@ -1747,18 +1760,22 @@ async function runSkillforgeRefresh(job: GraphMemoryJob): Promise<void> {
     throw new Error(`Skillforge refresh worker exited with code ${result.exitCode}. See ${result.logFile}`);
   }
 
-  activityBus.log("skillforge:refresh", `Skillforge refresh complete: ${payload.nodePath}`, {
+  activityBus.log("skillforge:refresh", `Skillforge refresh complete: ${sourceNodes.join(", ")}`, {
     jobId: job.id,
-    nodePath: payload.nodePath,
+    sourceNodes,
     skillName: payload.skillName,
   });
 
-  const authoritativeHash = computeNodeContentHash(payload.nodePath);
+  const authoritativeHash = sourceNodes.length > 1
+    ? computeMultiNodeContentHash(sourceNodes)
+    : computeNodeContentHash(sourceNodes[0]);
+
   if (authoritativeHash && fs.existsSync(payload.manifestPath)) {
     try {
       const mf = JSON.parse(fs.readFileSync(payload.manifestPath, "utf-8"));
       mf.content_hash = authoritativeHash;
       mf.last_refreshed_at = new Date().toISOString();
+      mf.refresh_count = (mf.refresh_count || 0) + 1;
       fs.writeFileSync(payload.manifestPath, JSON.stringify(mf, null, 2));
     } catch { /* non-critical */ }
   }
@@ -1777,23 +1794,29 @@ function maybeEnqueueSkillforgeJobs(): void {
     if (enqueued >= maxPerTick) break;
     if (hasActiveJob("skillforge")) break;
 
+    const sourceNodes = candidate.sourceNodes || [candidate.nodePath];
+    const idemKey = `skillforge:${sourceNodes.sort().join("+")}`;
+
     const { job, created } = enqueueJob({
       type: "skillforge",
       payload: {
         nodePath: candidate.nodePath,
+        sourceNodes,
+        candidateType: candidate.candidateType,
         project: candidate.project || "global",
-        reason: `skillforge score: ${candidate.score}`,
+        reason: `${candidate.candidateType} score: ${candidate.score}`,
         score: candidate.score,
       },
       triggerSource: "daemon:skillforge-scorer",
-      idempotencyKey: `skillforge:${candidate.nodePath}`,
+      idempotencyKey: idemKey,
     });
 
     if (created) {
       enqueued++;
-      activityBus.log("skillforge:job_queued", `Queued skillforge job for ${candidate.nodePath}`, {
+      activityBus.log("skillforge:job_queued", `Queued skillforge job for ${sourceNodes.join(", ")}`, {
         jobId: job.id,
-        nodePath: candidate.nodePath,
+        sourceNodes,
+        candidateType: candidate.candidateType,
         score: candidate.score,
         project: candidate.project,
       });
@@ -1814,24 +1837,26 @@ function maybeEnqueueSkillforgeRefresh(): void {
     if (enqueued >= maxPerTick) break;
     if (hasActiveJob("skillforge_refresh")) break;
 
+    const sourceNodes = entry.manifest.source_nodes || [entry.manifest.source_nodes?.[0] || ""];
     const { job, created } = enqueueJob({
       type: "skillforge_refresh",
       payload: {
         manifestPath: path.join(CONFIG.paths.skillforgeManifests, entry.fileName),
-        nodePath: entry.manifest.source_node,
+        nodePath: sourceNodes[0],
+        sourceNodes,
         skillName: entry.manifest.skill_name,
         project: entry.manifest.project,
         reason: `content hash drift: ${entry.manifestHash} → ${entry.currentHash}`,
       },
       triggerSource: "daemon:skillforge-drift",
-      idempotencyKey: `skillforge-refresh:${entry.manifest.source_node}:${entry.currentHash}`,
+      idempotencyKey: `skillforge-refresh:${sourceNodes.sort().join("+")}:${entry.currentHash}`,
     });
 
     if (created) {
       enqueued++;
-      activityBus.log("skillforge:drift_detected", `Skill drift detected for ${entry.manifest.source_node}`, {
+      activityBus.log("skillforge:drift_detected", `Skill drift detected for ${sourceNodes.join(", ")}`, {
         jobId: job.id,
-        nodePath: entry.manifest.source_node,
+        sourceNodes,
         oldHash: entry.manifestHash,
         newHash: entry.currentHash,
       });

@@ -100,6 +100,30 @@ git log --since="yesterday" --oneline --no-merges
 
 Match commit messages against open task titles. If a commit clearly relates to a task, mark it as Done.
 
+## Update Discipline — Do Not Rewrite Unchanged Content
+
+Every update in the sync plan has a real cost: it sends API calls to Notion, triggers webhook events back to the daemon, and creates noise in the human's workspace. Only include an update when something actually changed.
+
+### Wiki pages
+
+Wiki pages group many source nodes into one page. Before adding a wiki page update:
+
+1. Read the current sync state entry for that page (`state.pages[notionKey]`)
+2. Compare the `lastSyncedHash` against a hash of what you would write
+3. Only include the update if the content or properties differ
+
+If a wiki page's source nodes changed but the rendered content is substantively the same (e.g. a gist was refreshed but the meaning didn't change), skip the update.
+
+**Rule: `changedProperties` must never be empty for an update.** If no properties changed and the markdown is the same, do not include the update.
+
+### Database rows
+
+Only update rows when a property value actually changed. Compare against the existing row state before adding to the plan.
+
+### Sizing heuristic
+
+A typical daily sync should produce 0-3 creates and 0-2 updates. If you're producing more than 5 updates, re-examine whether each one reflects a real change or just a cosmetic difference.
+
 ## Important Rules
 
 1. Read the diff report first — it tells you what changed and where to find it
@@ -114,6 +138,7 @@ Match commit messages against open task titles. If a commit clearly relates to a
 10. Keep markdown content concise — Notion pages should be scannable
 11. For project pages, check git log for completion signals if the project directory is available
 12. The sync engine auto-normalizes properties — just provide clean string values
+13. Never produce an update with empty `changedProperties` and unchanged markdown — skip it entirely
 
 ## Sync Plan Output Format
 
