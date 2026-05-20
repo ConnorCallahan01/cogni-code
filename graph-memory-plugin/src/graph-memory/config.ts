@@ -90,13 +90,8 @@ function createConfig() {
   const nodesPath = path.join(graphRoot, "nodes");
   const archivePath = path.join(graphRoot, "archive");
 
-  const v3Enabled = process.env.GRAPH_MEMORY_V3 !== "0";
-
   return {
-    v3: {
-      enabled: v3Enabled,
-      shadow: v3Enabled && process.env.GRAPH_MEMORY_V3_SHADOW === "1",
-    },
+    shadow: process.env.GRAPH_MEMORY_SHADOW === "1",
 
     session: {
       scribeInterval: 10,
@@ -200,7 +195,7 @@ function createConfig() {
       dreamsContext: path.join(graphRoot, "DREAMS.md"),
       deltasAudited: path.join(graphRoot, ".deltas/audited"),
       activeProjects: path.join(graphRoot, ".active-projects"),
-      sessions: path.join(graphRoot, ".sessions"),
+      sessionTraces: path.join(graphRoot, ".sessions"),
       briefs: path.join(graphRoot, "briefs"),
       dailyBriefs: path.join(graphRoot, "briefs/daily"),
       inputsRoot: path.join(graphRoot, ".inputs"),
@@ -226,24 +221,21 @@ function createConfig() {
       // Prompts are bundled relative to dist/ (or src/ in dev)
       prompts: path.resolve(__dirname, "prompts"),
 
-      // v4 project-scoped paths
+      // project-scoped paths
       auditRoot: path.join(graphRoot, "audit"),
       auditProjects: path.join(graphRoot, "audit", "projects"),
       dreamsProjects: path.join(graphRoot, "dreams", "projects"),
       projectLocks: path.join(graphRoot, ".jobs", "project-locks"),
       globalLock: path.join(graphRoot, ".jobs", "global.lock"),
 
-      // v3 paths (Layer 1-4)
-      v3Mind: path.join(graphRoot, "mind"),
-      v3Lenses: path.join(graphRoot, "lenses"),
-      v3Sessions: path.join(graphRoot, "sessions"),
-      // Unified graph storage: v2 nodes and v3 Layer 4 are the same durable
-      // markdown files. Older installs may still have an empty graph/ shadow
-      // directory, but new pipeline code should read and write nodes/.
-      v3Graph: nodesPath,
-      v3GraphIndex: path.join(graphRoot, "graph", ".index.json"),
-      v3GraphArchive: archivePath,
-      v3PipelineObservations: path.join(graphRoot, ".pipeline", "observations"),
+      // mental model paths
+      mind: path.join(graphRoot, "mind"),
+      lenses: path.join(graphRoot, "lenses"),
+      sessions: path.join(graphRoot, "sessions"),
+      // nodes/ is the canonical store; older installs may have an empty graph/
+      // shadow directory but pipeline code reads and writes nodes/.
+      graphIndex: path.join(graphRoot, "graph", ".index.json"),
+      pipelineObservations: path.join(graphRoot, ".pipeline", "observations"),
     },
 
     git: {
@@ -261,7 +253,6 @@ function createConfig() {
     notionSync: {
       enabled: local.notionSync?.enabled ?? false,
       syncHourLocal: local.notionSync?.syncHourLocal ?? 8,
-      maxBatchSize: local.notionSync?.maxBatchSize ?? 30,
       skipInbound: local.notionSync?.skipInbound ?? false,
       webhookSecret: local.notionSync?.webhookSecret
         ? local.notionSync.webhookSecret.replace(/^\$\{(\w+)\}$/, (_, v) => process.env[v] || "")

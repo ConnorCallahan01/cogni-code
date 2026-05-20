@@ -9,7 +9,7 @@ import { CONFIG } from "../config.js";
 import { Observation, ObservationType, ObservationLayer } from "./types.js";
 
 export function observationsPath(): string {
-  return path.join(CONFIG.paths.v3Mind, "observations.jsonl");
+  return path.join(CONFIG.paths.mind, "observations.jsonl");
 }
 
 export function appendObservation(obs: {
@@ -21,7 +21,7 @@ export function appendObservation(obs: {
   confidence: number;
   sessionId: string;
 }): Observation {
-  const dir = CONFIG.paths.v3Mind;
+  const dir = CONFIG.paths.mind;
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 
   const entry: Observation = {

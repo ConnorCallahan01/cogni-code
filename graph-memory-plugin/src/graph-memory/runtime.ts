@@ -231,6 +231,34 @@ function getCodexAuthState(runtime: GraphMemoryRuntimeConfig, dockerState: Recor
   };
 }
 
+function getOpenCodeAuthState(runtime: GraphMemoryRuntimeConfig, dockerState: Record<string, unknown> | null): Record<string, unknown> | null {
+  if (!dockerState || dockerState.available !== true || dockerState.present !== true || dockerState.Running !== true) {
+    return null;
+  }
+
+  const auth = runCommand("docker", [
+    "exec",
+    "-e", `HOME=${runtime.docker.authPathInContainer}`,
+    runtime.docker.containerName,
+    "bash",
+    "-lc",
+    'cat "$HOME/.local/share/opencode/auth.json" 2>/dev/null || for f in "$HOME/.config/opencode/config.json" "$HOME/.config/opencode/opencode.json" "$HOME/.config/opencode/opencode.jsonc"; do [ -f "$f" ] && cat "$f" && break; done',
+  ]);
+
+  if (!auth.ok || !auth.stdout) {
+    return {
+      ready: false,
+      error: auth.stderr || auth.error || "opencode auth unavailable",
+    };
+  }
+
+  const hasKey = /"key"|"token"|"apiKey"|"api_key"|"apiKeyId"/i.test(auth.stdout);
+  return {
+    ready: hasKey,
+    status: hasKey ? "opencode auth is ready" : "config exists but no provider credentials found",
+  };
+}
+
 export function getRuntimeStatus(): Record<string, unknown> {
   const runtime = loadRuntimeConfig();
   let daemonState: Record<string, unknown> | null = null;
@@ -244,6 +272,7 @@ export function getRuntimeStatus(): Record<string, unknown> {
 
   const dockerState = runtime.mode === "docker" ? getDockerState(runtime) : null;
   const codexAuth = runtime.mode === "docker" ? getCodexAuthState(runtime, dockerState) : null;
+  const opencodeAuth = runtime.mode === "docker" ? getOpenCodeAuthState(runtime, dockerState) : null;
 
   return {
     mode: runtime.mode,
@@ -261,6 +290,7 @@ export function getRuntimeStatus(): Record<string, unknown> {
       cpuLimit: runtime.docker.cpuLimit,
       state: dockerState,
       codexAuth,
+      opencodeAuth,
     } : null,
     daemonState,
     daemonLockPresent: fs.existsSync(CONFIG.paths.daemonLock),

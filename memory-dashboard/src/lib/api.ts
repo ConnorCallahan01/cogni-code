@@ -604,3 +604,19 @@ export function subscribeToEvents(onEvent: (type: string) => void): () => void {
   }
   return () => es.close()
 }
+
+export interface PipelineStageProgress {
+  stage: string
+  label: string
+  current: number
+  threshold: number | null
+  remaining: number | null
+  status: 'counting' | 'ready' | 'running' | 'queued' | 'waiting' | 'idle' | 'done'
+  detail: string
+}
+
+export async function fetchPipelineProgress(project: string): Promise<PipelineStageProgress[]> {
+  const res = await fetch(`/api/pipeline-progress/${encodeURIComponent(project)}`)
+  if (!res.ok) return []
+  return res.json()
+}

@@ -14,13 +14,14 @@ import { randomUUID } from "crypto";
 import { CONFIG } from "../config.js";
 import { ObservationType } from "../mind/types.js";
 import { ProjectObservation, ProjectModel, ProjectModelFile } from "./types.js";
+import { sanitizeProjectSlug } from "../working-files.js";
 
 export function lensDir(project: string): string {
-  return path.join(CONFIG.paths.v3Lenses, project);
+  return path.join(CONFIG.paths.lenses, sanitizeProjectSlug(project));
 }
 
 export function archivedLensDir(): string {
-  return path.join(CONFIG.paths.v3Lenses, "_archived");
+  return path.join(CONFIG.paths.lenses, "_archived");
 }
 
 export function observationsPath(project: string): string {
@@ -47,7 +48,7 @@ export function lensExists(project: string): boolean {
 }
 
 export function listActiveLenses(): string[] {
-  const root = CONFIG.paths.v3Lenses;
+  const root = CONFIG.paths.lenses;
   if (!fs.existsSync(root)) return [];
   return fs.readdirSync(root).filter((name) => {
     if (name.startsWith("_") || name.startsWith(".")) return false;

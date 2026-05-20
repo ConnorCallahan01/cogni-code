@@ -930,6 +930,149 @@ function buildPipelineCutoffs(graphRoot = getGraphRoot(), jobs = readAllJobs(gra
   ]
 }
 
+interface PipelineStageProgress {
+  stage: string
+  label: string
+  current: number
+  threshold: number | null
+  remaining: number | null
+  status: 'counting' | 'ready' | 'running' | 'queued' | 'waiting' | 'idle' | 'done'
+  detail: string
+}
+
+function getProjectPipelineProgress(graphRoot: string, project: string): PipelineStageProgress[] {
+  const jobs = readAllJobs(graphRoot)
+  const slug = sanitizeProjectSlug(project)
+
+  const bufferForProject = readBufferCountsByProject(graphRoot).find(b => b.project === project)
+  const bufferCount = bufferForProject?.count ?? 0
+
+  const hasJob = (type: JobType) => {
+    const state = hasJobInFlight(jobs, type)
+    if (!state) {
+      const projectJob = [...jobs.running, ...jobs.queued].find(j =>
+        j.type === type && (j.payload?.project === project || j.payload?.project === slug)
+      )
+      return projectJob ? (projectJob.state as 'running' | 'queued') : null
+    }
+    return state
+  }
+
+  const projectScribes = jobs.done.filter(j => {
+    if (j.type !== 'scribe') return false
+    return j.payload?.project === project || j.payload?.project === slug
+  })
+
+  const projectAuditors = jobs.done.filter(j => {
+    if (j.type !== 'auditor') return false
+    return j.payload?.project === project || j.payload?.project === slug
+  })
+
+  const lastAuditorMs = projectAuditors.map(j => latestJobTime(j)).sort((a, b) => b - a)[0] || 0
+  const scribesSinceAuditor = projectScribes.filter(j => latestJobTime(j) > lastAuditorMs).length
+
+  const allScribeSessions = projectScribes.map(j => (j.payload as any)?.sessionId).filter(Boolean) as string[]
+  const deltasDir = getPaths(graphRoot).deltas
+  let deltaCount = 0
+  for (const sid of allScribeSessions) {
+    if (existsSync(join(deltasDir, `${sid}.json`))) deltaCount++
+    if (existsSync(join(deltasDir, 'audited', `${sid}.json`))) deltaCount++
+  }
+
+  const scribeState = hasJob('scribe')
+  const auditorState = hasJob('auditor')
+  const librarianState = hasJob('librarian')
+  const dreamerState = hasJob('dreamer')
+
+  const hasAuditedDeltas = (() => {
+    for (const sid of allScribeSessions) {
+      if (existsSync(join(deltasDir, 'audited', `${sid}.json`))) return true
+    }
+    return false
+  })()
+
+  return [
+    {
+      stage: 'scribe',
+      label: 'Scribe',
+      current: bufferCount,
+      threshold: SCRIBE_INTERVAL,
+      remaining: bufferCount >= SCRIBE_INTERVAL ? 0 : SCRIBE_INTERVAL - bufferCount,
+      status: scribeState
+        ? scribeState
+        : bufferCount >= SCRIBE_INTERVAL
+          ? 'ready'
+          : 'counting',
+      detail: scribeState
+        ? `Scribe is ${scribeState}.`
+        : bufferCount >= SCRIBE_INTERVAL
+          ? 'Buffer threshold reached. Ready to snapshot.'
+          : `${bufferCount}/${SCRIBE_INTERVAL} messages buffered. ${SCRIBE_INTERVAL - bufferCount} more to trigger scribe.`,
+    },
+    {
+      stage: 'auditor',
+      label: 'Auditor',
+      current: scribesSinceAuditor,
+      threshold: AUDITOR_SCRIBE_THRESHOLD,
+      remaining: scribesSinceAuditor >= AUDITOR_SCRIBE_THRESHOLD ? 0 : AUDITOR_SCRIBE_THRESHOLD - scribesSinceAuditor,
+      status: auditorState
+        ? auditorState
+        : scribesSinceAuditor >= AUDITOR_SCRIBE_THRESHOLD && deltaCount > 0
+          ? 'ready'
+          : scribesSinceAuditor > 0
+            ? 'counting'
+            : 'idle',
+      detail: auditorState
+        ? `Auditor is ${auditorState}.`
+        : scribesSinceAuditor >= AUDITOR_SCRIBE_THRESHOLD
+          ? `${scribesSinceAuditor} scribes accumulated. Ready to audit.`
+          : scribesSinceAuditor > 0
+            ? `${scribesSinceAuditor}/${AUDITOR_SCRIBE_THRESHOLD} scribes since last audit. ${AUDITOR_SCRIBE_THRESHOLD - scribesSinceAuditor} more needed.`
+            : 'Waiting for scribe deltas to accumulate.',
+    },
+    {
+      stage: 'librarian',
+      label: 'Librarian',
+      current: hasAuditedDeltas ? 1 : 0,
+      threshold: 1,
+      remaining: hasAuditedDeltas ? 0 : 1,
+      status: librarianState
+        ? librarianState
+        : auditorState
+          ? 'waiting'
+          : hasAuditedDeltas
+            ? 'ready'
+            : 'idle',
+      detail: librarianState
+        ? `Librarian is ${librarianState}.`
+        : auditorState
+          ? 'Waiting for auditor to finish.'
+          : hasAuditedDeltas
+            ? 'Audited deltas ready. Librarian can run.'
+            : 'No audited deltas yet.',
+    },
+    {
+      stage: 'dreamer',
+      label: 'Dreamer',
+      current: jobs.done.filter(j =>
+        j.type === 'librarian' && (j.payload?.project === project || j.payload?.project === slug)
+      ).length,
+      threshold: null,
+      remaining: null,
+      status: dreamerState
+        ? dreamerState
+        : librarianState
+          ? 'waiting'
+          : 'idle',
+      detail: dreamerState
+        ? `Dreamer is ${dreamerState}.`
+        : librarianState
+          ? 'Waiting for librarian to finish.'
+          : 'Runs after librarian completes.',
+    },
+  ]
+}
+
 function collectWarnings(graphRoot = getGraphRoot(), nodeCount?: number): string[] {
   const { map } = getPaths(graphRoot)
   const warnings: string[] = []
@@ -1122,7 +1265,7 @@ function estimateTokens(text: string): number {
 }
 
 function formatRecentSessionLogs(graphRoot: string, project: string, limit = 3): string {
-  const filePath = join(getPaths(graphRoot).v3Sessions, `${project}.jsonl`)
+  const filePath = join(getPaths(graphRoot).v3Sessions, `${sanitizeProjectSlug(project)}.jsonl`)
   if (!project || project === 'global' || !existsSync(filePath)) return ''
 
   try {
@@ -1181,7 +1324,7 @@ function buildGuardrailsBlock(graphRoot: string, project: string): string {
 function getArtifactInfo(graphRoot = getGraphRoot(), projectOverride?: string) {
   const paths = getPaths(graphRoot)
   const activeProject = projectOverride || readActiveProject(graphRoot)?.name || 'global'
-  const projectWhisperPath = activeProject !== 'global' ? join(paths.lenses, activeProject, 'whisper.txt') : null
+  const projectWhisperPath = activeProject !== 'global' ? join(paths.lenses, sanitizeProjectSlug(activeProject), 'whisper.txt') : null
   const sessionLog = formatRecentSessionLogs(graphRoot, activeProject)
   const pickupBlock = readPickupBlock(graphRoot, activeProject)
   const guardrails = buildGuardrailsBlock(graphRoot, activeProject)
@@ -1242,7 +1385,7 @@ function getArtifactInfo(graphRoot = getGraphRoot(), projectOverride?: string) {
       dreams: paths.dreamsContext,
       global_whisper: paths.globalWhisper,
       project_whisper: projectWhisperPath,
-      session_log: activeProject !== 'global' ? join(paths.v3Sessions, `${activeProject}.jsonl`) : '',
+      session_log: activeProject !== 'global' ? join(paths.v3Sessions, `${sanitizeProjectSlug(activeProject)}.jsonl`) : '',
       guardrails: paths.v3Index,
     }[layer.id] || ''
     if (filePath && existsSync(filePath)) {
@@ -1619,7 +1762,7 @@ app.get('/api/health', (_req, res) => {
 
     const globalWhisperTokens = existsSync(paths.globalWhisper) ? estimateTokens(readFileSync(paths.globalWhisper, 'utf-8')) : 0
     const activeProject = readActiveProject(graphRoot)?.name || 'global'
-    const projectWhisperPath = activeProject !== 'global' ? join(paths.lenses, activeProject, 'whisper.txt') : ''
+    const projectWhisperPath = activeProject !== 'global' ? join(paths.lenses, sanitizeProjectSlug(activeProject), 'whisper.txt') : ''
     const projectWhisperTokens = projectWhisperPath && existsSync(projectWhisperPath) ? estimateTokens(readFileSync(projectWhisperPath, 'utf-8')) : 0
     const sessionLogTokens = estimateTokens(formatRecentSessionLogs(graphRoot, activeProject))
     const guardrailTokens = estimateTokens(buildGuardrailsBlock(graphRoot, activeProject))
@@ -2073,6 +2216,16 @@ app.get('/api/pipeline', (_req, res) => {
   }
 })
 
+app.get('/api/pipeline-progress/:project', (req, res) => {
+  try {
+    const project = decodeURIComponent(req.params.project)
+    res.json(getProjectPipelineProgress(getGraphRoot(), project))
+  } catch (err) {
+    console.error('Error in /api/pipeline-progress:', err)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
 app.get('/api/logs', (_req, res) => {
   try {
     res.json(listWorkerLogs())
@@ -2265,7 +2418,7 @@ app.get('/api/v3/lenses', (_req, res) => {
 
 app.get('/api/v3/lens/:project', (req, res) => {
   const graphRoot = getGraphRoot()
-  const lensDir = join(graphRoot, 'lenses', req.params.project)
+  const lensDir = join(graphRoot, 'lenses', sanitizeProjectSlug(req.params.project))
   if (!existsSync(lensDir)) {
     res.status(404).json({ error: 'Lens not found' })
     return
@@ -2298,7 +2451,7 @@ app.get('/api/v3/lens/:project', (req, res) => {
 
 app.get('/api/v3/sessions/:project', (req, res) => {
   const graphRoot = getGraphRoot()
-  const sessionsFile = join(graphRoot, 'sessions', `${req.params.project}.jsonl`)
+  const sessionsFile = join(graphRoot, 'sessions', `${sanitizeProjectSlug(req.params.project)}.jsonl`)
   if (!existsSync(sessionsFile)) {
     res.json([])
     return

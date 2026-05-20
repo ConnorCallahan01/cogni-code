@@ -18,7 +18,7 @@ import { appendSessionLog } from "../sessions/manager.js";
 import { ensureLens } from "../lenses/manager.js";
 import { safePath } from "../utils.js";
 import { rebuildIndex, validateEdgeType } from "./graph-ops.js";
-import { addToIndex as addToV3Index } from "./graph-index-v3.js";
+import { addToIndex } from "./graph-index.js";
 import { ObservationType } from "../mind/types.js";
 
 export interface ObserverToolResult {
@@ -75,7 +75,7 @@ export function processObserverOutputs(
     errors: [],
   };
 
-  const obsDir = CONFIG.paths.v3PipelineObservations;
+  const obsDir = CONFIG.paths.pipelineObservations;
   if (!fs.existsSync(obsDir)) return result;
 
   const files = fs.readdirSync(obsDir)
@@ -222,7 +222,7 @@ function processUpsertNode(call: UpsertNodeCall): void {
       parsed.data.updated = now;
 
       fs.writeFileSync(nodePath, matter.stringify(parsed.content, parsed.data));
-      addToV3Index(call.path, nodePath);
+      addToIndex(call.path, nodePath);
     } catch (err: any) {
       activityBus.log("observer:error", `Failed to update node ${call.path}: ${err.message}`);
     }
@@ -259,5 +259,5 @@ function processUpsertNode(call: UpsertNodeCall): void {
 
   const body = "# " + (call.path.split("/").pop() || call.path) + "\n\n" + (call.content || "");
   fs.writeFileSync(nodePath, matter.stringify(body, fm));
-  addToV3Index(call.path, nodePath);
+  addToIndex(call.path, nodePath);
 }

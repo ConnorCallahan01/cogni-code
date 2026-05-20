@@ -8,6 +8,7 @@ import {
   PipelineJob,
   ProjectSummary,
   ProjectsData,
+  SessionTraceSummary,
   StartupContext,
   fetchActivity,
   fetchArchive,
@@ -16,6 +17,7 @@ import {
   fetchPipeline,
   fetchProjectWorkingFiles,
   fetchProjects,
+  fetchSessionTraces,
   fetchSkills,
   fetchSkillContent,
   fetchStartupContext,
@@ -24,6 +26,8 @@ import {
 } from './lib/api'
 import type { PipelineStatus, ProjectWorkingFile, SkillforgeManifest } from './lib/api'
 import GraphExplorer from './components/GraphExplorer'
+import PipelinePanel from './components/PipelinePanel'
+import ProjectActivity from './components/ProjectActivity'
 
 function timeAgo(ts: string): string {
   const ms = Date.now() - Date.parse(ts)
@@ -47,6 +51,7 @@ export default function App() {
   const [activity, setActivity] = useState<ActivityEvent[]>([])
   const [jobs, setJobs] = useState<PipelineJob[]>([])
   const [projectWorking, setProjectWorking] = useState<ProjectWorkingFile | null>(null)
+  const [sessionTraces, setSessionTraces] = useState<SessionTraceSummary[]>([])
   const [showGraph, setShowGraph] = useState(false)
   const [skills, setSkills] = useState<SkillforgeManifest[]>([])
   const [expandedSkill, setExpandedSkill] = useState<string | null>(null)
@@ -77,6 +82,7 @@ export default function App() {
   const loadActivity = useCallback(async () => {
     try { const a = await fetchActivity(30); setActivity(a) } catch {}
     try { const j = await fetchPipeline(); setJobs(j) } catch {}
+    try { const t = await fetchSessionTraces(); setSessionTraces(t) } catch {}
   }, [])
 
   useEffect(() => {
@@ -352,17 +358,7 @@ export default function App() {
                 <div className="pipeline-flow-compact pipeline-flow-compact-notion">
                   <div className="pf-step pf-step-notion"><span className="pf-num">7</span><span className="pf-name">Notion Sync</span></div>
                 </div>
-                {status?.pipelineCutoffs && status.pipelineCutoffs.length > 0 && (
-                  <div className="pipeline-jobs">
-                    {status.pipelineCutoffs.map((c) => (
-                      <div key={c.stage} className={`pipeline-job ${c.status}`}>
-                        <span className={`pipeline-job-state ${c.status === 'running' ? 'running' : c.status === 'queued' ? 'queued' : c.status === 'ready' ? 'running' : 'done'}`}>{c.status}</span>
-                        <span className={`pipeline-job-type ${c.stage === 'notion_sync' ? 'pipeline-job-type-notion' : ''}`}>{(c.stage || 'unknown').replace('_', ' ')}</span>
-                        <span className="pipeline-job-trigger">{c.detail}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
+                <PipelinePanel jobs={jobs} />
               </section>
 
               {skills.length > 0 && (
@@ -479,14 +475,12 @@ export default function App() {
             </div>
           </section>
 
-          <section className="project-whisper">
-            <h2 className="project-section-title">Working Memory</h2>
-            {projectWorking?.content ? (
-              <pre className="project-working-content">{projectWorking.content}</pre>
-            ) : (
-              <p className="project-whisper-empty">No working memory for this project</p>
-            )}
-          </section>
+          <ProjectActivity
+            project={selectedProject}
+            jobs={jobs}
+            sessions={sessionTraces}
+            working={projectWorking}
+          />
 
           <section className="project-sessions">
             <h2 className="project-section-title">

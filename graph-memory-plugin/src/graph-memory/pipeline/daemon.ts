@@ -5,7 +5,7 @@ import { CONFIG, isGraphInitialized } from "../config.js";
 import { initializeGraph } from "../index.js";
 import { activityBus } from "../events.js";
 import { generatePreflightReport } from "./preflight.js";
-import { claimNextJob, completeRunningJob, countJobs, enqueueJob, ensureJobDirectories, failRunningJob, hasActiveJob, hasActiveJobForProject, hasActiveProjectChainJob, hasActiveGlobalChainJob, getActiveProjectChainProjects, countDeltasForProject, listJobs, requeueStaleRunningJobs, updateRunningJob, PROJECT_CHAIN_TYPES, GLOBAL_CHAIN_TYPES, PRIORITY } from "./job-queue.js";
+import { claimNextJob, completeRunningJob, countJobs, enqueueJob, ensureJobDirectories, failRunningJob, hasActiveJob, hasActiveJobForProject, hasActiveProjectChainJob, getActiveProjectChainProjects, countDeltasForProject, listJobs, requeueRunningJob, requeueStaleRunningJobs, updateRunningJob, PROJECT_CHAIN_TYPES, GLOBAL_CHAIN_TYPES, PRIORITY } from "./job-queue.js";
 import { GraphMemoryJob, GraphMemoryJobState } from "./job-schema.js";
 import { runPipelineWorker } from "./worker-runner.js";
 import { loadRuntimeConfig } from "../runtime.js";
@@ -19,9 +19,10 @@ import { loadExternalInputsConfig, readRecentClassifiedInputs } from "../externa
 import { getProjectWorkingPath, getProjectWorkingStatePath, getProjectWorkingUpdatePath, getFileInteractionPath, getProjectAuditDir, getProjectPreflightPath, getProjectAuditReportPath, getProjectAuditBriefPath, getProjectDreamsDir, getProjectDreamSummaryPath, getProjectLockPath, getGlobalLockPath, ensureAuditDirectories, ensureDreamDirectories, ensureLockDirectories, sanitizeProjectSlug } from "../working-files.js";
 import { processObserverOutputs } from "./observer-tools.js";
 import { processCompressorOutputs } from "./compressor-tools.js";
-import { rebuildV3Index } from "./graph-index-v3.js";
+import { rebuildV3Index as rebuildGraphIndex } from "./graph-index.js";
 import { bootstrapProjectDoc, detectDocDrift } from "./bootstrap.js";
 import { readNotionSyncState, writeNotionSyncState, buildNotionDiff, writeDiffReport, readSyncPlan, executeNotionSync } from "./notion-sync.js";
+import { checkNtnReady } from "./notion-cli.js";
 import { detectInboundEdits, writeInboundInput, readInboundPlan, applyInboundDeltas, writeInboundDeltas, writeMergeInput, readMergeResult, detectNewComments, buildCommentDetections, detectNewNotionTasks, InboundEdit } from "./notion-inbound.js";
 import { startWebhookServer } from "./notion-webhook.js";
 import { addNotionPickupItem } from "../project-working.js";
@@ -337,7 +338,7 @@ function maybeEnqueueObserverFromScribeBacklog(): void {
   enqueueJob({
     type: "observer",
     payload: {
-      deltaFiles,
+      deltaFiles: [...new Set(deltaFiles)],
       reason: count + " scribe runs since last observer",
     },
     triggerSource: "daemon:scribe-threshold",
@@ -351,7 +352,7 @@ function maybeEnqueueBootstrapFromObserver(project: string | undefined, sessionI
 
   let totalObs = 0;
 
-  const projectObsPath = path.join(CONFIG.paths.v3Lenses, project, "observations.jsonl");
+  const projectObsPath = path.join(CONFIG.paths.lenses, sanitizeProjectSlug(project), "observations.jsonl");
   if (fs.existsSync(projectObsPath)) {
     const lines = fs.readFileSync(projectObsPath, "utf-8").trim().split("\n").filter(Boolean);
     totalObs += lines.filter((l) => {
@@ -359,7 +360,7 @@ function maybeEnqueueBootstrapFromObserver(project: string | undefined, sessionI
     }).length;
   }
 
-  const globalObsPath = path.join(CONFIG.paths.v3Mind, "observations.jsonl");
+  const globalObsPath = path.join(CONFIG.paths.mind, "observations.jsonl");
   if (fs.existsSync(globalObsPath)) {
     const lines = fs.readFileSync(globalObsPath, "utf-8").trim().split("\n").filter(Boolean);
     totalObs += lines.filter((l) => {
@@ -551,11 +552,11 @@ function collectJobSummaryForDate(targetDate: string, timeZone: string): Array<R
 }
 
 function collectSessionTracePathsForDate(targetDate: string, timeZone: string, maxPaths = 30): string[] {
-  if (!fs.existsSync(CONFIG.paths.sessions)) return [];
+  if (!fs.existsSync(CONFIG.paths.sessionTraces)) return [];
 
   const paths: Array<{ filePath: string; mtimeMs: number }> = [];
-  for (const sessionDir of fs.readdirSync(CONFIG.paths.sessions)) {
-    const filePath = path.join(CONFIG.paths.sessions, sessionDir, "tool-trace.jsonl");
+  for (const sessionDir of fs.readdirSync(CONFIG.paths.sessionTraces)) {
+    const filePath = path.join(CONFIG.paths.sessionTraces, sessionDir, "tool-trace.jsonl");
     if (!fs.existsSync(filePath)) continue;
     const stat = fs.statSync(filePath);
     if (matchesIsoDateInTimeZone(stat.mtimeMs, targetDate, timeZone)) {
@@ -570,11 +571,11 @@ function collectSessionTracePathsForDate(targetDate: string, timeZone: string, m
 }
 
 function collectAssistantTracePathsForDate(targetDate: string, timeZone: string, maxPaths = 30): string[] {
-  if (!fs.existsSync(CONFIG.paths.sessions)) return [];
+  if (!fs.existsSync(CONFIG.paths.sessionTraces)) return [];
 
   const paths: Array<{ filePath: string; mtimeMs: number }> = [];
-  for (const sessionDir of fs.readdirSync(CONFIG.paths.sessions)) {
-    const filePath = path.join(CONFIG.paths.sessions, sessionDir, "assistant-trace.jsonl");
+  for (const sessionDir of fs.readdirSync(CONFIG.paths.sessionTraces)) {
+    const filePath = path.join(CONFIG.paths.sessionTraces, sessionDir, "assistant-trace.jsonl");
     if (!fs.existsSync(filePath)) continue;
     const stat = fs.statSync(filePath);
     if (matchesIsoDateInTimeZone(stat.mtimeMs, targetDate, timeZone)) {
@@ -628,9 +629,9 @@ function collectActiveProjectsForDate(targetDate: string, timeZone: string): Arr
   const byProject = new Map<string, { project: string; cwd?: string; sessionIds: Set<string> }>();
   const knownProjectRoots = new Map<string, string>();
 
-  if (fs.existsSync(CONFIG.paths.sessions)) {
-    for (const sessionDir of fs.readdirSync(CONFIG.paths.sessions)) {
-      const filePath = path.join(CONFIG.paths.sessions, sessionDir, "tool-trace.jsonl");
+  if (fs.existsSync(CONFIG.paths.sessionTraces)) {
+    for (const sessionDir of fs.readdirSync(CONFIG.paths.sessionTraces)) {
+      const filePath = path.join(CONFIG.paths.sessionTraces, sessionDir, "tool-trace.jsonl");
       if (!fs.existsSync(filePath)) continue;
       const events = readJsonLines(filePath);
       for (const event of events) {
@@ -792,7 +793,7 @@ function maybeEnqueueNotionSync(): void {
 
   if (notionState.lastSyncAt) {
     const elapsed = Date.now() - new Date(notionState.lastSyncAt).getTime();
-    if (elapsed < 20 * 60 * 60 * 1000) return;
+    if (elapsed < 8 * 60 * 60 * 1000) return;
   }
 
   const briefPaths = getDailyBriefPaths(date);
@@ -917,7 +918,7 @@ async function runObserver(job: GraphMemoryJob): Promise<void> {
   };
 
   const observerPromptPath = path.join(AGENTS_DIR, "memory-observer.md");
-  const obsDir = CONFIG.paths.v3PipelineObservations;
+  const obsDir = CONFIG.paths.pipelineObservations;
   if (!fs.existsSync(obsDir)) fs.mkdirSync(obsDir, { recursive: true });
   const obsDirForWorker = toWorkerPath(obsDir);
 
@@ -999,7 +1000,7 @@ async function runCompressor(job: GraphMemoryJob): Promise<void> {
   }
   prompt += " Reason: " + payload.reason;
 
-  const obsDir = CONFIG.paths.v3PipelineObservations;
+  const obsDir = CONFIG.paths.pipelineObservations;
   if (!fs.existsSync(obsDir)) fs.mkdirSync(obsDir, { recursive: true });
 
   const result = await runPipelineWorker({
@@ -1021,7 +1022,7 @@ async function runCompressor(job: GraphMemoryJob): Promise<void> {
 
   const toolResult = processCompressorOutputs();
 
-  try { rebuildV3Index(); } catch { /* non-critical */ }
+  try { rebuildGraphIndex(); } catch { /* non-critical */ }
 
   activityBus.log("system:info", "Compressor run complete", {
     jobId: job.id,
@@ -1059,32 +1060,47 @@ async function runWorkingUpdate(job: GraphMemoryJob): Promise<void> {
   const workingPathForWorker = toWorkerPath(workingPath);
   const workingStatePathForWorker = toWorkerPath(workingStatePath);
   const updateOutputPathForWorker = toWorkerPath(updateOutputPath);
-  const assistantTracePathForWorker = payload.assistantTracePath ? toWorkerPath(payload.assistantTracePath) : null;
-  const toolTracePathForWorker = payload.toolTracePath ? toWorkerPath(payload.toolTracePath) : null;
-
   const fileInteractionData = collectFileInteractions(payload.toolTracePath);
   const fileInteractionPath = getFileInteractionPath(payload.project, payload.sessionId);
   fs.mkdirSync(path.dirname(fileInteractionPath), { recursive: true });
   fs.writeFileSync(fileInteractionPath, JSON.stringify(fileInteractionData, null, 2));
   const fileInteractionPathForWorker = fileInteractionData.length > 0 ? toWorkerPath(fileInteractionPath) : null;
+  const outputMtimeBeforeWorker = fs.existsSync(updateOutputPath)
+    ? fs.statSync(updateOutputPath).mtimeMs
+    : 0;
 
-  const prompt = `Read the working updater instructions at ${updaterPathForWorker}, then follow them. Graph root: ${CONFIG.paths.graphRoot}. Project: ${payload.project}. Session ID: ${payload.sessionId}. Delta file: ${deltaPathForWorker}. Project WORKING markdown: ${workingPathForWorker}. Project WORKING state JSON: ${workingStatePathForWorker}.${assistantTracePathForWorker ? ` Assistant trace: ${assistantTracePathForWorker}.` : ""}${toolTracePathForWorker ? ` Tool trace: ${toolTracePathForWorker}.` : ""}${fileInteractionPathForWorker ? ` File interaction summary: ${fileInteractionPathForWorker}.` : ""} Write the session working update artifact JSON to ${updateOutputPathForWorker}.`;
+  const prompt = `Read the working updater instructions at ${updaterPathForWorker}, then follow them. Graph root: ${CONFIG.paths.graphRoot}. Project: ${payload.project}. Session ID: ${payload.sessionId}. Delta file: ${deltaPathForWorker}. Project WORKING markdown: ${workingPathForWorker}. Project WORKING state JSON: ${workingStatePathForWorker}.${fileInteractionPathForWorker ? ` File interaction summary: ${fileInteractionPathForWorker}.` : ""} Raw assistant and tool traces are intentionally not provided; do not search for or read trace files. Write the session working update artifact JSON to ${updateOutputPathForWorker}.`;
 
-  const result = await runPipelineWorker({
-    name: `working-update-${job.id}`,
-    prompt,
-    graphRoot: CONFIG.paths.graphRoot,
-    logDir: CONFIG.paths.pipelineLogs,
-    addDirs: [AGENTS_DIR],
-    timeoutMs: 5 * 60_000,
-  });
+  try {
+    const result = await runPipelineWorker({
+      name: `working-update-${job.id}`,
+      prompt,
+      graphRoot: CONFIG.paths.graphRoot,
+      logDir: CONFIG.paths.pipelineLogs,
+      addDirs: [AGENTS_DIR],
+      timeoutMs: 5 * 60_000,
+    });
 
-  job.logFile = result.logFile;
-  job.workerPid = result.pid;
-  updateRunningJob(job);
+    job.logFile = result.logFile;
+    job.workerPid = result.pid;
+    updateRunningJob(job);
 
-  if (result.exitCode !== 0) {
-    throw new Error(`Working updater exited with code ${result.exitCode}. See ${result.logFile}`);
+    if (result.exitCode !== 0) {
+      throw new Error(`Working updater exited with code ${result.exitCode}. See ${result.logFile}`);
+    }
+  } catch (err: any) {
+    const outputMtimeAfterWorker = fs.existsSync(updateOutputPath)
+      ? fs.statSync(updateOutputPath).mtimeMs
+      : 0;
+    if (outputMtimeAfterWorker <= outputMtimeBeforeWorker) {
+      throw err;
+    }
+    activityBus.log("system:info", "Working updater failed after writing artifact; applying fresh artifact", {
+      jobId: job.id,
+      project: payload.project,
+      sessionId: payload.sessionId,
+      error: err.message,
+    });
   }
 
   if (!fs.existsSync(updateOutputPath)) {
@@ -1121,7 +1137,18 @@ async function runAuditor(job: GraphMemoryJob): Promise<void> {
   }
 
   if (project && project !== "global") {
-    acquireProjectChainLock(project);
+    try {
+      acquireProjectChainLock(project);
+    } catch (err: any) {
+      if (err.message?.startsWith("Project chain lock held")) {
+        activityBus.log("system:info", "Skipping auditor job because project chain lock is held", {
+          jobId: job.id,
+          project,
+        });
+        return;
+      }
+      throw err;
+    }
   }
   generatePreflightReport(project);
 
@@ -1473,7 +1500,7 @@ async function runNotionMerge(edit: InboundEdit, jobId: string, date: string): P
 }
 
 async function runNotionSync(job: GraphMemoryJob): Promise<void> {
-  const payload = job.payload as { reason: string; date: string; forceFullSync?: boolean; batches?: string[]; skipInbound?: boolean; batchIndex?: number };
+  const payload = job.payload as { reason: string; date: string; forceFullSync?: boolean; skipInbound?: boolean };
 
   activityBus.log("notion-sync:start", `Notion sync starting: ${payload.reason}`, {
     jobId: job.id,
@@ -1485,6 +1512,18 @@ async function runNotionSync(job: GraphMemoryJob): Promise<void> {
   if (!notionState.parentPageId) {
     activityBus.log("notion-sync:error", "Notion sync skipped — no parent page ID configured");
     return;
+  }
+
+  const ntnReady = checkNtnReady();
+  if (!ntnReady.installed || !ntnReady.authenticated || !ntnReady.workspaceSelected) {
+    const reason = ntnReady.error || "Notion CLI is not ready";
+    activityBus.log("notion-sync:error", `Notion sync blocked — ${reason}`, {
+      jobId: job.id,
+      installed: ntnReady.installed,
+      authenticated: ntnReady.authenticated,
+      workspaceSelected: ntnReady.workspaceSelected,
+    });
+    throw new Error(`Notion sync blocked: ${reason}`);
   }
 
   if (!payload.skipInbound && !CONFIG.notionSync.skipInbound) {
@@ -1556,43 +1595,23 @@ async function runNotionSync(job: GraphMemoryJob): Promise<void> {
     return;
   }
 
-  const CHUNK_SIZE = CONFIG.notionSync.maxBatchSize;
-  const batchIndex = payload.batchIndex ?? 0;
-  const start = batchIndex * CHUNK_SIZE;
-  const chunk = changedItems.slice(start, start + CHUNK_SIZE);
-  const hasMore = start + CHUNK_SIZE < changedItems.length;
-
-  if (chunk.length === 0) {
-    notionState.lastSyncAt = new Date().toISOString();
-    writeNotionSyncState(notionState);
-    activityBus.log("notion-sync:complete", "Notion sync complete — all batches processed", {
-      jobId: job.id,
-      date: payload.date,
-      totalBatches: batchIndex,
-    });
-    return;
-  }
-
-  activityBus.log("notion-sync:start", `Notion sync batch ${batchIndex + 1}: ${chunk.length} items (${start + 1}-${start + chunk.length} of ${changedItems.length})`, {
+  activityBus.log("notion-sync:start", `Notion sync: ${changedItems.length} changed items`, {
     jobId: job.id,
     date: payload.date,
-    batchIndex,
-    batchSize: chunk.length,
     totalChanged: changedItems.length,
-    hasMore,
   });
 
   const partialDiff: import("./notion-sync.js").NotionSyncDiff = {
     generatedAt: diff.generatedAt,
-    items: chunk,
+    items: changedItems,
     stats: {
-      new: chunk.filter((i) => i.classification === "new").length,
-      updated: chunk.filter((i) => i.classification === "updated").length,
-      archived: chunk.filter((i) => i.classification === "archived").length,
+      new: changedItems.filter((i) => i.classification === "new").length,
+      updated: changedItems.filter((i) => i.classification === "updated").length,
+      archived: changedItems.filter((i) => i.classification === "archived").length,
       unchanged: 0,
-      total: chunk.length,
+      total: changedItems.length,
     },
-    batches: [...new Set(chunk.map((i) => i.batch))],
+    batches: [...new Set(changedItems.map((i) => i.batch))],
   };
 
   const diffReportPath = writeDiffReport(partialDiff);
@@ -1601,10 +1620,10 @@ async function runNotionSync(job: GraphMemoryJob): Promise<void> {
   const planPathForWorker = toWorkerPath(path.join(CONFIG.paths.graphRoot, ".notion-sync-plan.json"));
   const syncAgentPath = path.join(AGENTS_DIR, "memory-notion-sync.md");
 
-  const prompt = `Read the Notion sync instructions at ${syncAgentPath}, then follow them. Graph root: ${CONFIG.paths.graphRoot}. Diff report: ${diffReportPathForWorker}. Current Notion state: ${statePathForWorker}. Write the sync plan to ${planPathForWorker}. Date: ${payload.date}. This is batch ${batchIndex + 1} of a chunked sync. Only produce a plan for the items in this diff report.`;
+  const prompt = `Read the Notion sync instructions at ${syncAgentPath}, then follow them. Graph root: ${CONFIG.paths.graphRoot}. Diff report: ${diffReportPathForWorker}. Current Notion state: ${statePathForWorker}. Write the sync plan to ${planPathForWorker}. Date: ${payload.date}.`;
 
   const result = await runPipelineWorker({
-    name: `notion-sync-b${batchIndex}-${job.id}`,
+    name: `notion-sync-${job.id}`,
     prompt,
     graphRoot: CONFIG.paths.graphRoot,
     logDir: CONFIG.paths.pipelineLogs,
@@ -1628,7 +1647,16 @@ async function runNotionSync(job: GraphMemoryJob): Promise<void> {
 
   const syncResult = executeNotionSync(plan, notionState);
 
-  for (const item of chunk) {
+  if (syncResult.errors.length > 0) {
+    activityBus.log("notion-sync:error", `Notion sync had ${syncResult.errors.length} errors`, {
+      jobId: job.id,
+      errors: syncResult.errors,
+    });
+    writeNotionSyncState(notionState);
+    throw new Error(`Notion sync failed with ${syncResult.errors.length} error(s)`);
+  }
+
+  for (const item of changedItems) {
     if (item.classification === "new" || item.classification === "updated") {
       if (notionState.rows[item.key]) {
         notionState.rows[item.key].lastSourceHash = item.contentHash;
@@ -1639,39 +1667,11 @@ async function runNotionSync(job: GraphMemoryJob): Promise<void> {
   notionState.lastSyncAt = new Date().toISOString();
   writeNotionSyncState(notionState);
 
-  activityBus.log("notion-sync:complete", `Notion sync batch ${batchIndex + 1} complete: ${syncResult.created} created, ${syncResult.updated} updated, ${syncResult.archived} archived`, {
+  activityBus.log("notion-sync:complete", `Notion sync complete: ${syncResult.created} created, ${syncResult.updated} updated, ${syncResult.archived} archived`, {
     jobId: job.id,
     date: payload.date,
-    batchIndex,
-    batchSize: chunk.length,
-    hasMore,
     ...syncResult,
   });
-
-  if (syncResult.errors.length > 0) {
-    activityBus.log("notion-sync:error", `Notion sync had ${syncResult.errors.length} errors`, {
-      jobId: job.id,
-      errors: syncResult.errors,
-    });
-  }
-
-  if (hasMore) {
-    enqueueJob({
-      type: "notion_sync",
-      payload: {
-        reason: `notion sync batch ${batchIndex + 2} for ${payload.date}`,
-        date: payload.date,
-        skipInbound: true,
-        batchIndex: batchIndex + 1,
-      },
-      triggerSource: "daemon:notion-sync-next-batch",
-      idempotencyKey: `notion-sync:${payload.date}:batch-${batchIndex + 1}`,
-    });
-    activityBus.log("notion-sync:start", `Enqueued next batch (${batchIndex + 2})`, {
-      jobId: job.id,
-      nextBatch: batchIndex + 1,
-    });
-  }
 }
 
 async function runSkillforge(job: GraphMemoryJob): Promise<void> {
@@ -2006,7 +2006,7 @@ function rotatePipelineLogs(maxAgeDays: number = 30): void {
 }
 
 function pruneSessionDirectories(maxAgeDays: number = 14): void {
-  const sessionsDir = CONFIG.paths.sessions;
+  const sessionsDir = CONFIG.paths.sessionTraces;
   if (!fs.existsSync(sessionsDir)) return;
 
   const maxAgeMs = maxAgeDays * 24 * 60 * 60 * 1000;
@@ -2102,7 +2102,8 @@ export async function runDaemon({ once = false }: { once?: boolean } = {}): Prom
         cleanupOrphanSnapshots();
         rotatePipelineLogs();
         pruneSessionDirectories();
-        requeueStaleRunningJobs(5 * 60_000);
+        requeueOrphanedRunningJobs(inFlight, 60_000);
+        requeueStaleRunningJobs(30 * 60_000);
       } catch (err: any) {
         activityBus.log("system:error", `Tick housekeeping error: ${err.message}`);
       }
@@ -2130,7 +2131,7 @@ export async function runDaemon({ once = false }: { once?: boolean } = {}): Prom
       });
 
       const activeProjectChains = getInFlightProjectChains(inFlight);
-      const globalChainRunning = hasActiveGlobalChainJob();
+      const globalChainRunning = hasRunningGlobalChain(inFlight);
 
       while (inFlight.size < concurrency) {
         const job = claimNextProjectAwareJob(activeProjectChains, globalChainRunning);
@@ -2225,6 +2226,36 @@ function canClaimJob(
   }
 
   return true;
+}
+
+function hasRunningGlobalChain(inFlight: Map<string, Promise<void>>): boolean {
+  if (Array.from(inFlight.keys()).some((jobId) => {
+    const runningJob = listJobs("running").find((job) => job.id === jobId);
+    return runningJob ? GLOBAL_CHAIN_TYPES.has(runningJob.type) : false;
+  })) {
+    return true;
+  }
+
+  return listJobs("running").some((job) => GLOBAL_CHAIN_TYPES.has(job.type));
+}
+
+function requeueOrphanedRunningJobs(inFlight: Map<string, Promise<void>>, maxAgeMs: number): number {
+  const now = Date.now();
+  let count = 0;
+
+  for (const job of listJobs("running")) {
+    if (inFlight.has(job.id)) continue;
+    const startedAt = job.startedAt ? Date.parse(job.startedAt) : Date.parse(job.updatedAt);
+    if (Number.isNaN(startedAt) || now - startedAt < maxAgeMs) continue;
+    requeueRunningJob(job, "Requeued orphaned running job not owned by current daemon");
+    count += 1;
+  }
+
+  if (count > 0) {
+    activityBus.log("system:info", `Requeued ${count} orphaned running job(s)`);
+  }
+
+  return count;
 }
 
 function jobFilePath(job: Pick<GraphMemoryJob, "id">, state: GraphMemoryJobState): string {

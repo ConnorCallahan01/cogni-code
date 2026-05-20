@@ -42,7 +42,7 @@ async function loadCore() {
   const scoring = await import(path.join(distDir, "scoring.js"));
   const soma = await import(path.join(distDir, "soma.js"));
   const manifest = await import(path.join(distDir, "pipeline", "skillforge-manifest.js"));
-  const sessionStartV3 = await import(path.join(distDir, "session-start-v3.js"));
+  const sessionStartV3 = await import(path.join(distDir, "session-start-context.js"));
   _handleGraphMemory = tools.handleGraphMemory;
   _initializeGraph = index.initializeGraph;
   _CONFIG = config.CONFIG;

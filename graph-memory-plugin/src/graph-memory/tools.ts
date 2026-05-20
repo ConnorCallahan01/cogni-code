@@ -13,7 +13,7 @@ import { applyDeltas } from "./pipeline/mechanical-apply.js";
 import { buildLibrarianInput } from "./pipeline/librarian.js";
 import { buildDreamerInput } from "./pipeline/dreamer.js";
 import { fullRegenerateMAP, rebuildIndex, rebuildArchiveIndex, regenerateAllContextFiles, regenerateCoreContextFiles, validateEdgeType } from "./pipeline/graph-ops.js";
-import { addToIndex as addToV3Index, addEntryToIndex, getStats, getAntiPatterns } from "./pipeline/graph-index-v3.js";
+import { addToIndex as addToGraphIndex, addEntryToIndex, getStats, getAntiPatterns } from "./pipeline/graph-index.js";
 import { bootstrapProjectDoc, detectDocDrift, resolveDocPath } from "./pipeline/bootstrap.js";
 import { runDecay } from "./pipeline/decay.js";
 import { updateManifest } from "./manifest.js";
@@ -305,7 +305,7 @@ function updateIndexEntry(nodePath: string, fm: any) {
     indexCache = null;
 
     try {
-      const v3Entry = {
+      const graphEntry = {
         path: nodePath,
         gist: entry.gist,
         tags: entry.tags,
@@ -323,8 +323,8 @@ function updateIndexEntry(nodePath: string, fm: any) {
         recall_action_count: entry.recall_action_count,
         soma_intensity: entry.soma_intensity,
       };
-      addEntryToIndex(v3Entry);
-    } catch { /* non-critical v3 sync */ }
+      addEntryToIndex(graphEntry);
+    } catch { /* non-critical graph index sync */ }
   } catch { /* non-critical */ }
 }
 
@@ -1029,7 +1029,7 @@ function runBootstrapAction(args: { project?: string; harness?: string; cwd?: st
   };
 }
 
-function getV3Status(): Record<string, any> {
+function getGraphIndexStatus(): Record<string, any> {
   try {
     const stats = getStats();
     const antiPatterns = getAntiPatterns();
@@ -1118,7 +1118,7 @@ function getStatus() {
     consolidationPending,
     runtime,
     warnings,
-    v3: getV3Status(),
+    graphIndex: getGraphIndexStatus(),
   };
 
   return { content: [{ type: "text" as const, text: JSON.stringify(status, null, 2) }] };

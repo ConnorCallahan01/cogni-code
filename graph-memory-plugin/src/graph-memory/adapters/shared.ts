@@ -1,6 +1,6 @@
 import { CONFIG } from "../config.js";
 import { detectProject, ProjectInfo, writeActiveProject, cleanActiveProjects, removeActiveProject, readActiveProject } from "../project.js";
-import { hasV3Data, buildV3Context } from "../session-start-v3.js";
+import { hasV3Data, buildV3Context } from "../session-start-context.js";
 import { isDirty, markDirty, clearDirty } from "../dirty-state.js";
 import { writeSessionContextState, clearSessionContextState } from "../context-refresh.js";
 import { ensureProjectWorkingFile } from "../project-working.js";
@@ -9,10 +9,65 @@ import { activityBus } from "../events.js";
 import fs from "fs";
 import path from "path";
 
+function buildProjectMAPShared(projectName: string, budget: number): string | null {
+  const indexPath = CONFIG.paths.index;
+  if (!fs.existsSync(indexPath)) return null;
+
+  let index: any[];
+  try {
+    index = JSON.parse(fs.readFileSync(indexPath, "utf-8"));
+  } catch { return null; }
+
+  const categories = new Map<string, Array<{ path: string; line: string; confidence: number; projectRelevant: boolean }>>();
+
+  for (const entry of index) {
+    if (!entry.gist) continue;
+    const cat = (entry.path || "").split("/")[0] || "uncategorized";
+    const isProjectNode = !entry.project || entry.project === projectName;
+    if (!categories.has(cat)) categories.set(cat, []);
+    categories.get(cat)!.push({
+      path: entry.path,
+      line: `- **${entry.path}**${entry.pinned ? " [pinned]" : ""} — ${entry.gist}`,
+      confidence: entry.confidence || 0.5,
+      projectRelevant: isProjectNode,
+    });
+  }
+
+  const output: string[] = [];
+  const sortedCats = [...categories.entries()].sort(([a], [b]) => a.localeCompare(b));
+  let tokensUsed = 0;
+
+  for (const [cat, entries] of sortedCats) {
+    const projectEntries = entries.filter(e => e.projectRelevant);
+    const otherEntries = entries.filter(e => !e.projectRelevant);
+
+    const selected = [
+      ...projectEntries.sort((a, b) => b.confidence - a.confidence).slice(0, 8),
+      ...otherEntries.sort((a, b) => b.confidence - a.confidence).slice(0, 2),
+    ];
+
+    if (selected.length === 0) continue;
+
+    const catBlock: string[] = [`## ${cat}`, ""];
+    for (const e of selected) catBlock.push(e.line);
+    const skipped = entries.length - selected.length;
+    if (skipped > 0) catBlock.push(`  ... and ${skipped} more (use recall to explore)`);
+    catBlock.push("");
+
+    const catTokens = Math.ceil(catBlock.join("\n").length / 4);
+    if (tokensUsed + catTokens > budget) break;
+
+    output.push(...catBlock);
+    tokensUsed += catTokens;
+  }
+
+  return output.join("\n");
+}
+
 export interface SessionStartContext {
   project: ProjectInfo;
   sessionId: string;
-  v3Used: boolean;
+  mentalModelUsed: boolean;
   tokensUsed: number;
 }
 
@@ -21,21 +76,21 @@ export function buildSessionStartContext(cwd: string, sessionId: string): Sessio
   writeActiveProject(sessionId, { name: project.name, gitRoot: project.gitRoot, cwd });
   cleanActiveProjects();
 
-  let v3Used = false;
+  let mentalModelUsed = false;
   let tokensUsed = 0;
 
   if (hasV3Data()) {
-    const v3 = buildV3Context(project.name);
-    if (!v3.sources.fallback && v3.context) {
-      v3Used = true;
-      tokensUsed = v3.tokensUsed;
+    const ctx = buildV3Context(project.name);
+    if (!ctx.sources.fallback && ctx.context) {
+      mentalModelUsed = true;
+      tokensUsed = ctx.tokensUsed;
       markDirty(sessionId);
       writeSessionContextState(sessionId, project.name);
-      return { project, sessionId, v3Used, tokensUsed };
+      return { project, sessionId, mentalModelUsed, tokensUsed };
     }
   }
 
-  return { project, sessionId, v3Used: false, tokensUsed };
+  return { project, sessionId, mentalModelUsed: false, tokensUsed };
 }
 
 export function buildV2Injection(project: ProjectInfo): string {
@@ -51,7 +106,7 @@ export function buildV2Injection(project: ProjectInfo): string {
 
   try { ensureProjectWorkingFile(project.name); } catch { /* ok */ }
 
-  // v3 whisper layer (compressed guardrails + style + context from compressor)
+  // mental model whisper layer (compressed guardrails + style + context from compressor)
   const whisperPath = path.join(CONFIG.paths.graphRoot, "mind", "whisper.txt");
   try {
     if (fs.existsSync(whisperPath)) {
@@ -83,9 +138,11 @@ export function buildV2Injection(project: ProjectInfo): string {
     }
   }
 
-  if (fs.existsSync(CONFIG.paths.map)) {
-    const content = fs.readFileSync(CONFIG.paths.map, "utf-8").trim();
-    if (content) parts.push("## MAP\n\n" + content);
+  if (fs.existsSync(CONFIG.paths.index)) {
+    try {
+      const projectMAP = buildProjectMAPShared(project.name, 5000);
+      if (projectMAP) parts.push("## MAP\n\n" + projectMAP);
+    } catch { /* skip */ }
   }
 
   return parts.join("\n\n");

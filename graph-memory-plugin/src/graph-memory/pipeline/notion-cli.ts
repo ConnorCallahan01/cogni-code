@@ -15,6 +15,8 @@ export interface NotionCreatePageResult {
 export interface NtnCheckResult {
   installed: boolean;
   authenticated: boolean;
+  workspaceSelected?: boolean;
+  error?: string;
 }
 
 const NTN_TIMEOUT = 30_000;
@@ -103,6 +105,26 @@ export function checkNtn(): NtnCheckResult {
   if (!installed) return { installed: false, authenticated: false };
   const authenticated = checkNtnAuth();
   return { installed, authenticated };
+}
+
+export function checkNtnReady(): NtnCheckResult {
+  const installed = checkNtnInstalled();
+  if (!installed) {
+    return { installed: false, authenticated: false, workspaceSelected: false, error: "ntn is not installed" };
+  }
+
+  try {
+    execNtn(["api", "v1/users/me", "-X", "GET"]);
+    return { installed: true, authenticated: true, workspaceSelected: true };
+  } catch (err: any) {
+    const error = err?.message || String(err);
+    return {
+      installed: true,
+      authenticated: !/not authenticated|login/i.test(error),
+      workspaceSelected: !/no workspace selected|workspace/i.test(error),
+      error,
+    };
+  }
 }
 
 export function createPage(

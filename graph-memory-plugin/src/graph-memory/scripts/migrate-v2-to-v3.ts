@@ -27,7 +27,7 @@ import { writeWhisper, enforceWhisperCap, estimateTokens } from "../mind/whisper
 import { GlobalModel, GlobalModelFile } from "../mind/types.js";
 import { ensureLens, writeModel as writeProjectModel, writeWhisper as writeProjectWhisper, readModel as readProjectModel, listActiveLenses } from "../lenses/index.js";
 import { ProjectModel, ProjectModelFile } from "../lenses/types.js";
-import { rebuildV3Index } from "../pipeline/graph-index-v3.js";
+import { rebuildV3Index as rebuildGraphIndex } from "../pipeline/graph-index.js";
 import { repairYamlFrontmatter, tryParseWithRepair } from "../pipeline/yaml-repair.js";
 
 interface MigratedNode {
@@ -291,8 +291,8 @@ async function main() {
   }
 
   const nodesDir = CONFIG.paths.nodes;
-  const mindDir = CONFIG.paths.v3Mind;
-  const lensesDir = CONFIG.paths.v3Lenses;
+  const mindDir = CONFIG.paths.mind;
+  const lensesDir = CONFIG.paths.lenses;
 
   if (!fs.existsSync(nodesDir)) {
     console.error(`No v2 nodes directory found at ${nodesDir}`);
@@ -380,7 +380,7 @@ async function main() {
   stats.antiPatterns = antiPatterns.length;
 
   if (apply) {
-    const indexCount = rebuildV3Index();
+    const indexCount = rebuildGraphIndex();
     stats.indexEntries = indexCount;
     console.log(`  Indexed ${indexCount} nodes`);
   } else {
@@ -390,14 +390,14 @@ async function main() {
 
   // Step 6: Create sessions directory
   if (apply) {
-    const sessionsDir = CONFIG.paths.v3Sessions;
+    const sessionsDir = CONFIG.paths.sessions;
     if (!fs.existsSync(sessionsDir)) {
       fs.mkdirSync(sessionsDir, { recursive: true });
       console.log("Created sessions/ directory");
     }
 
     // Create pipeline observations directory
-    const obsDir = CONFIG.paths.v3PipelineObservations;
+    const obsDir = CONFIG.paths.pipelineObservations;
     if (!fs.existsSync(obsDir)) {
       fs.mkdirSync(obsDir, { recursive: true });
       console.log("Created .pipeline/observations/ directory");

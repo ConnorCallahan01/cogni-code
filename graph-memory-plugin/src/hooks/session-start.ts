@@ -16,7 +16,7 @@ import { detectProject, writeActiveProject, cleanActiveProjects } from "../graph
 import { ensureProjectWorkingFile } from "../graph-memory/project-working.js";
 import { walkNodes } from "../graph-memory/utils.js";
 import { getWorkingInjectionPaths } from "../graph-memory/working-files.js";
-import { buildV3Context, hasV3Data } from "../graph-memory/session-start-v3.js";
+import { buildV3Context, hasV3Data } from "../graph-memory/session-start-context.js";
 
 interface PinnedNodePayload {
   path: string;
@@ -235,20 +235,6 @@ async function main() {
     parts.push(`[graph-memory] Active project: ${project.name} (auto-detected)`);
   }
 
-  // v3 whisper layer (compressed guardrails + style + context from compressor)
-  // This goes at the top of the injection, then v2 knowledge follows
-  let whisperPrefix = "";
-  if (fs.existsSync(path.join(graphRoot, "mind", "whisper.txt"))) {
-    try {
-      const whisperContent = fs.readFileSync(path.join(graphRoot, "mind", "whisper.txt"), "utf-8").trim();
-      if (whisperContent) {
-        whisperPrefix = "# Operational Context\n\n" + whisperContent;
-      }
-    } catch { /* fall through */ }
-  }
-
-  // v2 injection: model.json + MAP + WORKING + PINNED + DREAMS
-
   const dirtyCheck = isDirty();
   if (dirtyCheck.dirty) {
     console.error("[graph-memory] Dirty state detected from a previous session. Background daemon should reconcile queued memory work.");
@@ -258,45 +244,52 @@ async function main() {
     ensureProjectWorkingFile(project.name);
   } catch { /* best effort */ }
 
+  const maxSessionTokens = CONFIG.graph.maxSessionStartTokens || 8000;
+  let totalTokens = 0;
+  let whisperPrefix = "";
+
   if (hasV3Data()) {
     try {
       const v3 = buildV3Context(project.name);
       if (!v3.sources.fallback && v3.context) {
-        const v3Parts = project.name !== "global"
-          ? [`[graph-memory] Active project: ${project.name} (auto-detected)`, v3.context]
-          : [v3.context];
-        console.log(v3Parts.join("\n\n---\n\n"));
-        console.error(`[graph-memory] Injection: ${v3.tokensUsed}/${1100} tokens (v3=yes)`);
-        markDirty(sessionId);
-        writeSessionContextState(sessionId, project.name);
-        return;
+        whisperPrefix = v3.context;
+        totalTokens += v3.tokensUsed;
       }
     } catch (err: any) {
-      console.error(`[graph-memory] v3 session context failed, falling back to full context: ${err.message}`);
+      console.error(`[graph-memory] v3 whisper failed, continuing without: ${err.message}`);
     }
   }
 
-  const maxSessionTokens = CONFIG.graph.maxSessionStartTokens || 8000;
-  let totalTokens = 0;
-
-  // 1. Global mental model (replaces PRIORS + SOMA)
-  const modelPath = path.join(graphRoot, "mind", "model.json");
-  if (fs.existsSync(modelPath)) {
-    try {
-      const modelData = JSON.parse(fs.readFileSync(modelPath, "utf-8"));
-      const model = modelData.model || modelData;
-      if (model.cognitiveStyle || model.guardrails?.length) {
-        const modelBlock = renderModelBlock(model);
-        const tokens = Math.ceil(modelBlock.length / 4);
-        if (totalTokens + tokens <= maxSessionTokens) {
-          parts.push(modelBlock);
-          totalTokens += tokens;
+  if (!whisperPrefix) {
+    const modelPath = path.join(graphRoot, "mind", "model.json");
+    if (fs.existsSync(modelPath)) {
+      try {
+        const modelData = JSON.parse(fs.readFileSync(modelPath, "utf-8"));
+        const model = modelData.model || modelData;
+        if (model.cognitiveStyle || model.guardrails?.length) {
+          const modelBlock = renderModelBlock(model);
+          const tokens = Math.ceil(modelBlock.length / 4);
+          if (totalTokens + tokens <= maxSessionTokens) {
+            whisperPrefix = modelBlock;
+            totalTokens += tokens;
+          }
         }
-      }
-    } catch { /* fall through */ }
+      } catch { /* fall through */ }
+    }
   }
 
-  // 2. DREAMS (small, always include if present)
+  // MAP (budget-aware)
+  const mapBudget = Math.min(CONFIG.graph.maxMapInjectionTokens || 5000, maxSessionTokens - totalTokens);
+  const projectMAP = buildProjectMAP(project.name, mapBudget);
+  if (projectMAP) {
+    const tokens = Math.ceil(projectMAP.length / 4);
+    if (totalTokens + tokens <= maxSessionTokens) {
+      parts.push(projectMAP);
+      totalTokens += tokens;
+    }
+  }
+
+  // DREAMS
   if (fs.existsSync(CONFIG.paths.dreamsContext)) {
     const dreams = fs.readFileSync(CONFIG.paths.dreamsContext, "utf-8").trim();
     if (dreams && !dreams.includes("No pending dreams")) {
@@ -308,18 +301,7 @@ async function main() {
     }
   }
 
-  // 3. Project MAP (budget-aware)
-  const mapBudget = Math.min(CONFIG.graph.maxMapInjectionTokens || 5000, maxSessionTokens - totalTokens);
-  const projectMAP = buildProjectMAP(project.name, mapBudget);
-  if (projectMAP) {
-    const tokens = Math.ceil(projectMAP.length / 4);
-    if (totalTokens + tokens <= maxSessionTokens) {
-      parts.push(projectMAP);
-      totalTokens += tokens;
-    }
-  }
-
-  // 4. Project WORKING (lean handoff)
+  // Project WORKING (lean handoff)
   for (const filePath of getWorkingInjectionPaths(project.name)) {
     if (fs.existsSync(filePath)) {
       const content = fs.readFileSync(filePath, "utf-8").trim();
@@ -333,7 +315,7 @@ async function main() {
     }
   }
 
-  // 5. Pinned nodes (project-scoped only)
+  // Pinned nodes (project-scoped only)
   try {
     const pinnedEntries = loadPinnedNodesForProject(project.name);
     if (pinnedEntries.length > 0) {

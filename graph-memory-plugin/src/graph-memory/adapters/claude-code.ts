@@ -1,6 +1,6 @@
 import { HarnessAdapter, HarnessType } from "./types.js";
 import { buildSessionStartContext, buildV2Injection, flushAndQueueJobs, cleanupSession } from "./shared.js";
-import { hasV3Data, buildV3Context } from "../session-start-v3.js";
+import { hasV3Data, buildV3Context } from "../session-start-context.js";
 import { markDirty } from "../dirty-state.js";
 import { writeSessionContextState } from "../context-refresh.js";
 
@@ -10,7 +10,7 @@ export class ClaudeCodeAdapter implements HarnessAdapter {
   async onSessionStart(cwd: string, sessionId: string): Promise<string> {
     const ctx = buildSessionStartContext(cwd, sessionId);
 
-    if (ctx.v3Used) {
+    if (ctx.mentalModelUsed) {
       const v3 = buildV3Context(ctx.project.name);
       return v3.context || "";
     }

@@ -345,10 +345,20 @@ export function requeueStaleRunningJobs(maxAgeMs: number): number {
     const startedAt = job.startedAt ? Date.parse(job.startedAt) : Date.parse(job.updatedAt);
     if (Number.isNaN(startedAt)) continue;
     if (now - startedAt < maxAgeMs) continue;
+    if (job.workerPid && isProcessAlive(job.workerPid)) continue;
 
     requeueRunningJob(job, "Requeued stale running job after daemon restart");
     count += 1;
   }
 
   return count;
+}
+
+function isProcessAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
 }

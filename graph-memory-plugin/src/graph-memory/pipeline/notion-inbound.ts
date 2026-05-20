@@ -3,6 +3,7 @@ import path from "path";
 import crypto from "crypto";
 import matter from "gray-matter";
 import { CONFIG } from "../config.js";
+import { sanitizeProjectSlug } from "../working-files.js";
 import { activityBus } from "../events.js";
 import { computeContentHash, NotionSyncState, readNotionSyncState, writeNotionSyncState } from "./notion-sync.js";
 import { getPage, getComments, searchDatabaseRows } from "./notion-cli.js";
@@ -330,36 +331,119 @@ export function applyInboundDeltas(deltas: InboundDelta[]): { applied: number; e
 
   for (const delta of deltas) {
     try {
-      const project = resolveProjectFromSourceNodes(delta.sourceNodes);
-      const observationText = buildInboundObservationText(delta);
-
-      if (project && project !== "global") {
-        ensureLens(project);
-        appendProjectObservation(project, {
-          type: "notion_inbound",
-          observation: observationText,
-          evidence: [delta.notionKey],
-          confidence: 0.7,
-          sessionId: "notion-inbound",
-        });
-      } else {
-        appendObservation({
-          layer: "global",
-          type: "notion_inbound",
-          observation: observationText,
-          evidence: [delta.notionKey],
-          confidence: 0.7,
-          sessionId: "notion-inbound",
-        });
-      }
-
+      applyInboundDelta(delta);
       applied++;
     } catch (err: any) {
-      errors.push(`Failed to write observation for ${delta.notionKey}: ${err.message}`);
+      errors.push(`Failed to apply inbound delta for ${delta.notionKey}: ${err.message}`);
     }
   }
 
   return { applied, errors };
+}
+
+function applyInboundDelta(delta: InboundDelta): void {
+  switch (delta.action) {
+    case "create_observation":
+    case "log_conflict":
+      writeInboundObservation(delta);
+      return;
+    case "lower_confidence":
+      lowerNodeConfidence(delta);
+      return;
+    case "update_model":
+      updateModelField(delta);
+      return;
+    case "update_node":
+      updateNodeFromInbound(delta);
+      return;
+    default:
+      writeInboundObservation(delta);
+  }
+}
+
+function writeInboundObservation(delta: InboundDelta): void {
+  const project = resolveProjectFromSourceNodes(delta.sourceNodes);
+  const observationText = buildInboundObservationText(delta);
+
+  if (project && project !== "global") {
+    ensureLens(project);
+    appendProjectObservation(project, {
+      type: "notion_inbound",
+      observation: observationText,
+      evidence: [delta.notionKey],
+      confidence: 0.7,
+      sessionId: "notion-inbound",
+    });
+  } else {
+    const entry = appendObservation({
+      layer: "global",
+      type: "notion_inbound",
+      observation: observationText,
+      evidence: [delta.notionKey],
+      confidence: 0.7,
+      sessionId: "notion-inbound",
+    }) as any;
+
+    // Preserve the legacy inbound marker expected by existing consumers.
+    entry.source = "notion-inbound";
+    entry.tags = [...new Set([...(entry.tags || []), "source:notion-inbound"])];
+    const obsPath = path.join(CONFIG.paths.mind, "observations.jsonl");
+    const lines = fs.readFileSync(obsPath, "utf-8").trimEnd().split("\n");
+    lines[lines.length - 1] = JSON.stringify(entry);
+    fs.writeFileSync(obsPath, lines.join("\n") + "\n");
+  }
+}
+
+function lowerNodeConfidence(delta: InboundDelta): void {
+  const target = resolveTargetFile(delta);
+  const raw = fs.readFileSync(target, "utf-8");
+  const parsed = matter(raw);
+  const nextConfidence = Number(delta.payload?.newConfidence);
+  if (!Number.isFinite(nextConfidence)) {
+    throw new Error("newConfidence is required");
+  }
+  parsed.data.confidence = nextConfidence;
+  atomicWriteFile(target, matter.stringify(parsed.content, parsed.data));
+}
+
+function updateModelField(delta: InboundDelta): void {
+  const target = resolveTargetFile(delta);
+  const data = JSON.parse(fs.readFileSync(target, "utf-8"));
+  const field = String(delta.payload?.field || "");
+  if (!field) throw new Error("payload.field is required");
+  setNestedField(data, field, delta.payload?.value);
+  atomicWriteFile(target, JSON.stringify(data, null, 2) + "\n");
+}
+
+function updateNodeFromInbound(delta: InboundDelta): void {
+  const target = resolveTargetFile(delta);
+  const appendText = String(delta.payload?.markdown || delta.observation || "").trim();
+  if (!appendText) return;
+  atomicAppendFile(target, `\n\n${appendText}\n`);
+}
+
+function resolveTargetFile(delta: InboundDelta): string {
+  const target = delta.targetFile || "";
+  if (!target) throw new Error("target file not found");
+  if (!fs.existsSync(target)) throw new Error(`target file not found: ${target}`);
+  if (isArchivedNode(fs.readFileSync(target, "utf-8"))) {
+    throw new Error(`target file is archived: ${target}`);
+  }
+  return target;
+}
+
+function setNestedField(target: any, fieldPath: string, value: unknown): void {
+  const parts = fieldPath.split(".").filter(Boolean);
+  if (parts.length === 0) throw new Error("payload.field is required");
+
+  let cursor = target;
+  for (const part of parts.slice(0, -1)) {
+    if (!cursor[part] || typeof cursor[part] !== "object") {
+      cursor[part] = {};
+    }
+    cursor = cursor[part];
+  }
+  cursor[parts[parts.length - 1]] = value;
 }
 
 function resolveProjectFromSourceNodes(sourceNodes: string[]): string | null {
@@ -456,17 +540,17 @@ function readDiskContent(state: NotionSyncState, notionKey: string, sourceNodes:
 
 function resolveSourceFilePath(sourcePath: string): string | null {
   if (sourcePath === "mind/model") {
-    return path.join(CONFIG.paths.v3Mind, "model.json");
+    return path.join(CONFIG.paths.mind, "model.json");
   }
   if (sourcePath.startsWith("lenses/")) {
     const parts = sourcePath.split("/");
     if (parts.length >= 2) {
-      return path.join(CONFIG.paths.v3Lenses, parts[1], "model.json");
+      return path.join(CONFIG.paths.lenses, sanitizeProjectSlug(parts[1]), "model.json");
     }
   }
   if (sourcePath.startsWith("sessions/")) {
     const project = sourcePath.split("/")[1];
-    return path.join(CONFIG.paths.v3Sessions, `${project}.jsonl`);
+    return path.join(CONFIG.paths.sessions, `${sanitizeProjectSlug(project)}.jsonl`);
   }
   if (sourcePath.startsWith("dreams/")) {
     return CONFIG.paths.dreams;
@@ -502,7 +586,7 @@ function extractTaskStatusFromContent(content: string): string | null {
 function getObservationDir(notionKey: string): string {
   if (notionKey.startsWith("projects/")) {
     const project = notionKey.split("/")[1];
-    return path.join(CONFIG.paths.v3Lenses, project);
+    return path.join(CONFIG.paths.lenses, sanitizeProjectSlug(project));
   }
-  return CONFIG.paths.v3Mind;
+  return CONFIG.paths.mind;
 }

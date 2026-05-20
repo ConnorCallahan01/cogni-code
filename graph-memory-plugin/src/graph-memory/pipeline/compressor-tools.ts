@@ -23,7 +23,7 @@ import { readWhisper as readProjectWhisper, writeWhisper as writeProjectWhisper 
 import { markObservationsAbsorbed, pruneObservations, observationFileSize } from "../mind/observations.js";
 import { markObservationsAbsorbed as markProjectObservationsAbsorbed, pruneObservations as pruneProjectObservations } from "../lenses/manager.js";
 import { pruneSessionLogs } from "../sessions/manager.js";
-import { removeFromIndex as removeFromV3Index } from "./graph-index-v3.js";
+import { removeFromIndex } from "./graph-index.js";
 
 export interface CompressorToolResult {
   modelsUpdated: string[];
@@ -99,7 +99,7 @@ export function processCompressorOutputs(): CompressorToolResult {
     errors: [],
   };
 
-  const obsDir = CONFIG.paths.v3PipelineObservations;
+  const obsDir = CONFIG.paths.pipelineObservations;
   if (!fs.existsSync(obsDir)) return result;
 
   const files = fs.readdirSync(obsDir)
@@ -226,12 +226,12 @@ function processArchiveObservations(call: ArchiveObservationsCall): number {
 function processArchiveGraphNodes(call: ArchiveGraphNodesCall): number {
   if (!call.paths || call.paths.length === 0) return 0;
 
-  const archiveDir = CONFIG.paths.v3GraphArchive;
+  const archiveDir = CONFIG.paths.archive;
   if (!fs.existsSync(archiveDir)) fs.mkdirSync(archiveDir, { recursive: true });
 
   let archived = 0;
   for (const nodePath of call.paths) {
-    const srcDir = path.join(CONFIG.paths.v3Graph);
+    const srcDir = path.join(CONFIG.paths.nodes);
     const srcFile = findNodeFile(srcDir, nodePath);
     if (!srcFile) continue;
 
@@ -254,7 +254,7 @@ function processArchiveGraphNodes(call: ArchiveGraphNodesCall): number {
 
       fs.writeFileSync(destFile, updated);
       fs.unlinkSync(srcFile);
-      try { removeFromV3Index(nodePath); } catch { /* non-critical */ }
+      try { removeFromIndex(nodePath); } catch { /* non-critical */ }
       archived++;
     } catch (err: any) {
       activityBus.log("system:error", "Failed to archive node " + nodePath + ": " + err.message);
@@ -297,7 +297,7 @@ function processPruneSessionLogs(call: PruneSessionLogsCall): number {
     return pruneSessionLogs(call.project, days);
   }
 
-  const sessionsDir = CONFIG.paths.v3Sessions;
+  const sessionsDir = CONFIG.paths.sessions;
   if (!fs.existsSync(sessionsDir)) return 0;
 
   let total = 0;
@@ -309,7 +309,7 @@ function processPruneSessionLogs(call: PruneSessionLogsCall): number {
 }
 
 function processFlagDeepAudit(call: FlagDeepAuditCall): void {
-  const flagPath = path.join(CONFIG.paths.v3Graph, ".deep-audit-flag");
+  const flagPath = path.join(CONFIG.paths.nodes, ".deep-audit-flag");
   fs.writeFileSync(flagPath, JSON.stringify({
     reason: call.reason,
     flaggedAt: new Date().toISOString(),

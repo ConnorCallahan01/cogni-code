@@ -81,9 +81,7 @@ export interface NotionSyncJobPayload {
   reason: string;
   date: string;
   forceFullSync?: boolean;
-  batches?: string[];
   skipInbound?: boolean;
-  batchIndex?: number;
 }
 
 export type GraphMemoryJobPayload =

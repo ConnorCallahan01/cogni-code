@@ -1,6 +1,6 @@
 import { HarnessAdapter, HarnessType } from "./types.js";
 import { buildSessionStartContext, flushAndQueueJobs, cleanupSession } from "./shared.js";
-import { hasV3Data, buildV3Context } from "../session-start-v3.js";
+import { hasV3Data, buildV3Context } from "../session-start-context.js";
 import { buildV2Injection } from "./shared.js";
 
 export class PiAdapter implements HarnessAdapter {
@@ -10,7 +10,7 @@ export class PiAdapter implements HarnessAdapter {
   async onSessionStart(cwd: string, sessionId: string): Promise<string> {
     const ctx = buildSessionStartContext(cwd, sessionId);
 
-    if (ctx.v3Used) {
+    if (ctx.mentalModelUsed) {
       const v3 = buildV3Context(ctx.project.name);
       const context = v3.context || "";
       this.pendingContext = context;
