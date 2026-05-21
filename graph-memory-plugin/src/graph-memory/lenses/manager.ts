@@ -93,6 +93,20 @@ export function readObservations(project: string, since?: string): ProjectObserv
   return all.filter((o) => o.timestamp > since);
 }
 
+export function countPendingObservations(project: string): number {
+  const filePath = observationsPath(project);
+  if (!fs.existsSync(filePath)) return 0;
+
+  const lines = fs.readFileSync(filePath, "utf-8").trim().split("\n").filter(Boolean);
+  let count = 0;
+  for (const line of lines) {
+    try {
+      if (!JSON.parse(line).absorbed) count++;
+    } catch { /* skip malformed */ }
+  }
+  return count;
+}
+
 export function markObservationsAbsorbed(project: string, ids: string[]): void {
   const filePath = observationsPath(project);
   if (!fs.existsSync(filePath)) return;
@@ -100,7 +114,8 @@ export function markObservationsAbsorbed(project: string, ids: string[]): void {
   const idSet = new Set(ids);
   const lines = fs.readFileSync(filePath, "utf-8").trim().split("\n").filter(Boolean);
   const updated = lines.map((line) => {
-    const obs: ProjectObservation = JSON.parse(line);
+    let obs: ProjectObservation;
+    try { obs = JSON.parse(line); } catch { return line; }
     if (idSet.has(obs.id)) {
       obs.absorbed = true;
     }
@@ -120,7 +135,8 @@ export function pruneObservations(project: string, olderThanDays: number): numbe
   let pruned = 0;
 
   for (const line of lines) {
-    const obs: ProjectObservation = JSON.parse(line);
+    let obs: ProjectObservation;
+    try { obs = JSON.parse(line); } catch { kept.push(line); continue; }
     if (obs.absorbed && obs.timestamp < cutoff) {
       pruned++;
     } else {

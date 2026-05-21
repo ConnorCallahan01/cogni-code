@@ -7,7 +7,7 @@ import { activityBus } from "../events.js";
 import { generatePreflightReport } from "./preflight.js";
 import { claimNextJob, completeRunningJob, countJobs, enqueueJob, ensureJobDirectories, failRunningJob, hasActiveJob, hasActiveJobForProject, hasActiveProjectChainJob, getActiveProjectChainProjects, countDeltasForProject, listJobs, requeueRunningJob, requeueStaleRunningJobs, updateRunningJob, PROJECT_CHAIN_TYPES, GLOBAL_CHAIN_TYPES, PRIORITY } from "./job-queue.js";
 import { GraphMemoryJob, GraphMemoryJobState } from "./job-schema.js";
-import { runPipelineWorker } from "./worker-runner.js";
+import { runPipelineWorker, WorkerRunOptions } from "./worker-runner.js";
 import { loadRuntimeConfig } from "../runtime.js";
 import { regenerateCoreContextFiles, regenerateDreamContext } from "./graph-ops.js";
 import { runDecay } from "./decay.js";
@@ -18,10 +18,10 @@ import { getDailyBriefPaths } from "../briefs.js";
 import { loadExternalInputsConfig, readRecentClassifiedInputs } from "../external-inputs.js";
 import { getProjectWorkingPath, getProjectWorkingStatePath, getProjectWorkingUpdatePath, getFileInteractionPath, getProjectAuditDir, getProjectPreflightPath, getProjectAuditReportPath, getProjectAuditBriefPath, getProjectDreamsDir, getProjectDreamSummaryPath, getProjectLockPath, getGlobalLockPath, ensureAuditDirectories, ensureDreamDirectories, ensureLockDirectories, sanitizeProjectSlug } from "../working-files.js";
 import { processObserverOutputs } from "./observer-tools.js";
-import { processCompressorOutputs } from "./compressor-tools.js";
+import { processCompressorOutputs, runAutoPrune } from "./compressor-tools.js";
 import { rebuildV3Index as rebuildGraphIndex } from "./graph-index.js";
 import { bootstrapProjectDoc, detectDocDrift } from "./bootstrap.js";
-import { readNotionSyncState, writeNotionSyncState, buildNotionDiff, writeDiffReport, readSyncPlan, executeNotionSync } from "./notion-sync.js";
+import { readNotionSyncState, writeNotionSyncState, buildNotionDiff, writeDiffReport, readSyncPlan, executeNotionSync, buildWorkspaceManifest, writeWorkspaceManifest, mergeStewardPlans, readStewardPlan, StewardPlan } from "./notion-sync.js";
 import { checkNtnReady } from "./notion-cli.js";
 import { detectInboundEdits, writeInboundInput, readInboundPlan, applyInboundDeltas, writeInboundDeltas, writeMergeInput, readMergeResult, detectNewComments, buildCommentDetections, detectNewNotionTasks, InboundEdit } from "./notion-inbound.js";
 import { startWebhookServer } from "./notion-webhook.js";
@@ -32,6 +32,19 @@ const AGENTS_DIR = path.resolve(__dirname, "../../../agents");
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function resolveWorkerModel(): string | undefined {
+  try {
+    const runtime = loadRuntimeConfig();
+    return runtime.docker.workerModel || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+async function runWorker(opts: WorkerRunOptions): Promise<{ exitCode: number; logFile: string; pid: number | undefined }> {
+  return runPipelineWorker({ ...opts, model: opts.model || resolveWorkerModel() });
 }
 
 function acquireDaemonLock(): void {
@@ -842,7 +855,7 @@ async function runScribe(job: GraphMemoryJob): Promise<void> {
     : "";
   const prompt = `Read the scribe instructions at ${scribePromptPath}, then follow them. Snapshot file: ${snapshotPathForWorker}, session ID: ${payload.sessionId}, graph root: ${CONFIG.paths.graphRoot}.${projectCtx}${assistantTraceCtx}${toolTraceCtx} Read the snapshot, read MAP.md, then read only the 2-5 existing nodes most relevant to the conversation for context. Extract deltas, write to .deltas/ directory, then delete the snapshot file when complete.`;
 
-  const result = await runPipelineWorker({
+  const result = await runWorker({
     name: `scribe-${job.id}`,
     prompt,
     graphRoot: CONFIG.paths.graphRoot,
@@ -936,7 +949,7 @@ async function runObserver(job: GraphMemoryJob): Promise<void> {
     return;
   }
 
-  const result = await runPipelineWorker({
+  const result = await runWorker({
     name: "observer-" + job.id,
     prompt,
     graphRoot: CONFIG.paths.graphRoot,
@@ -1004,7 +1017,7 @@ async function runCompressor(job: GraphMemoryJob): Promise<void> {
   const obsDir = CONFIG.paths.pipelineObservations;
   if (!fs.existsSync(obsDir)) fs.mkdirSync(obsDir, { recursive: true });
 
-  const result = await runPipelineWorker({
+  const result = await runWorker({
     name: "compressor-" + job.id,
     prompt,
     graphRoot: CONFIG.paths.graphRoot,
@@ -1023,6 +1036,7 @@ async function runCompressor(job: GraphMemoryJob): Promise<void> {
 
   const toolResult = processCompressorOutputs();
 
+  try { runAutoPrune(); } catch { /* non-critical */ }
   try { rebuildGraphIndex(); } catch { /* non-critical */ }
 
   activityBus.log("system:info", "Compressor run complete", {
@@ -1073,7 +1087,7 @@ async function runWorkingUpdate(job: GraphMemoryJob): Promise<void> {
   const prompt = `Read the working updater instructions at ${updaterPathForWorker}, then follow them. Graph root: ${CONFIG.paths.graphRoot}. Project: ${payload.project}. Session ID: ${payload.sessionId}. Delta file: ${deltaPathForWorker}. Project WORKING markdown: ${workingPathForWorker}. Project WORKING state JSON: ${workingStatePathForWorker}.${fileInteractionPathForWorker ? ` File interaction summary: ${fileInteractionPathForWorker}.` : ""} Raw assistant and tool traces are intentionally not provided; do not search for or read trace files. Write the session working update artifact JSON to ${updateOutputPathForWorker}.`;
 
   try {
-    const result = await runPipelineWorker({
+    const result = await runWorker({
       name: `working-update-${job.id}`,
       prompt,
       graphRoot: CONFIG.paths.graphRoot,
@@ -1178,7 +1192,7 @@ async function runAuditor(job: GraphMemoryJob): Promise<void> {
   const auditBriefPathForWorker = toWorkerPath(auditBriefPath);
 
   const prompt = `Read the auditor instructions at ${auditorPath}, then follow them. Graph root: ${CONFIG.paths.graphRoot}.${projectCtx} Read the preflight report at ${preflightReportPath} first — it contains the full node manifest and flagged issues with their file contents included. Write the audit report to ${auditReportPathForWorker} and the audit brief to ${auditBriefPathForWorker}. IMPORTANT: when rebuilding context files, use this absolute path for graph-ops: ${graphOpsPath}`;
-  const result = await runPipelineWorker({
+  const result = await runWorker({
     name: `auditor-${job.id}`,
     prompt,
     graphRoot: CONFIG.paths.graphRoot,
@@ -1235,7 +1249,7 @@ async function runLibrarian(job: GraphMemoryJob): Promise<void> {
   const librarianPath = path.join(AGENTS_DIR, "memory-librarian.md");
   const graphOpsPath = path.resolve(__dirname, "graph-ops.js");
   const prompt = `Read the librarian instructions at ${librarianPath}, then follow them. Graph root: ${CONFIG.paths.graphRoot}.${projectCtx} Read the audit brief at ${auditBriefPathForWorker} and audit report at ${auditReportPathForWorker} first — the auditor has already triaged mechanical fixes and prepared recommendations for you. IMPORTANT: when rebuilding context files, use this absolute path for graph-ops: ${graphOpsPath}`;
-  const result = await runPipelineWorker({
+  const result = await runWorker({
     name: `librarian-${job.id}`,
     prompt,
     graphRoot: CONFIG.paths.graphRoot,
@@ -1280,7 +1294,7 @@ async function runDreamer(job: GraphMemoryJob): Promise<void> {
   const dreamerPath = path.join(AGENTS_DIR, "memory-dreamer.md");
   const graphOpsPath = path.resolve(__dirname, "graph-ops.js");
   const prompt = `Read the dreamer instructions at ${dreamerPath}, then follow them. Graph root: ${CONFIG.paths.graphRoot}.${projectCtx} IMPORTANT: when rebuilding DREAMS.md, use this absolute path for graph-ops: ${graphOpsPath}`;
-  const result = await runPipelineWorker({
+  const result = await runWorker({
     name: `dreamer-${job.id}`,
     prompt,
     graphRoot: CONFIG.paths.graphRoot,
@@ -1316,7 +1330,7 @@ async function runMemoryAnalysis(job: GraphMemoryJob): Promise<void> {
 
   const prompt = `Read the analysis instructions at ${analysisPath}, then follow them. Graph root: ${CONFIG.paths.graphRoot}. Brief date: ${payload.briefDate}. Timezone: ${payload.timeZone}. Analysis input JSON: ${analysisInputPathForWorker}. Write the markdown brief to ${markdownPathForWorker} and the JSON brief to ${jsonPathForWorker}. Prefer the curated analysis input over broad filesystem scans.`;
 
-  const result = await runPipelineWorker({
+  const result = await runWorker({
     name: `memory-analysis-${job.id}`,
     prompt,
     graphRoot: CONFIG.paths.graphRoot,
@@ -1390,7 +1404,7 @@ async function runNotionInbound(job: GraphMemoryJob): Promise<void> {
 
     const prompt = `Read the Notion inbound instructions at ${inboundAgentPath}, then follow them. Graph root: ${CONFIG.paths.graphRoot}. Inbound input: ${inputPathForWorker}. Write the inbound plan to ${planPathForWorker}. Date: ${payload.date}.`;
 
-    const result = await runPipelineWorker({
+    const result = await runWorker({
       name: `notion-inbound-${job.id}`,
       prompt,
       graphRoot: CONFIG.paths.graphRoot,
@@ -1459,7 +1473,7 @@ async function runNotionMerge(edit: InboundEdit, jobId: string, date: string): P
 
   const prompt = `Read the Notion merge instructions at ${mergeAgentPath}, then follow them. Graph root: ${CONFIG.paths.graphRoot}. Merge input: ${inputPathForWorker}. Write the merge result to ${resultPathForWorker}.`;
 
-  const result = await runPipelineWorker({
+  const result = await runWorker({
     name: `notion-merge-${sanitizedKey}`,
     prompt,
     graphRoot: CONFIG.paths.graphRoot,
@@ -1515,7 +1529,9 @@ async function runNotionSync(job: GraphMemoryJob): Promise<void> {
     return;
   }
 
-  const ntnReady = checkNtnReady();
+  const ntnReady = process.env.NOTION_API_TOKEN
+    ? { installed: true, authenticated: true, workspaceSelected: true }
+    : checkNtnReady();
   if (!ntnReady.installed || !ntnReady.authenticated || !ntnReady.workspaceSelected) {
     const reason = ntnReady.error || "Notion CLI is not ready";
     activityBus.log("notion-sync:error", `Notion sync blocked — ${reason}`, {
@@ -1618,43 +1634,105 @@ async function runNotionSync(job: GraphMemoryJob): Promise<void> {
   const diffReportPath = writeDiffReport(partialDiff);
   const diffReportPathForWorker = toWorkerPath(diffReportPath);
   const statePathForWorker = toWorkerPath(CONFIG.paths.notionSyncState);
-  const planPathForWorker = toWorkerPath(path.join(CONFIG.paths.graphRoot, ".notion-sync-plan.json"));
-  const syncAgentPath = path.join(AGENTS_DIR, "memory-notion-sync.md");
 
-  const prompt = `Read the Notion sync instructions at ${syncAgentPath}, then follow them. Graph root: ${CONFIG.paths.graphRoot}. Diff report: ${diffReportPathForWorker}. Current Notion state: ${statePathForWorker}. Write the sync plan to ${planPathForWorker}. Date: ${payload.date}.`;
-
-  const result = await runPipelineWorker({
-    name: `notion-sync-${job.id}`,
-    prompt,
-    graphRoot: CONFIG.paths.graphRoot,
-    logDir: CONFIG.paths.pipelineLogs,
-    addDirs: [AGENTS_DIR],
-    timeoutMs: 15 * 60_000,
-  });
-
-  job.logFile = result.logFile;
-  job.workerPid = result.pid;
-  updateRunningJob(job);
-
-  if (result.exitCode !== 0) {
-    throw new Error(`Notion sync worker exited with code ${result.exitCode}. See ${result.logFile}`);
+  let manifestPathForWorker = "";
+  try {
+    const manifest = buildWorkspaceManifest(notionState);
+    const manifestPath = writeWorkspaceManifest(manifest);
+    manifestPathForWorker = toWorkerPath(manifestPath);
+    activityBus.log("notion-sync:manifest", `Workspace manifest built: ${Object.keys(manifest.pages).length} pages, ${Object.values(manifest.databases).reduce((s, d) => s + d.rowCount, 0)} database rows`, {
+      jobId: job.id,
+      pageCount: Object.keys(manifest.pages).length,
+      totalRows: Object.values(manifest.databases).reduce((s, d) => s + d.rowCount, 0),
+    });
+  } catch (err: any) {
+    activityBus.log("notion-sync:warn", `Manifest build failed (agent will work without it): ${err.message}`, {
+      jobId: job.id,
+    });
   }
 
-  const plan = readSyncPlan();
-  if (!plan) {
-    activityBus.log("notion-sync:error", "Notion sync worker completed without producing a sync plan");
+  const stewardDefs = [
+    { name: "projects", agentFile: "notion-project-steward.md", planFile: ".notion-plan-projects.json" },
+    { name: "knowledge", agentFile: "notion-knowledge-steward.md", planFile: ".notion-plan-knowledge.json" },
+    { name: "workspace", agentFile: "notion-workspace-steward.md", planFile: ".notion-plan-workspace.json" },
+    { name: "tasks", agentFile: "notion-tasks-steward.md", planFile: ".notion-plan-tasks.json" },
+  ];
+
+  const stewardPlans: StewardPlan[] = [];
+
+  for (const steward of stewardDefs) {
+    const agentPath = path.join(AGENTS_DIR, steward.agentFile);
+    const planOutputPath = path.join(CONFIG.paths.graphRoot, steward.planFile);
+    const planOutputPathForWorker = toWorkerPath(planOutputPath);
+
+    const prompt = `Read the steward instructions at ${agentPath}. Graph root: ${CONFIG.paths.graphRoot}. Diff report: ${diffReportPathForWorker}. Sync state: ${statePathForWorker}. Workspace manifest: ${manifestPathForWorker}. Write your plan to ${planOutputPathForWorker}. Date: ${payload.date}.`;
+
+    activityBus.log("notion-sync:steward", `Running ${steward.name} steward`, { jobId: job.id, steward: steward.name });
+
+    const result = await runWorker({
+      name: `notion-${steward.name}-${job.id}`,
+      prompt,
+      graphRoot: CONFIG.paths.graphRoot,
+      logDir: CONFIG.paths.pipelineLogs,
+      addDirs: [AGENTS_DIR],
+      timeoutMs: 10 * 60_000,
+    });
+
+    job.logFile = result.logFile;
+    job.workerPid = result.pid;
+    updateRunningJob(job);
+
+    if (result.exitCode !== 0) {
+      activityBus.log("notion-sync:warn", `${steward.name} steward exited with code ${result.exitCode}`, {
+        jobId: job.id,
+        steward: steward.name,
+        logFile: result.logFile,
+      });
+      continue;
+    }
+
+    const stewardPlan = readStewardPlan(planOutputPath);
+    if (stewardPlan) {
+      stewardPlans.push(stewardPlan);
+      activityBus.log("notion-sync:steward", `${steward.name} steward produced ${stewardPlan.creates.length} creates, ${stewardPlan.updates.length} updates, ${stewardPlan.archives.length} archives`, {
+        jobId: job.id,
+        steward: steward.name,
+        creates: stewardPlan.creates.length,
+        updates: stewardPlan.updates.length,
+        archives: stewardPlan.archives.length,
+      });
+    } else {
+      activityBus.log("notion-sync:warn", `${steward.name} steward completed without producing a plan`, {
+        jobId: job.id,
+        steward: steward.name,
+      });
+    }
+  }
+
+  if (stewardPlans.length === 0) {
+    activityBus.log("notion-sync:complete", "Notion sync skipped — no steward plans produced", {
+      jobId: job.id,
+      date: payload.date,
+    });
     return;
   }
 
-  const syncResult = executeNotionSync(plan, notionState);
+  const mergedPlan = mergeStewardPlans(stewardPlans, job.id);
+  const mergedPlanPath = path.join(CONFIG.paths.graphRoot, ".notion-sync-plan.json");
+  fs.writeFileSync(mergedPlanPath, JSON.stringify(mergedPlan, null, 2));
+
+  activityBus.log("notion-sync:merge", `Merged ${stewardPlans.length} steward plans: ${mergedPlan.creates.length} creates, ${mergedPlan.updates.length} updates, ${mergedPlan.archives.length} archives`, {
+    jobId: job.id,
+    stewards: stewardPlans.map(p => p.steward),
+  });
+
+  const syncResult = executeNotionSync(mergedPlan, notionState);
 
   if (syncResult.errors.length > 0) {
     activityBus.log("notion-sync:error", `Notion sync had ${syncResult.errors.length} errors`, {
       jobId: job.id,
       errors: syncResult.errors,
     });
-    notionState.lastSyncAt = new Date().toISOString();
-    writeNotionSyncState(notionState);
     throw new Error(`Notion sync failed with ${syncResult.errors.length} error(s)`);
   }
 
@@ -1662,6 +1740,14 @@ async function runNotionSync(job: GraphMemoryJob): Promise<void> {
     if (item.classification === "new" || item.classification === "updated") {
       if (notionState.rows[item.key]) {
         notionState.rows[item.key].lastSourceHash = item.contentHash;
+      }
+      for (const pageState of Object.values(notionState.pages)) {
+        if (pageState.sourceNodes.some((src) => {
+          const normalized = src.replace(/^nodes\//, "").replace(/\.md$/, "");
+          return normalized === item.key || src === item.key;
+        })) {
+          pageState.lastSourceHash = item.contentHash;
+        }
       }
     }
   }
@@ -1688,7 +1774,7 @@ async function runSkillforge(job: GraphMemoryJob): Promise<void> {
 
   const prompt = `Read the skillforge instructions at ${skillforgePath}, then follow them. Graph root: ${CONFIG.paths.graphRoot}. Source node paths: ${sourceNodes.join(", ")}. Candidate type: ${candidateType}. Project: ${payload.project}. Score: ${payload.score}. Content hash: ${contentHash}. Reason: ${payload.reason}.`;
 
-  const result = await runPipelineWorker({
+  const result = await runWorker({
     name: `skillforge-${job.id}`,
     prompt,
     graphRoot: CONFIG.paths.graphRoot,
@@ -1743,7 +1829,7 @@ async function runSkillforgeRefresh(job: GraphMemoryJob): Promise<void> {
 
   const prompt = `Read the skillforge instructions at ${skillforgePath}, then follow them. This is a REFRESH of an existing skill. Graph root: ${CONFIG.paths.graphRoot}. Source node paths: ${sourceNodes.join(", ")}. Candidate type: ${candidateType}. Project: ${payload.project}. Skill name: ${payload.skillName}. Reason: ${payload.reason}. The skill files already exist — overwrite them with updated content. Increment refresh_count in the manifest and update content_hash and last_refreshed_at.`;
 
-  const result = await runPipelineWorker({
+  const result = await runWorker({
     name: `skillforge-refresh-${job.id}`,
     prompt,
     graphRoot: CONFIG.paths.graphRoot,

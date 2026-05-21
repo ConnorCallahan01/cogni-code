@@ -2403,7 +2403,9 @@ app.get('/api/v3/lenses', (_req, res) => {
 
     if (existsSync(obsFile)) {
       const content = readFileSync(obsFile, 'utf-8').trim()
-      observationCount = content.split('\n').filter(Boolean).length
+      observationCount = content.split('\n').filter(Boolean).reduce((count: number, line: string) => {
+        try { return JSON.parse(line).absorbed ? count : count + 1 } catch { return count + 1 }
+      }, 0)
     }
 
     let whisper: string | undefined

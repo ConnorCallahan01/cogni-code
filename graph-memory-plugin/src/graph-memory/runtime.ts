@@ -16,6 +16,7 @@ export type WorkerProvider = "codex" | "claude" | "pi" | "opencode";
 export interface DockerRuntimeConfig {
   enabled: boolean;
   workerProvider: WorkerProvider;
+  workerModel?: string;
   image: string;
   containerName: string;
   authVolume: string;
@@ -280,6 +281,7 @@ export function getRuntimeStatus(): Record<string, unknown> {
     docker: runtime.mode === "docker" ? {
       enabled: runtime.docker.enabled,
       workerProvider: runtime.docker.workerProvider,
+      workerModel: runtime.docker.workerModel || null,
       image: runtime.docker.image,
       containerName: runtime.docker.containerName,
       authVolume: runtime.docker.authVolume,

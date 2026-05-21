@@ -149,7 +149,7 @@ export function createPage(
   if (markdown) {
     const bodyContent = markdown.replace(/^#\s+.*\n?/, "").trim();
     if (bodyContent) {
-      body.children = markdownToBlocks(bodyContent);
+      body.markdown = bodyContent;
     }
   }
 
@@ -270,14 +270,15 @@ export function createDatabaseRow(
   properties: Record<string, any>,
   childMarkdown?: string,
   titleKey?: string,
+  target?: string,
 ): NotionCreatePageResult {
-  const normalized = normalizeProperties(properties, titleKey);
+  const normalized = normalizeProperties(properties, titleKey, target);
   const body: any = {
     parent: { type: "database_id", database_id: databaseId },
     properties: normalized,
   };
   if (childMarkdown) {
-    body.children = markdownToBlocks(childMarkdown);
+    body.markdown = childMarkdown;
   }
   const raw = execNtnWithRetry(["api", "v1/pages", "--data", JSON.stringify(body)], {
     timeout: NTN_LONG_TIMEOUT,
@@ -293,8 +294,9 @@ export function updateDatabaseRow(
   pageId: string,
   properties: Record<string, any>,
   titleKey?: string,
+  target?: string,
 ): void {
-  const normalized = normalizeProperties(properties, titleKey);
+  const normalized = normalizeProperties(properties, titleKey, target);
   execNtnWithRetry(
     ["api", `v1/pages/${pageId}`, "-X", "PATCH", "--data", JSON.stringify({ properties: normalized })],
     { timeout: NTN_TIMEOUT },
@@ -304,6 +306,7 @@ export function updateDatabaseRow(
 function normalizeProperties(
   props: Record<string, any>,
   titleKey?: string,
+  target?: string,
 ): Record<string, any> {
   const normalized: Record<string, any> = {};
   for (const [key, value] of Object.entries(props)) {
@@ -311,17 +314,25 @@ function normalizeProperties(
     if (typeof value === "string") {
       if (key === titleKey) {
         normalized[key] = { title: [{ type: "text", text: { content: value } }] };
-      } else if (["Status", "Project", "Priority"].includes(key)) {
+      } else if (key === "Status" && target === "briefs") {
+        if (value === "") continue;
+        normalized[key] = { status: { name: value } };
+      } else if (["Status", "Priority", "Category"].includes(key)) {
         if (value === "") continue;
         normalized[key] = { select: { name: value } };
-      } else if (key === "Date" || key === "Due" || key === "First Seen") {
+      } else if (["Date", "Due", "First Seen", "Last Active", "Last Updated", "Brief Date"].includes(key)) {
         normalized[key] = { date: { start: value } };
       } else {
         normalized[key] = { rich_text: [{ type: "text", text: { content: value } }] };
       }
     } else if (Array.isArray(value)) {
       if (value.length > 0 && typeof value[0] === "string") {
-        normalized[key] = { rich_text: [{ type: "text", text: { content: value.join(", ") } }] };
+        const multiSelectKeys = ["Today's Projects"];
+        if (multiSelectKeys.includes(key)) {
+          normalized[key] = { multi_select: value.map((v: string) => ({ name: v })) };
+        } else {
+          normalized[key] = { rich_text: [{ type: "text", text: { content: value.join(", ") } }] };
+        }
       } else {
         normalized[key] = value;
       }
@@ -656,6 +667,9 @@ export function buildDatabaseProperties(
       case "checkbox":
         props[col.name] = { checkbox: {} };
         break;
+      case "relation":
+        props[col.name] = { relation: col.config || {} };
+        break;
       default:
         props[col.name] = { rich_text: {} };
     }
@@ -696,6 +710,46 @@ export const BRIEFS_DB_SCHEMA = [
   { name: "Date", type: "title" },
   { name: "One Thing Today", type: "rich_text" },
   { name: "Friction Count", type: "number", config: { format: "number" } },
+];
+
+export const PROJECTS_DB_SCHEMA = [
+  { name: "Name", type: "title" },
+  { name: "Status", type: "select", config: { options: [
+    { name: "Active", color: "green" },
+    { name: "Paused", color: "yellow" },
+    { name: "Completed", color: "gray" },
+  ] } },
+  { name: "Description", type: "rich_text" },
+  { name: "Tech Stack", type: "rich_text" },
+  { name: "Last Active", type: "date" },
+];
+
+export const PATTERNS_DB_SCHEMA = [
+  { name: "Name", type: "title" },
+  { name: "Category", type: "select", config: { options: [
+    { name: "Pattern", color: "blue" },
+    { name: "Anti-Pattern", color: "red" },
+    { name: "Concept", color: "purple" },
+    { name: "Correction", color: "orange" },
+    { name: "Decision", color: "green" },
+    { name: "Preference", color: "yellow" },
+  ] } },
+  { name: "Insight", type: "rich_text" },
+  { name: "Confidence", type: "number", config: { format: "percent" } },
+  { name: "First Seen", type: "date" },
+];
+
+export const DREAMS_DB_SCHEMA = [
+  { name: "Name", type: "title" },
+  { name: "Status", type: "select", config: { options: [
+    { name: "Pending", color: "yellow" },
+    { name: "Integrated", color: "green" },
+    { name: "Archived", color: "gray" },
+  ] } },
+  { name: "Confidence", type: "number", config: { format: "percent" } },
+  { name: "Prediction", type: "rich_text" },
+  { name: "Source Nodes", type: "rich_text" },
+  { name: "Created", type: "date" },
 ];
 
 export interface NotionComment {

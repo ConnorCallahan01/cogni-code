@@ -198,6 +198,11 @@
       "name": "memory-input-refresh",
       "description": "Refresh Gmail and Calendar inputs on the host for the morning brief",
       "path": "./skills/memory-input-refresh"
+    },
+    {
+      "name": "memory-switch-harness",
+      "description": "Switch the worker harness used for pipeline background jobs (codex, claude, pi, opencode) and optionally set the model",
+      "path": "./skills/memory-switch-harness"
     }
   ],
   "hooks": "./hooks/hooks.json"

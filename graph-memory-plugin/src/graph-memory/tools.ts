@@ -19,7 +19,9 @@ import { runDecay } from "./pipeline/decay.js";
 import { updateManifest } from "./manifest.js";
 import { clearConsolidationPending } from "./dirty-state.js";
 import { readActiveProject } from "./project.js";
-import { countJobs, enqueueJob, hasActiveJob } from "./pipeline/job-queue.js";
+import { countJobs, enqueueJob, hasActiveJob, listJobs } from "./pipeline/job-queue.js";
+import { getJobProject } from "./pipeline/job-queue.js";
+import type { GraphMemoryJob } from "./pipeline/job-schema.js";
 import { getRuntimeStatus, GraphMemoryRuntimeMode, saveRuntimeConfig, WorkerProvider } from "./runtime.js";
 import { readNotionSyncState, writeNotionSyncState, createEmptyNotionSyncState, consolidateNotionWorkspace } from "./pipeline/notion-sync.js";
 import { checkNtn, createPage as notionCreatePage, createDatabaseRow, buildDatabaseProperties, TASKS_DB_SCHEMA, DECISIONS_DB_SCHEMA, BRIEFS_DB_SCHEMA } from "./pipeline/notion-cli.js";
@@ -71,6 +73,8 @@ export async function handleGraphMemory(args: {
   authPathInContainer?: string;
   memoryLimit?: string;
   cpuLimit?: string;
+  workerProvider?: string;
+  workerModel?: string;
 }): Promise<{ content: Array<{ type: "text"; text: string }>; isError?: boolean }> {
   const { action } = args;
 
@@ -962,6 +966,7 @@ function initializeGraphAction(graphRoot?: string) {
 function configureRuntime(args: {
   runtimeMode?: string;
   workerProvider?: string;
+  workerModel?: string;
   containerName?: string;
   imageName?: string;
   authVolume?: string;
@@ -983,7 +988,8 @@ function configureRuntime(args: {
     mode: runtimeMode,
     docker: {
       enabled: runtimeMode === "docker",
-      workerProvider: (args.workerProvider as WorkerProvider) || "codex",
+      ...(args.workerProvider ? { workerProvider: args.workerProvider as WorkerProvider } : {}),
+      ...(args.workerModel ? { workerModel: args.workerModel } : {}),
       ...(args.containerName ? { containerName: args.containerName } : {}),
       ...(args.imageName ? { image: args.imageName } : {}),
       ...(args.authVolume ? { authVolume: args.authVolume } : {}),
@@ -1048,6 +1054,18 @@ function getGraphIndexStatus(): Record<string, any> {
   }
 }
 
+function formatDuration(ms: number): string {
+  if (ms < 1000) return `${ms}ms`;
+  const s = Math.floor(ms / 1000);
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  const rs = s % 60;
+  if (m < 60) return `${m}m ${rs}s`;
+  const h = Math.floor(m / 60);
+  const rm = m % 60;
+  return `${h}h ${rm}m`;
+}
+
 function getStatus() {
   const initialized = isGraphInitialized();
   const mapExists = fs.existsSync(CONFIG.paths.map);
@@ -1102,6 +1120,23 @@ function getStatus() {
   const activeProject = readActiveProject();
   const runtime = getRuntimeStatus();
 
+  const runningJobList = listJobs("running");
+  const workers = runningJobList.map((job: GraphMemoryJob) => {
+    const elapsed = job.startedAt ? Date.now() - Date.parse(job.startedAt) : null;
+    return {
+      jobId: job.id,
+      type: job.type,
+      project: getJobProject(job) || "global",
+      startedAt: job.startedAt || null,
+      elapsedMs: elapsed,
+      elapsedHuman: elapsed ? formatDuration(elapsed) : null,
+      attempt: job.attempt,
+      workerPid: job.workerPid || null,
+      logFile: job.logFile || null,
+      triggerSource: job.triggerSource,
+    };
+  });
+
   const status: Record<string, any> = {
     initialized,
     firstRun: !initialized,
@@ -1116,6 +1151,7 @@ function getStatus() {
     runningJobs,
     scribePending,
     consolidationPending,
+    workers,
     runtime,
     warnings,
     graphIndex: getGraphIndexStatus(),
@@ -1325,6 +1361,8 @@ export const graphMemorySchema = {
     .describe("Pin node to prevent decay and auto-load at session start for matching projects"),
   workerProvider: z.enum(["codex", "claude", "pi", "opencode"]).optional()
     .describe("Worker harness for configure_runtime (codex, claude, pi, opencode)"),
+  workerModel: z.string().optional()
+    .describe("Model override for pipeline workers (e.g. 'sonnet', 'o3', 'gpt-4.1'). Harness-specific."),
   runtimeMode: z.enum(["manual", "docker"]).optional()
     .describe("Runtime mode for configure_runtime"),
   containerName: z.string().optional()

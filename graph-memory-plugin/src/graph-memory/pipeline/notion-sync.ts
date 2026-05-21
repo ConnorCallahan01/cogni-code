@@ -15,6 +15,8 @@ import {
   buildDatabaseProperties,
   listChildBlocks,
   appendBlocks,
+  searchDatabaseRows,
+  getPage,
 } from "./notion-cli.js";
 
 export interface NotionSyncPageState {
@@ -22,6 +24,7 @@ export interface NotionSyncPageState {
   sourceNodes: string[];
   lastSyncedHash: string;
   lastNotionHash: string;
+  lastSourceHash?: string;
   lastCommentAt?: string;
   deleted?: boolean;
 }
@@ -473,6 +476,7 @@ export interface SyncPlanUpdate {
   notionPageId: string;
   notionKey: string;
   type: "database_row" | "wiki_page";
+  target?: string;
   changedProperties?: Record<string, any>;
   markdown?: string;
   sourceNodes: string[];
@@ -485,12 +489,262 @@ export interface SyncPlanArchive {
   reason: string;
 }
 
+export interface StewardPlan {
+  steward: string;
+  generatedAt: string;
+  creates: SyncPlanCreate[];
+  updates: SyncPlanUpdate[];
+  archives: SyncPlanArchive[];
+}
+
 export interface SyncPlan {
   generatedAt: string;
   syncId: string;
   creates: SyncPlanCreate[];
   updates: SyncPlanUpdate[];
   archives: SyncPlanArchive[];
+}
+
+export function mergeStewardPlans(plans: StewardPlan[], syncId: string): SyncPlan {
+  const allCreates: SyncPlanCreate[] = [];
+  const allUpdates: SyncPlanUpdate[] = [];
+  const allArchives: SyncPlanArchive[] = [];
+
+  const seenCreateKeys = new Set<string>();
+  const seenUpdateKeys = new Set<string>();
+  const seenArchiveKeys = new Set<string>();
+
+  for (const plan of plans) {
+    for (const c of plan.creates) {
+      if (seenCreateKeys.has(c.notionKey)) continue;
+      seenCreateKeys.add(c.notionKey);
+      allCreates.push(c);
+    }
+
+    for (const u of plan.updates) {
+      if (seenUpdateKeys.has(u.notionKey)) continue;
+      seenUpdateKeys.add(u.notionKey);
+      allUpdates.push(u);
+    }
+
+    for (const a of plan.archives) {
+      if (seenArchiveKeys.has(a.notionKey)) continue;
+      seenArchiveKeys.add(a.notionKey);
+      allArchives.push(a);
+    }
+  }
+
+  return {
+    generatedAt: new Date().toISOString(),
+    syncId,
+    creates: allCreates,
+    updates: allUpdates,
+    archives: allArchives,
+  };
+}
+
+export function readStewardPlan(path: string): StewardPlan | null {
+  if (!fs.existsSync(path)) return null;
+  try {
+    return JSON.parse(fs.readFileSync(path, "utf-8")) as StewardPlan;
+  } catch {
+    return null;
+  }
+}
+
+export interface WorkspaceManifestPage {
+  pageId: string;
+  title: string;
+  url: string;
+  sections: string[];
+  lastSyncedHash: string;
+  sourceNodes: string[];
+}
+
+export interface WorkspaceManifestRow {
+  pageId: string;
+  key: string;
+  properties: Record<string, string>;
+}
+
+export interface WorkspaceManifestDatabase {
+  id: string;
+  name: string;
+  rowCount: number;
+  rows: WorkspaceManifestRow[];
+}
+
+export interface WorkspaceManifest {
+  generatedAt: string;
+  parentPageId: string;
+  pages: Record<string, WorkspaceManifestPage>;
+  databases: Record<string, WorkspaceManifestDatabase>;
+}
+
+const MANIFEST_DIR = ".notion-manifests";
+const MAX_MANIFEST_FILES = 10;
+
+function extractBlockHeadings(blocks: any[]): string[] {
+  const headings: string[] = [];
+  for (const block of blocks) {
+    const type = block.type;
+    if (type?.startsWith("heading_")) {
+      const richText = block[type]?.rich_text;
+      if (richText) {
+        const text = richText.map((rt: any) => rt.plain_text || rt.text?.content || "").join("");
+        if (text) headings.push(text);
+      }
+    }
+  }
+  return headings;
+}
+
+function extractRowProperties(row: any): Record<string, string> {
+  const props = row.properties || {};
+  const result: Record<string, string> = {};
+  for (const [key, value] of Object.entries(props)) {
+    const v = value as any;
+    if (v?.title?.length) {
+      result[key] = v.title.map((t: any) => t.plain_text || t.text?.content || "").join("");
+    } else if (v?.rich_text?.length) {
+      result[key] = v.rich_text.map((t: any) => t.plain_text || t.text?.content || "").join("");
+    } else if (v?.select?.name) {
+      result[key] = v.select.name;
+    } else if (v?.status?.name) {
+      result[key] = v.status.name;
+    } else if (v?.date?.start) {
+      result[key] = v.date.start;
+    } else if (v?.number !== undefined && v?.number !== null) {
+      result[key] = String(v.number);
+    }
+  }
+  return result;
+}
+
+export function buildWorkspaceManifest(state: NotionSyncState): WorkspaceManifest {
+  const manifest: WorkspaceManifest = {
+    generatedAt: new Date().toISOString(),
+    parentPageId: state.parentPageId,
+    pages: {},
+    databases: {},
+  };
+
+  for (const [notionKey, pageState] of Object.entries(state.pages)) {
+    if (!pageState.pageId || pageState.deleted) continue;
+
+    let sections: string[] = [];
+    let title = "";
+    let url = "";
+
+    try {
+      const blocks = listChildBlocks(pageState.pageId);
+      sections = extractBlockHeadings(blocks);
+    } catch {
+      sections = [];
+    }
+
+    try {
+      const pageContent = getPage(pageState.pageId);
+      const titleMatch = pageContent.match(/^#\s+(.+)$/m);
+      title = titleMatch ? titleMatch[1].trim() : notionKey;
+    } catch {
+      title = notionKey;
+    }
+
+    manifest.pages[notionKey] = {
+      pageId: pageState.pageId,
+      title,
+      url,
+      sections,
+      lastSyncedHash: pageState.lastSyncedHash,
+      sourceNodes: pageState.sourceNodes,
+    };
+  }
+
+  const dbRowKeyMap: Record<string, string> = {
+    tasks: "Name",
+    decisions: "Decision",
+    briefs: "Title",
+    projects: "Name",
+    patterns: "Name",
+    dreams: "Name",
+  };
+
+  for (const [dbKey, dbState] of Object.entries(state.databases)) {
+    if (!dbState.id) continue;
+
+    const rows: WorkspaceManifestRow[] = [];
+    try {
+      const dbRows = searchDatabaseRows(dbState.id);
+      for (const row of dbRows) {
+        const rowId = row.id || "";
+        const props = extractRowProperties(row);
+        const displayKey = dbRowKeyMap[dbKey] || "Name";
+        const keyValue = props[displayKey] || rowId;
+
+        let syncKey = "";
+        for (const [rowKey, rowState] of Object.entries(state.rows)) {
+          if (rowState.pageId === rowId) {
+            syncKey = rowKey;
+            break;
+          }
+        }
+
+        rows.push({
+          pageId: rowId,
+          key: syncKey || keyValue,
+          properties: props,
+        });
+      }
+    } catch {
+      // database query failed
+    }
+
+    manifest.databases[dbKey] = {
+      id: dbState.id,
+      name: dbKey,
+      rowCount: rows.length,
+      rows,
+    };
+  }
+
+  return manifest;
+}
+
+export function writeWorkspaceManifest(manifest: WorkspaceManifest): string {
+  const manifestsDir = path.join(CONFIG.paths.graphRoot, MANIFEST_DIR);
+  if (!fs.existsSync(manifestsDir)) {
+    fs.mkdirSync(manifestsDir, { recursive: true });
+  }
+
+  rotateManifestFiles(manifestsDir);
+
+  const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const manifestPath = path.join(manifestsDir, `manifest-${timestamp}.json`);
+  fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
+
+  const latestPath = path.join(CONFIG.paths.graphRoot, ".notion-workspace-manifest.json");
+  fs.writeFileSync(latestPath, JSON.stringify(manifest, null, 2));
+
+  return latestPath;
+}
+
+function rotateManifestFiles(manifestsDir: string): void {
+  if (!fs.existsSync(manifestsDir)) return;
+
+  const files = fs
+    .readdirSync(manifestsDir)
+    .filter((f) => f.startsWith("manifest-") && f.endsWith(".json"))
+    .sort()
+    .reverse();
+
+  for (let i = MAX_MANIFEST_FILES; i < files.length; i++) {
+    try {
+      fs.unlinkSync(path.join(manifestsDir, files[i]));
+    } catch {
+      // rotation best-effort
+    }
+  }
 }
 
 export function writeDiffReport(diff: NotionSyncDiff): string {
@@ -509,6 +763,50 @@ export function readSyncPlan(): SyncPlan | null {
   }
 }
 
+function buildProjectLookup(state: NotionSyncState): Map<string, string> {
+  const lookup = new Map<string, string>();
+  for (const [key, row] of Object.entries(state.rows)) {
+    if (row.sourceField !== "projects" || !row.pageId) continue;
+    const name = key.replace(/^project:/, "");
+    lookup.set(name.toLowerCase(), row.pageId);
+    const parts = name.split("__");
+    if (parts.length === 2) {
+      lookup.set(parts[1].toLowerCase(), row.pageId);
+      lookup.set(parts[0].toLowerCase() + "/" + parts[1].toLowerCase(), row.pageId);
+    }
+  }
+  return lookup;
+}
+
+function resolveRelations(
+  props: Record<string, any>,
+  projectLookup: Map<string, string>,
+): Record<string, any> {
+  const relationKeys = ["Project"];
+  const resolved: Record<string, any> = {};
+  for (const [key, value] of Object.entries(props)) {
+    if (relationKeys.includes(key) && typeof value === "string") {
+      const pageId = projectLookup.get(value.toLowerCase());
+      if (pageId) {
+        resolved[key] = { relation: [{ id: pageId }] };
+      } else {
+        for (const [lookupKey, lookupId] of projectLookup.entries()) {
+          if (lookupKey.includes(value.toLowerCase()) || value.toLowerCase().includes(lookupKey)) {
+            resolved[key] = { relation: [{ id: lookupId }] };
+            break;
+          }
+        }
+        if (!resolved[key]) {
+          resolved[key] = { rich_text: [{ type: "text", text: { content: value } }] };
+        }
+      }
+    } else {
+      resolved[key] = value;
+    }
+  }
+  return resolved;
+}
+
 export function executeNotionSync(
   plan: SyncPlan,
   state: NotionSyncState,
@@ -518,8 +816,17 @@ export function executeNotionSync(
   let updated = 0;
   let archived = 0;
 
+  const projectLookup = buildProjectLookup(state);
+
   for (const item of plan.creates) {
     try {
+      if (item.properties) {
+        item.properties = resolveRelations(item.properties, projectLookup);
+      }
+      if (item.notionKey.startsWith("brief:") && state.rows[item.notionKey]) {
+        continue;
+      }
+
       if (item.type === "wiki_page") {
         const result = createPage(state.parentPageId, item.markdown || "");
         state.pages[item.notionKey] = {
@@ -536,7 +843,7 @@ export function executeNotionSync(
           continue;
         }
         const titleKey = resolveTitleKey(item.target);
-        const result = createDatabaseRow(dbId, item.properties || {}, item.markdown, titleKey);
+        const result = createDatabaseRow(dbId, item.properties || {}, item.markdown, titleKey, item.target);
         state.rows[item.notionKey] = {
           pageId: result.id,
           sourceField: item.target,
@@ -552,7 +859,16 @@ export function executeNotionSync(
 
   for (const item of plan.updates) {
     try {
+      if (item.changedProperties) {
+        item.changedProperties = resolveRelations(item.changedProperties, projectLookup);
+      }
       if (item.type === "wiki_page") {
+        const newHash = computeContentHash(item.markdown || "");
+        const pageState = state.pages[item.notionKey];
+        if (pageState && pageState.lastSyncedHash === newHash) {
+          continue;
+        }
+
         try {
           updatePage(item.notionPageId, item.markdown || "");
         } catch (replaceErr: any) {
@@ -562,17 +878,26 @@ export function executeNotionSync(
             throw replaceErr;
           }
         }
-        const pageState = state.pages[item.notionKey];
         if (pageState) {
-          pageState.lastSyncedHash = computeContentHash(item.markdown || "");
-          pageState.lastNotionHash = pageState.lastSyncedHash;
+          pageState.lastSyncedHash = newHash;
+          pageState.lastNotionHash = newHash;
           pageState.sourceNodes = item.sourceNodes;
         }
         updated++;
       } else if (item.type === "database_row") {
         const rowStateForTitle = state.rows[item.notionKey];
-        const updateTitleKey = resolveTitleKey(rowStateForTitle?.sourceField || "");
-        updateDatabaseRow(item.notionPageId, item.changedProperties || {}, updateTitleKey);
+        const targetDb = rowStateForTitle?.sourceField || item.target || "";
+        const updateTitleKey = resolveTitleKey(targetDb);
+        if (Object.keys(item.changedProperties || {}).length > 0) {
+          updateDatabaseRow(item.notionPageId, item.changedProperties || {}, updateTitleKey, targetDb);
+        }
+        if (item.markdown) {
+          try {
+            updatePage(item.notionPageId, item.markdown);
+          } catch (e: any) {
+            // best-effort body update
+          }
+        }
         const rowState = state.rows[item.notionKey];
         if (rowState) {
           rowState.lastSyncedHash = computeContentHash(JSON.stringify(item.changedProperties));
@@ -605,6 +930,9 @@ function resolveDatabaseId(state: NotionSyncState, target: string): string {
     tasks: "tasks",
     decisions: "decisions",
     briefs: "briefs",
+    projects: "projects",
+    patterns: "patterns",
+    dreams: "dreams",
   };
   const key = mapping[target];
   return (key && state.databases[key]?.id) || "";
@@ -614,7 +942,10 @@ function resolveTitleKey(target: string): string {
   const titleMap: Record<string, string> = {
     tasks: "Name",
     decisions: "Decision",
-    briefs: "Date",
+    briefs: "Title",
+    projects: "Name",
+    patterns: "Name",
+    dreams: "Name",
   };
   return titleMap[target] || "Name";
 }

@@ -20,8 +20,8 @@ import { readModel as readProjectModel, writeModel as writeProjectModel } from "
 import { ProjectModelFile } from "../lenses/types.js";
 import { readWhisper, writeWhisper, enforceWhisperCap, estimateTokens } from "../mind/whisper.js";
 import { readWhisper as readProjectWhisper, writeWhisper as writeProjectWhisper } from "../lenses/manager.js";
-import { markObservationsAbsorbed, pruneObservations, observationFileSize } from "../mind/observations.js";
-import { markObservationsAbsorbed as markProjectObservationsAbsorbed, pruneObservations as pruneProjectObservations } from "../lenses/manager.js";
+import { markObservationsAbsorbed, pruneObservations, observationFileSize, countPendingObservations } from "../mind/observations.js";
+import { markObservationsAbsorbed as markProjectObservationsAbsorbed, pruneObservations as pruneProjectObservations, countPendingObservations as countProjectPendingObservations } from "../lenses/manager.js";
 import { pruneSessionLogs } from "../sessions/manager.js";
 import { removeFromIndex } from "./graph-index.js";
 
@@ -173,7 +173,7 @@ function processUpdateModel(call: UpdateModelCall): void {
           tokenEstimate: estimateTokens(JSON.stringify(modelData)),
         } as GlobalModel,
         lastCompressorRun: new Date().toISOString(),
-        observationCount: current.observationCount,
+        observationCount: countPendingObservations(),
       };
       writeModel(updated);
     } else if (call.project) {
@@ -188,7 +188,7 @@ function processUpdateModel(call: UpdateModelCall): void {
           tokenEstimate: estimateTokens(JSON.stringify(modelData)),
         },
         lastCompressorRun: new Date().toISOString(),
-        observationCount: current.observationCount,
+        observationCount: countProjectPendingObservations(call.project),
         lastSessionAt: new Date().toISOString(),
       };
       writeProjectModel(call.project, updated);
