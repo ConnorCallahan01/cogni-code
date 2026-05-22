@@ -1,5 +1,6 @@
 import fs from "fs";
 import path from "path";
+import { execSync } from "child_process";
 import crypto from "crypto";
 import matter from "gray-matter";
 import { CONFIG } from "../config.js";
@@ -829,6 +830,15 @@ export function executeNotionSync(
   let created = 0;
   let updated = 0;
   let archived = 0;
+  let apiCallCount = 0;
+
+  const throttleMs = 400;
+  function throttle(): void {
+    apiCallCount++;
+    if (apiCallCount > 1) {
+      execSync(`sleep ${throttleMs / 1000}`, { timeout: throttleMs + 500 });
+    }
+  }
 
   const projectLookup = buildProjectLookup(state);
 
@@ -850,6 +860,7 @@ export function executeNotionSync(
           lastNotionHash: computeContentHash(item.markdown || ""),
         };
         created++;
+        throttle();
       } else if (item.type === "database_row") {
         const dbId = resolveDatabaseId(state, item.target);
         if (!dbId) {
@@ -865,6 +876,7 @@ export function executeNotionSync(
           lastSyncedHash: computeContentHash(JSON.stringify(item.properties)),
         };
         created++;
+        throttle();
       }
     } catch (err: any) {
       errors.push(`Create ${item.notionKey}: ${err.message}`);
@@ -898,6 +910,7 @@ export function executeNotionSync(
           pageState.sourceNodes = item.sourceNodes;
         }
         updated++;
+        throttle();
       } else if (item.type === "database_row") {
         const rowStateForTitle = state.rows[item.notionKey];
         let targetDb = rowStateForTitle?.sourceField || item.target || "";
@@ -912,10 +925,12 @@ export function executeNotionSync(
         const updateTitleKey = resolveTitleKey(targetDb);
         if (Object.keys(item.changedProperties || {}).length > 0) {
           updateDatabaseRow(item.notionPageId, item.changedProperties || {}, updateTitleKey, targetDb);
+          throttle();
         }
         if (item.markdown) {
           try {
             updatePage(item.notionPageId, item.markdown);
+            throttle();
           } catch (e: any) {
             // best-effort body update
           }
@@ -938,6 +953,7 @@ export function executeNotionSync(
       delete state.pages[item.notionKey];
       delete state.rows[item.notionKey];
       archived++;
+      throttle();
     } catch (err: any) {
       errors.push(`Archive ${item.notionKey}: ${err.message}`);
     }
