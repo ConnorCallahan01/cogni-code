@@ -339,19 +339,13 @@ async function main() {
   } catch { /* non-critical */ }
 
   if (parts.length === 0 && !whisperPrefix) {
-    process.stdout.write(JSON.stringify({
-      hookSpecificOutput: {
-        hookEventName: "SessionStart",
-        sessionStart: "[graph-memory] Memory initialized but empty. It will grow from your conversations.",
-      },
-    }));
+    console.log("[graph-memory] Memory initialized but empty. It will grow from your conversations.");
   } else {
     const allParts = whisperPrefix ? [whisperPrefix, ...parts] : parts;
-    const sessionContext = allParts.join("\n\n---\n\n");
     process.stdout.write(JSON.stringify({
       hookSpecificOutput: {
         hookEventName: "SessionStart",
-        sessionStart: sessionContext,
+        additionalContext: allParts.join("\n\n---\n\n"),
       },
     }));
   }
