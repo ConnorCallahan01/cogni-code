@@ -94,7 +94,8 @@ export function generatePreflightReport(project?: string): PreflightReport {
     }
 
     const confidence = parsed.data.confidence ?? 0.5;
-    const edges: Array<{ target: string }> = parsed.data.edges || [];
+    const rawEdges = parsed.data.edges;
+    const edges: Array<{ target: string }> = Array.isArray(rawEdges) ? rawEdges : [];
     const depth = getNodeDepth(nodePath);
     const updated = parsed.data.updated || parsed.data.created || "";
 

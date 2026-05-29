@@ -1991,14 +1991,23 @@ async function runNotionSync(job: GraphMemoryJob): Promise<void> {
 
     activityBus.log("notion-sync:steward", `Running ${steward.name} steward`, { jobId: job.id, steward: steward.name });
 
-    const result = await runWorker({
-      name: `notion-${steward.name}-${job.id}`,
-      prompt,
-      graphRoot: CONFIG.paths.graphRoot,
-      logDir: CONFIG.paths.pipelineLogs,
-      addDirs: [AGENTS_DIR],
-      timeoutMs: 10 * 60_000,
-    });
+    let result;
+    try {
+      result = await runWorker({
+        name: `notion-${steward.name}-${job.id}`,
+        prompt,
+        graphRoot: CONFIG.paths.graphRoot,
+        logDir: CONFIG.paths.pipelineLogs,
+        addDirs: [AGENTS_DIR],
+        timeoutMs: 10 * 60_000,
+      });
+    } catch (err: any) {
+      activityBus.log("notion-sync:warn", `${steward.name} steward failed: ${err.message}`, {
+        jobId: job.id,
+        steward: steward.name,
+      });
+      continue;
+    }
 
     job.logFile = result.logFile;
     job.workerPid = result.pid;

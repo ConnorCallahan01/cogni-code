@@ -198,7 +198,7 @@ function processUpsertNode(call: UpsertNodeCall): void {
         parsed.data.tags = [...new Set([...(parsed.data.tags || []), ...call.tags])];
       }
       if (call.edges) {
-        const existingEdges = parsed.data.edges || [];
+        const existingEdges: any[] = Array.isArray(parsed.data.edges) ? parsed.data.edges : [];
         const existingTargets = new Set(existingEdges.map((e: any) => e.target));
         for (const edge of call.edges) {
           if (!existingTargets.has(edge.target)) {

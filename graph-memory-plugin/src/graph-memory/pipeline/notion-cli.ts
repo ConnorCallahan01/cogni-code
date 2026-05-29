@@ -1,4 +1,6 @@
 import { execFileSync, execSync } from "child_process";
+import { readFileSync } from "fs";
+import { join } from "path";
 import { activityBus } from "../events.js";
 
 export interface NotionPageResult {
@@ -22,6 +24,33 @@ export interface NtnCheckResult {
 const NTN_TIMEOUT = 30_000;
 const NTN_LONG_TIMEOUT = 120_000;
 
+let _cachedNtnToken: string | undefined;
+
+function getNtnToken(): string | undefined {
+  if (_cachedNtnToken) return _cachedNtnToken;
+  if (process.env.NOTION_API_TOKEN) {
+    _cachedNtnToken = process.env.NOTION_API_TOKEN;
+    return _cachedNtnToken;
+  }
+  try {
+    const configDir = process.env.HOME
+      ? join(process.env.HOME, ".config", "notion")
+      : undefined;
+    if (!configDir) return undefined;
+    const auth = JSON.parse(readFileSync(join(configDir, "auth.json"), "utf-8"));
+    if (auth?.token) {
+      _cachedNtnToken = auth.token;
+      return _cachedNtnToken;
+    }
+  } catch {}
+  return undefined;
+}
+
+function ntnEnv(): NodeJS.ProcessEnv {
+  const token = getNtnToken();
+  return token ? { ...process.env, NOTION_API_TOKEN: token } : process.env as NodeJS.ProcessEnv;
+}
+
 function execNtn(args: string[], options?: { input?: string; timeout?: number }): string {
   const timeout = options?.timeout ?? NTN_TIMEOUT;
   try {
@@ -31,6 +60,7 @@ function execNtn(args: string[], options?: { input?: string; timeout?: number })
       maxBuffer: 10 * 1024 * 1024,
       input: options?.input,
       stdio: ["pipe", "pipe", "pipe"],
+      env: ntnEnv(),
     });
   } catch (err: any) {
     const stderr = err.stderr?.toString() || "";

@@ -201,9 +201,10 @@ export function fullRegenerateMAP(currentProject?: string) {
       const raw = fs.readFileSync(filePath, "utf-8");
       const parsed = matter(raw);
       const gist = truncate(parsed.data.gist || extractFirstParagraph(parsed.content), 150);
-      const edges: string[] = (parsed.data.edges || []).map((e: any) => e.target).filter(Boolean).slice(0, 3);
+      const rawEdges: any[] = Array.isArray(parsed.data.edges) ? parsed.data.edges : [];
+      const edges: string[] = rawEdges.map((e: any) => e.target).filter(Boolean).slice(0, 3);
       const edgeStr = edges.length > 0 ? ` → [${edges.join(", ")}]` : "";
-      const antiEdges: string[] = (parsed.data.anti_edges || [])
+      const antiEdges: string[] = (Array.isArray(parsed.data.anti_edges) ? parsed.data.anti_edges : [])
         .map((e: any) => e.reason ? `${e.target} (${e.reason})` : e.target)
         .filter(Boolean);
       const limitedAntiEdges = antiEdges.slice(0, 2);
@@ -834,10 +835,10 @@ export function rebuildIndex() {
         gist: truncate(fm.gist || extractFirstParagraph(parsed.content), 200),
         tags: (fm.tags || []).map((t: any) => String(t)),
         keywords: (fm.keywords || []).map((k: any) => String(k)),
-        edges: (fm.edges || [])
+        edges: (Array.isArray(fm.edges) ? fm.edges : [])
           .map((e: any) => ({ target: e.target, type: e.type || "relates_to", weight: e.weight ?? 0.5 }))
           .filter((e: any) => e.target),
-        anti_edges: (fm.anti_edges || [])
+        anti_edges: (Array.isArray(fm.anti_edges) ? fm.anti_edges : [])
           .map((e: any) => ({ target: e.target, reason: e.reason || "" }))
           .filter((e: any) => e.target),
         confidence: typeof fm.confidence === "number" ? fm.confidence : 0.5,
