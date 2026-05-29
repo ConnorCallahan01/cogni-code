@@ -1,6 +1,6 @@
 # Changelog
 
-## 3.0.1 (2026-05-29) — Lifecycle Audit Hardening
+## [3.0.1] (2026-05-29) — Lifecycle Audit Hardening
 
 ### Daemon Crash Resilience (P0 fixes)
 
