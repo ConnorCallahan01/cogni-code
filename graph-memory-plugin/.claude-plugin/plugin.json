@@ -69,6 +69,11 @@
       "name": "refresh-skill",
       "description": "Refresh a skillforge-generated skill from its source node",
       "file": "./commands/refresh-skill.md"
+    },
+    {
+      "name": "skill-install",
+      "description": "Install skillforged skills from graph memory into the current project",
+      "file": "./commands/skill-install.md"
     }
   ],
   "agents": [
