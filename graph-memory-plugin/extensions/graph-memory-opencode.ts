@@ -101,6 +101,11 @@ async function loadCore() {
 export const GraphMemoryPlugin: Plugin = async ({ project, client, directory, worktree }) => {
   let graphReady = false;
 
+  const projectDir =
+    directory && directory !== "/" ? directory
+    : worktree && worktree !== "/" ? worktree
+    : undefined;
+
   async function ensureGraph() {
     if (graphReady) return;
     await loadCore();
@@ -173,12 +178,12 @@ export const GraphMemoryPlugin: Plugin = async ({ project, client, directory, wo
   }
 
   function detectCurrentProject(): string | undefined {
-    if (!worktree) return undefined;
+    if (!projectDir) return undefined;
     if (_detectProject) {
-      const info = _detectProject(worktree);
+      const info = _detectProject(projectDir);
       if (info && info.name && info.name !== "global") return info.name;
     }
-    return path.basename(worktree);
+    return undefined;
   }
 
   function ambientRecall(userMessage: string): string | null {
@@ -645,13 +650,13 @@ SETUP:
         await ensureGraph();
         await loadCore();
 
-        if (_writeActiveProject && worktree && _detectProject) {
-          const proj = _detectProject(worktree);
+        if (_writeActiveProject && projectDir && _detectProject) {
+          const proj = _detectProject(projectDir);
           if (proj) {
             _writeActiveProject(captureSessionId, {
               name: proj.name,
               gitRoot: proj.gitRoot,
-              cwd: worktree,
+              cwd: projectDir,
             });
           }
         }
@@ -890,7 +895,7 @@ SETUP:
             tool_name: input.tool,
             tool_input: output.args,
             session_id: input.sessionID || captureSessionId,
-          }, { project: detectCurrentProject(), cwd: worktree });
+          }, { project: detectCurrentProject(), cwd: projectDir });
         }
       } catch {}
     },
@@ -906,7 +911,7 @@ SETUP:
             tool_name: input.tool,
             tool_response: output,
             session_id: input.sessionID || captureSessionId,
-          }, { project: detectCurrentProject(), cwd: worktree });
+          }, { project: detectCurrentProject(), cwd: projectDir });
         }
       } catch {}
     },

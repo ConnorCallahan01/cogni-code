@@ -83,6 +83,7 @@ export function detectProject(cwd: string): ProjectInfo {
 
 function deriveProjectName(cwd: string): string {
   const base = path.basename(cwd);
+  if (!base) return "global";
   const parent = path.basename(path.dirname(cwd));
   if (parent && parent !== "/" && parent !== "Users" && parent !== "home") {
     return `${parent}/${base}`;
@@ -119,7 +120,7 @@ export function writeActiveProject(
 
   const safeId = sanitizeSessionId(sessionId);
   const entry: ActiveProjectEntry = {
-    name: project.name,
+    name: project.name && project.name.trim() ? project.name : "global",
     gitRoot: project.gitRoot,
     cwd: project.cwd,
     startedAt: new Date().toISOString(),

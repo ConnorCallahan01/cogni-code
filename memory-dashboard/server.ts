@@ -308,6 +308,21 @@ function getProjectNameFromWorkingFilename(filename: string): string | null {
   return filename.slice(0, -3).replace(/__/g, '/')
 }
 
+function canonicalProjectKey(name: string): string {
+  const norm = String(name || '').toLowerCase().replace(/__/g, '/').replace(/_/g, '-')
+  const parts = norm.split('/').filter(Boolean)
+  return parts.length ? parts[parts.length - 1] : norm
+}
+
+function preferProjectDisplayName(current: string | null, candidate: string): string {
+  if (!current) return candidate
+  const currentHasOwner = current.includes('/') || current.includes('__')
+  const candidateHasOwner = candidate.includes('/') || candidate.includes('__')
+  if (candidateHasOwner && !currentHasOwner) return candidate
+  if (candidateHasOwner === currentHasOwner && candidate.length > current.length) return candidate
+  return current
+}
+
 function listProjectWorkingFiles(graphRoot = getGraphRoot()): ProjectWorkingFileSummary[] {
   const dir = getPaths(graphRoot).workingProjects
   if (!existsSync(dir)) return []
@@ -2262,40 +2277,65 @@ app.get('/api/projects', (_req, res) => {
   try {
     const paths = getPaths()
     const index = existsSync(paths.index) ? JSON.parse(readFileSync(paths.index, 'utf-8')) : []
-    const byProject = new Map<string, { nodeCount: number; lastUpdated: string | null; categories: Record<string, number>; nodePaths: string[] }>()
+
+    type ProjectGroup = {
+      name: string | null
+      nodeCount: number
+      lastUpdated: string | null
+      categories: Record<string, number>
+      aliases: Set<string>
+      working: ProjectWorkingFileSummary | null
+    }
+    const byProject = new Map<string, ProjectGroup>()
+
+    const getGroup = (key: string): ProjectGroup => {
+      let group = byProject.get(key)
+      if (!group) {
+        group = { name: null, nodeCount: 0, lastUpdated: null, categories: {}, aliases: new Set(), working: null }
+        byProject.set(key, group)
+      }
+      return group
+    }
 
     for (const entry of index) {
       const project = entry.project || null
-      if (!project) continue
-      const existing = byProject.get(project) || { nodeCount: 0, lastUpdated: null, categories: {} as Record<string, number>, nodePaths: [] as string[] }
-      existing.nodeCount++
-      existing.nodePaths.push(entry.path)
+      if (!project || project === 'global') continue
+      const group = getGroup(canonicalProjectKey(project))
+      group.name = preferProjectDisplayName(group.name, project)
+      group.aliases.add(project)
+      group.nodeCount++
       const cat = entry.path?.split('/')[0] || 'unknown'
-      existing.categories[cat] = (existing.categories[cat] || 0) + 1
+      group.categories[cat] = (group.categories[cat] || 0) + 1
       const updated = entry.updated || entry.created
-      if (updated && (!existing.lastUpdated || updated > existing.lastUpdated)) {
-        existing.lastUpdated = updated
+      if (updated && (!group.lastUpdated || updated > group.lastUpdated)) {
+        group.lastUpdated = updated
       }
-      byProject.set(project, existing)
     }
 
     const workingFiles = listProjectWorkingFiles()
-
-    const projects = Array.from(byProject.entries()).map(([name, data]) => {
-      const working = workingFiles.find(w => w.project === name)
-      return {
-        name,
-        nodeCount: data.nodeCount,
-        lastUpdated: data.lastUpdated,
-        categories: data.categories,
-        hasWorking: !!working,
-        workingPreview: working?.content?.slice(0, 200) || null,
-        workingUpdatedAt: working?.updatedAt || null,
-        sessionCount: working?.sessionCount || 0,
+    for (const working of workingFiles) {
+      if (!working.project || working.project === 'global') continue
+      const group = getGroup(canonicalProjectKey(working.project))
+      group.name = preferProjectDisplayName(group.name, working.project)
+      group.aliases.add(working.project)
+      if (!group.working || working.updatedAt > group.working.updatedAt) {
+        group.working = working
       }
-    }).sort((a, b) => b.nodeCount - a.nodeCount)
+    }
 
-    const globalNodes = index.filter((e: any) => !e.project)
+    const projects = Array.from(byProject.values()).map((data) => ({
+      name: data.name,
+      nodeCount: data.nodeCount,
+      lastUpdated: data.lastUpdated,
+      categories: data.categories,
+      aliases: Array.from(data.aliases).sort(),
+      hasWorking: !!data.working,
+      workingPreview: data.working?.content?.slice(0, 200) || null,
+      workingUpdatedAt: data.working?.updatedAt || null,
+      sessionCount: data.working?.sessionCount || 0,
+    })).sort((a, b) => b.nodeCount - a.nodeCount)
+
+    const globalNodes = index.filter((e: any) => !e.project || e.project === 'global')
     const globalCategories: Record<string, number> = {}
     for (const entry of globalNodes) {
       const cat = entry.path?.split('/')[0] || 'unknown'

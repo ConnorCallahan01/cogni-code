@@ -351,6 +351,7 @@ export interface ProjectSummary {
   nodeCount: number
   lastUpdated: string | null
   categories: Record<string, number>
+  aliases?: string[]
   hasWorking: boolean
   workingPreview: string | null
   workingUpdatedAt: string | null
