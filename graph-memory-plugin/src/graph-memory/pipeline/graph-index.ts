@@ -191,7 +191,7 @@ export function removeFromIndex(nodePath: string): void {
   writeIndex(index);
 }
 
-export function rebuildV3Index(): number {
+export function rebuildIndex(): number {
   const graphDir = CONFIG.paths.nodes;
   if (!fs.existsSync(graphDir)) return 0;
 
@@ -216,7 +216,7 @@ export function rebuildV3Index(): number {
   }
 
   writeIndex(index);
-  activityBus.log("system:info", "v3 graph index rebuilt: " + count + " nodes");
+  activityBus.log("system:info", "graph index rebuilt: " + count + " nodes");
   return count;
 }
 

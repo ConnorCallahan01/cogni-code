@@ -1,5 +1,20 @@
 # Changelog
 
+## [3.1.0] (2026-06-25) — Version Label Cleanup
+
+### Fixed
+
+- **Extension mental model injection was dead** — both `extensions/graph-memory.ts` (pi) and `extensions/graph-memory-opencode.ts` imported `hasV3Data`/`buildV3Context` from `session-start-context.js`, but those exports were renamed to `hasMentalModelData`/`buildSessionStartContext` during the earlier naming cleanup. The broken imports silently resolved to `undefined`, so mental model injection never fired in either extension. Fixed to use correct export names.
+
+### Changed
+
+- **All version labels removed** — v2/v3/v4 labels removed from source code, extensions, tests, and docs. File names and function names now describe function, not version history.
+- **Whisper fallback removed from extensions** — extensions no longer read `mind/whisper.txt` as a fallback. Model.json is the single mental model source.
+- **`buildV2Injection` → `buildFallbackInjection`** — renamed across all adapters.
+- **`GRAPH_MEMORY_V3` env var removed** — was referenced in docs/tests but never read by source code.
+- **`tests/v3-pipeline.check.mjs` → `tests/pipeline.check.mjs`** — test names and module paths updated.
+- **`scripts/migrate-v2-to-v3.ts` → `scripts/migrate-mental-model.ts`** — renamed.
+
 ## [3.0.1] (2026-05-29) — Lifecycle Audit Hardening
 
 ### Daemon Crash Resilience (P0 fixes)

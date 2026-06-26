@@ -1,5 +1,5 @@
 import { HarnessAdapter, HarnessType } from "./types.js";
-import { buildSessionStartContext, buildFullInjection, buildV2Injection, flushAndQueueJobs, cleanupSession } from "./shared.js";
+import { buildSessionStartContext, buildFullInjection, buildFallbackInjection, flushAndQueueJobs, cleanupSession } from "./shared.js";
 
 export class PiAdapter implements HarnessAdapter {
   name: HarnessType = "pi";
@@ -12,7 +12,7 @@ export class PiAdapter implements HarnessAdapter {
     if (ctx.mentalModelUsed) {
       context = buildFullInjection(ctx.project);
     } else {
-      context = buildV2Injection(ctx.project);
+      context = buildFallbackInjection(ctx.project);
     }
 
     this.pendingContext = context;

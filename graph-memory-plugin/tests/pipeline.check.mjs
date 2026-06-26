@@ -11,7 +11,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const pluginDir = path.resolve(__dirname, "..");
 
 function makeTempGraph() {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "graph-memory-v3-test-"));
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "graph-memory-test-"));
   const graphRoot = path.join(tmp, ".graph-memory");
   return { tmp, graphRoot };
 }
@@ -27,12 +27,11 @@ function initGraph(graphRoot) {
       const { initializeGraph } = await import(${JSON.stringify(indexPath)});
       initializeGraph();
     `,
-  ], { encoding: "utf-8", env: { ...process.env, GRAPH_MEMORY_ROOT: graphRoot, GRAPH_MEMORY_V3: "1" } });
+  ], { encoding: "utf-8", env: { ...process.env, GRAPH_MEMORY_ROOT: graphRoot } });
 }
 
 async function setupEnv(graphRoot) {
   process.env.GRAPH_MEMORY_ROOT = graphRoot;
-  process.env.GRAPH_MEMORY_V3 = "1";
   const { reloadConfig } = await importModule("config.js");
   reloadConfig();
 }
@@ -43,7 +42,7 @@ function importModule(name) {
 
 // --- Phase 0: Directory structure ---
 
-test("init creates v3 directory structure", () => {
+test("init creates directory structure", () => {
   const { tmp, graphRoot } = makeTempGraph();
   try {
     initGraph(graphRoot);
@@ -382,7 +381,7 @@ test("observer-tools: process observe, log_session, upsert_node outputs", async 
 
 // --- Phase 2: Compressor tools ---
 
-test("compressor-tools: update model, generate whisper, absorb, archive", async () => {
+test("compressor-tools: update model, absorb, archive", async () => {
   const { tmp, graphRoot } = makeTempGraph();
   try {
     initGraph(graphRoot);
@@ -408,14 +407,7 @@ test("compressor-tools: update model, generate whisper, absorb, archive", async 
       }),
     }));
 
-    // 2. Generate global whisper
-    fs.writeFileSync(path.join(obsDir, "comp_002.json"), JSON.stringify({
-      tool: "generate_whisper",
-      layer: "global",
-      whisper_text: "GUARDRAILS:\n- Never use eval()\n- Always run typecheck before committing\n\nSTYLE:\nPragmatic, prefers proven solutions. Concise answers.\n\nCONTEXT:\nTypeScript, ES modules, vitest for testing.",
-    }));
-
-    // 3. Archive an observation
+    // 2. Archive an observation
     const obsMod = await importModule("mind/observations.js");
     const obs = obsMod.appendObservation({
       layer: "global",
@@ -435,7 +427,6 @@ test("compressor-tools: update model, generate whisper, absorb, archive", async 
     const result = mod.processCompressorOutputs();
 
     assert.deepEqual(result.modelsUpdated, ["global"], "Global model updated");
-    assert.deepEqual(result.whispersGenerated, ["global"], "Global whisper generated");
     assert.equal(result.observationsAbsorbed, 1, "1 observation absorbed");
     assert.equal(result.errors.length, 0, "No errors: " + JSON.stringify(result.errors));
 
@@ -443,11 +434,6 @@ test("compressor-tools: update model, generate whisper, absorb, archive", async 
     const model = (await importModule("mind/model.js")).readModel();
     assert.equal(model.model.cognitiveStyle, "Pragmatic engineer");
     assert.deepEqual(model.model.guardrails, ["Never use eval()", "Always type-check"]);
-
-    // Verify whisper was written
-    const whisper = (await importModule("mind/whisper.js")).readWhisper();
-    assert.ok(whisper.includes("GUARDRAILS"), "Whisper has guardrails section");
-    assert.ok(whisper.includes("Never use eval()"), "Whisper contains anti-pattern");
 
     // Verify observation was absorbed
     const observations = obsMod.readObservations();
@@ -503,22 +489,45 @@ test("compressor-tools: archive graph nodes", async () => {
   }
 });
 
-// --- Phase 3: Session Start v3 ---
+// --- Phase 3: Session Start ---
 
-test("session-start-v3: builds context from whispers and session logs", async () => {
+test("session-start: builds context from mental model and session logs", async () => {
   const { tmp, graphRoot } = makeTempGraph();
   try {
     initGraph(graphRoot);
     await setupEnv(graphRoot);
 
-    // Write global whisper
-    const whisperMod = await importModule("mind/whisper.js");
-    whisperMod.writeWhisper("GUARDRAILS:\n- Never use eval()\n\nSTYLE:\nPragmatic, concise answers.\n\nCONTEXT:\nTypeScript, ES modules, vitest.");
+    // Write global mental model
+    const modelMod = await importModule("mind/model.js");
+    modelMod.writeModel({
+      model: {
+        version: 3,
+        generatedAt: new Date().toISOString(),
+        cognitiveStyle: "Pragmatic, concise answers.",
+        decisionPatterns: [],
+        preferences: ["TypeScript, ES modules, vitest"],
+        guardrails: ["Never use eval() in any context"],
+        emotionalProfile: "",
+        relationalNotes: [],
+        tokenEstimate: 0,
+      },
+      lastCompressorRun: "",
+      observationCount: 0,
+    });
 
-    // Create project lens with whisper and session log
+    // Create project lens with model and session log
     const lensMod = await importModule("lenses/manager.js");
     lensMod.ensureLens("test-project");
-    lensMod.writeWhisper("test-project", "STACK:\nNode.js, vitest.\n\nCONVENTIONS:\nES modules, strict TypeScript.\n\nACTIVE:\nBuilding auth system.");
+    lensMod.writeModel("test-project", {
+      model: {
+        techStack: ["Node.js", "vitest"],
+        conventions: ["ES modules", "strict TypeScript"],
+        procedures: [],
+        guardrails: [],
+        activeWork: ["Building auth system"],
+        openThreads: [],
+      },
+    });
 
     const sessionMod = await importModule("sessions/manager.js");
     sessionMod.appendSessionLog({
@@ -533,39 +542,39 @@ test("session-start-v3: builds context from whispers and session logs", async ()
       nextSessionShould: "Finish refresh flow",
     });
 
-    const { buildV3Context, hasV3Data } = await importModule("session-start-v3.js");
+    const { buildSessionStartContext, hasMentalModelData } = await importModule("session-start-context.js");
 
-    assert.ok(hasV3Data(), "v3 data detected");
+    assert.ok(hasMentalModelData(), "mental model data detected");
 
-    const result = buildV3Context("test-project");
+    const result = buildSessionStartContext("test-project");
 
-    assert.ok(result.sources.globalWhisper, "Global whisper included");
-    assert.ok(result.sources.projectWhisper, "Project whisper included");
+    assert.ok(result.sources.globalModel, "Global model included");
+    assert.ok(result.sources.projectModel, "Project model included");
     assert.ok(result.sources.sessionLog, "Session log included");
     assert.equal(result.sources.fallback, false, "No fallback needed");
     assert.ok(result.tokensUsed > 0, "Tokens counted: " + result.tokensUsed);
     assert.ok(result.tokensUsed <= 1100, "Within budget: " + result.tokensUsed + " <= 1100");
 
-    assert.ok(result.context.includes("Never use eval()"), "Global whisper content present");
-    assert.ok(result.context.includes("vitest"), "Project whisper content present");
-    assert.ok(result.context.includes("JWT"), "Session log content present");
-    assert.ok(result.context.includes("refresh"), "Session open threads present");
+    assert.ok(result.context.includes("Never use eval()"), "Global model content present");
+    assert.ok(result.context.includes("vitest"), "Project model content present");
+    assert.ok(result.context.includes("refresh"), "Session log content present");
+    assert.ok(result.context.includes("Finish"), "Session next-session present");
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
   }
 });
 
-test("session-start-v3: falls back when no v3 data", async () => {
+test("session-start: falls back when no mental model data", async () => {
   const { tmp, graphRoot } = makeTempGraph();
   try {
     initGraph(graphRoot);
     await setupEnv(graphRoot);
 
-    const { buildV3Context, hasV3Data } = await importModule("session-start-v3.js");
+    const { buildSessionStartContext, hasMentalModelData } = await importModule("session-start-context.js");
 
-    assert.equal(hasV3Data(), false, "No v3 data");
+    assert.equal(hasMentalModelData(), false, "No mental model data");
 
-    const result = buildV3Context("test-project");
+    const result = buildSessionStartContext("test-project");
     assert.equal(result.sources.fallback, true, "Falls back gracefully");
     assert.equal(result.context, "", "Empty context on fallback");
   } finally {
@@ -573,7 +582,7 @@ test("session-start-v3: falls back when no v3 data", async () => {
   }
 });
 
-test("session-start-v3: creates lens on first session", async () => {
+test("session-start: creates lens on first session", async () => {
   const { tmp, graphRoot } = makeTempGraph();
   try {
     initGraph(graphRoot);
@@ -585,8 +594,8 @@ test("session-start-v3: creates lens on first session", async () => {
     const lensMod = await importModule("lenses/manager.js");
     assert.equal(lensMod.lensExists("brand-new-project"), false, "Lens does not exist");
 
-    const { buildV3Context } = await importModule("session-start-v3.js");
-    buildV3Context("brand-new-project");
+    const { buildSessionStartContext } = await importModule("session-start-context.js");
+    buildSessionStartContext("brand-new-project");
 
     assert.equal(lensMod.lensExists("brand-new-project"), true, "Lens auto-created");
   } finally {
@@ -594,9 +603,9 @@ test("session-start-v3: creates lens on first session", async () => {
   }
 });
 
-// --- Phase 4: Graph Index v3 ---
+// --- Phase 4: Graph Index ---
 
-test("graph-index-v3: rebuild, lookup, search, category filter", async () => {
+test("graph-index: rebuild, lookup, search, category filter", async () => {
   const { tmp, graphRoot } = makeTempGraph();
   try {
     initGraph(graphRoot);
@@ -642,9 +651,9 @@ test("graph-index-v3: rebuild, lookup, search, category filter", async () => {
       }
     ));
 
-    const mod = await importModule("pipeline/graph-index-v3.js");
+    const mod = await importModule("pipeline/graph-index.js");
 
-    const count = mod.rebuildV3Index();
+    const count = mod.rebuildIndex();
     assert.equal(count, 3, "3 nodes indexed");
 
     const entry = mod.lookup("patterns/incremental-refactor");
@@ -674,13 +683,13 @@ test("graph-index-v3: rebuild, lookup, search, category filter", async () => {
   }
 });
 
-test("graph-index-v3: incremental add and remove", async () => {
+test("graph-index: incremental add and remove", async () => {
   const { tmp, graphRoot } = makeTempGraph();
   try {
     initGraph(graphRoot);
     await setupEnv(graphRoot);
 
-    const mod = await importModule("pipeline/graph-index-v3.js");
+    const mod = await importModule("pipeline/graph-index.js");
 
     mod.addEntryToIndex({
       path: "patterns/direct-add",
@@ -715,13 +724,13 @@ test("graph-index-v3: incremental add and remove", async () => {
   }
 });
 
-test("graph-index-v3: anti-pattern support", async () => {
+test("graph-index: anti-pattern support", async () => {
   const { tmp, graphRoot } = makeTempGraph();
   try {
     initGraph(graphRoot);
     await setupEnv(graphRoot);
 
-    const mod = await importModule("pipeline/graph-index-v3.js");
+    const mod = await importModule("pipeline/graph-index.js");
 
     mod.addEntryToIndex({
       path: "anti-patterns/never-use-eval",
@@ -810,7 +819,7 @@ test("e2e: observer produces observations that compressor absorbs", async () => 
     assert.equal(observations[0].absorbed, false);
     assert.equal(observations[0].observation, "User strongly prefers dark mode in editors");
 
-    // Compressor absorbs the observation and generates whisper
+    // Compressor absorbs the observation and updates model
     fs.writeFileSync(path.join(obsDir, "comp_001.json"), JSON.stringify({
       tool: "update_model",
       layer: "global",
@@ -823,11 +832,6 @@ test("e2e: observer produces observations that compressor absorbs", async () => 
       }),
     }));
     fs.writeFileSync(path.join(obsDir, "comp_002.json"), JSON.stringify({
-      tool: "generate_whisper",
-      layer: "global",
-      whisper_text: "CONTEXT:\nUser prefers dark mode and minimal UI. Visual thinker.",
-    }));
-    fs.writeFileSync(path.join(obsDir, "comp_003.json"), JSON.stringify({
       tool: "archive_observations",
       layer: "global",
       ids: [observations[0].id],
@@ -836,14 +840,9 @@ test("e2e: observer produces observations that compressor absorbs", async () => 
     const compressorMod = await importModule("pipeline/compressor-tools.js");
     const compressorResult = compressorMod.processCompressorOutputs();
     assert.deepEqual(compressorResult.modelsUpdated, ["global"]);
-    assert.deepEqual(compressorResult.whispersGenerated, ["global"]);
     assert.equal(compressorResult.observationsAbsorbed, 1);
 
-    // Verify the full pipeline: observation → model → whisper
-    const whisper = (await importModule("mind/whisper.js")).readWhisper();
-    assert.ok(whisper.includes("dark mode"), "Whisper contains the preference");
-    assert.ok(whisper.includes("minimal"), "Whisper is enriched beyond just the observation");
-
+    // Verify the full pipeline: observation → model
     const model = (await importModule("mind/model.js")).readModel();
     assert.ok(model.model.preferences.includes("Dark mode in editors"));
     assert.equal(model.lastCompressorRun.length > 0, true);
@@ -928,16 +927,30 @@ test("phase 5: guardrails injected in session start", async () => {
       })
     );
 
-    const indexMod = await importModule("pipeline/graph-index-v3.js");
-    indexMod.rebuildV3Index();
+    const indexMod = await importModule("pipeline/graph-index.js");
+    indexMod.rebuildIndex();
 
-    const whisperMod = await importModule("mind/whisper.js");
-    whisperMod.writeWhisper("User prefers dark mode and clean code.");
+    const modelMod = await importModule("mind/model.js");
+    modelMod.writeModel({
+      model: {
+        version: 3,
+        generatedAt: new Date().toISOString(),
+        cognitiveStyle: "User prefers dark mode and clean code.",
+        decisionPatterns: [],
+        preferences: [],
+        guardrails: [],
+        emotionalProfile: "",
+        relationalNotes: [],
+        tokenEstimate: 0,
+      },
+      lastCompressorRun: "",
+      observationCount: 0,
+    });
 
-    const sessionMod = await importModule("session-start-v3.js");
-    const result = sessionMod.buildV3Context("test-project");
+    const sessionMod = await importModule("session-start-context.js");
+    const result = sessionMod.buildSessionStartContext("test-project");
 
-    assert.ok(result.context.includes("Guardrails"), "Context includes guardrails section");
+    assert.ok(result.context.includes("Anti-Patterns"), "Context includes anti-patterns section");
     assert.ok(result.context.includes("Never use console.log"), "Global anti-pattern injected");
     assert.ok(result.context.includes("Avoid TypeScript any"), "Project anti-pattern injected");
   } finally {
@@ -945,7 +958,7 @@ test("phase 5: guardrails injected in session start", async () => {
   }
 });
 
-test("phase 5: status action includes v3 anti-pattern counts", async () => {
+test("phase 5: status action includes anti-pattern counts", async () => {
   const { tmp, graphRoot } = makeTempGraph();
   try {
     initGraph(graphRoot);
@@ -976,17 +989,17 @@ test("phase 5: status action includes v3 anti-pattern counts", async () => {
       })
     );
 
-    const indexMod = await importModule("pipeline/graph-index-v3.js");
-    indexMod.rebuildV3Index();
+    const indexMod = await importModule("pipeline/graph-index.js");
+    indexMod.rebuildIndex();
 
     const toolsMod = await importModule("tools.js");
     const statusResult = await toolsMod.handleGraphMemory({ action: "status" });
     const status = JSON.parse(statusResult.content[0].text);
 
-    assert.ok(status.v3, "Status includes v3 section");
-    assert.equal(status.v3.antiPatterns.total, 2, "2 anti-patterns total");
-    assert.equal(status.v3.antiPatterns.global, 1, "1 global anti-pattern");
-    assert.equal(status.v3.antiPatterns.project, 1, "1 project anti-pattern");
+    assert.ok(status.graphIndex, "Status includes graph index section");
+    assert.equal(status.graphIndex.antiPatterns.total, 2, "2 anti-patterns total");
+    assert.equal(status.graphIndex.antiPatterns.global, 1, "1 global anti-pattern");
+    assert.equal(status.graphIndex.antiPatterns.project, 1, "1 project anti-pattern");
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
   }
@@ -1048,8 +1061,8 @@ test("phase 6: bootstrap project doc generates CLAUDE.md", async () => {
       })
     );
 
-    const indexMod = await importModule("pipeline/graph-index-v3.js");
-    indexMod.rebuildV3Index();
+    const indexMod = await importModule("pipeline/graph-index.js");
+    indexMod.rebuildIndex();
 
     const bootstrapMod = await importModule("pipeline/bootstrap.js");
     const result = bootstrapMod.bootstrapProjectDoc("my-project", "claude-code", projectDir);
@@ -1230,7 +1243,7 @@ test("phase 6: drift detection finds missing sections", async () => {
   }
 });
 
-test("phase 7: dreamer v3 tools — propose and promote dreams", async () => {
+test("phase 7: dreamer tools — propose and promote dreams", async () => {
   const { tmp, graphRoot } = makeTempGraph();
   try {
     initGraph(graphRoot);
@@ -1255,7 +1268,7 @@ test("phase 7: dreamer v3 tools — propose and promote dreams", async () => {
       confidence: 0.4,
       nodes_referenced: ["patterns/test-first"],
       type: "emergence",
-      source: "dreamer-v3",
+      source: "dreamer",
       created: new Date(Date.now() - 3 * 86400000).toISOString(),
       reinforcement_sessions: 2,
     };
@@ -1268,8 +1281,8 @@ test("phase 7: dreamer v3 tools — propose and promote dreams", async () => {
       new_confidence: 0.55,
     }));
 
-    const dreamerMod = await importModule("pipeline/dreamer-v3-tools.js");
-    const result = dreamerMod.processDreamerV3Outputs();
+    const dreamerMod = await importModule("pipeline/dreamer-tools.js");
+    const result = dreamerMod.processDreamerModelOutputs();
 
     assert.equal(result.dreamsProposed, 1, "1 dream proposed");
     assert.equal(result.dreamsPromoted, 1, "1 dream promoted");
@@ -1284,7 +1297,7 @@ test("phase 7: dreamer v3 tools — propose and promote dreams", async () => {
   }
 });
 
-test("phase 7: dreamer v3 builds input from models", async () => {
+test("phase 7: dreamer builds input from models", async () => {
   const { tmp, graphRoot } = makeTempGraph();
   try {
     initGraph(graphRoot);
@@ -1330,8 +1343,8 @@ test("phase 7: dreamer v3 builds input from models", async () => {
       lastSessionAt: new Date().toISOString(),
     });
 
-    const dreamerMod = await importModule("pipeline/dreamer-v3-tools.js");
-    const input = dreamerMod.buildDreamerV3Input();
+    const dreamerMod = await importModule("pipeline/dreamer-tools.js");
+    const input = dreamerMod.buildDreamerModelInput();
 
     assert.ok(input.includes("analytical"), "Contains cognitive style");
     assert.ok(input.includes("dark mode"), "Contains preferences");
@@ -1398,14 +1411,28 @@ test("phase 8: shared session start context builds correctly", async () => {
     initGraph(graphRoot);
     await setupEnv(graphRoot);
 
-    const whisperMod = await importModule("mind/whisper.js");
-    whisperMod.writeWhisper("User prefers dark mode.");
+    const modelMod = await importModule("mind/model.js");
+    modelMod.writeModel({
+      model: {
+        version: 3,
+        generatedAt: new Date().toISOString(),
+        cognitiveStyle: "User prefers dark mode.",
+        decisionPatterns: [],
+        preferences: [],
+        guardrails: [],
+        emotionalProfile: "",
+        relationalNotes: [],
+        tokenEstimate: 0,
+      },
+      lastCompressorRun: "",
+      observationCount: 0,
+    });
 
     const sharedMod = await importModule("adapters/shared.js");
     const ctx = sharedMod.buildSessionStartContext(tmp, "test-session-1");
 
     assert.equal(ctx.sessionId, "test-session-1");
-    assert.equal(ctx.v3Used, true, "v3 context used when whisper exists");
+    assert.equal(ctx.mentalModelUsed, true, "mental model context used when data exists");
     assert.ok(ctx.tokensUsed > 0, "tokens were counted");
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
@@ -1504,9 +1531,9 @@ test("phase 9: migration dry run scans nodes and builds models", async () => {
       "eval() is a security risk and should never be used.",
     ].join("\n"));
 
-    const { buildGlobalModel, buildProjectModels } = await importModule("scripts/migrate-v2-to-v3.js");
+    const { buildGlobalModel, buildProjectModels } = await importModule("scripts/migrate-mental-model.js");
 
-    const { collectNodes } = await importModule("scripts/migrate-v2-to-v3.js");
+    const { collectNodes } = await importModule("scripts/migrate-mental-model.js");
     const nodes = collectNodes(nodesDir);
 
     assert.equal(nodes.length, 3, "Scanned all 3 nodes");
@@ -1682,7 +1709,6 @@ test("collectFileInteractions groups files by path with counts and roles", async
 test("renderProjectWorkingMarkdown includes Files section from keyFiles", async () => {
   const graphRoot = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "graph-memory-render-")), ".graph-memory");
   process.env.GRAPH_MEMORY_ROOT = graphRoot;
-  process.env.GRAPH_MEMORY_V3 = "1";
   const { reloadConfig } = await importModule("config.js");
   reloadConfig();
   const { updateProjectWorkingFromSession } = await importModule("project-working.js");

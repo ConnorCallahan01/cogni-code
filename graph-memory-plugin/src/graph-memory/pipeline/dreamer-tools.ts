@@ -7,7 +7,7 @@ import { readModel as readProjectModel, listActiveLenses } from "../lenses/manag
 import { getAntiPatterns, search, getStats } from "./graph-index.js";
 import { regenerateDreamContext } from "./graph-ops.js";
 
-export interface DreamerV3ToolResult {
+export interface DreamerModelToolResult {
   dreamsProposed: number;
   dreamsPromoted: number;
   errors: string[];
@@ -42,7 +42,7 @@ interface PromoteDreamCall {
   new_confidence: number;
 }
 
-type DreamerV3ToolCall =
+type DreamerModelToolCall =
   | GetModelsCall
   | GetGraphNodesCall
   | GetAntiPatternsCall
@@ -53,7 +53,7 @@ const VALID_TOOLS = new Set([
   "get_models", "get_graph_nodes", "get_anti_patterns", "propose_dream", "promote_dream",
 ]);
 
-export function buildDreamerV3Input(): string {
+export function buildDreamerModelInput(): string {
   const globalModel = readGlobalModel();
   const lenses = listActiveLenses();
   const stats = getStats();
@@ -113,8 +113,8 @@ function loadPendingDreams(): Array<{ file: string; content: any }> {
   return results;
 }
 
-export function processDreamerV3Outputs(): DreamerV3ToolResult {
-  const result: DreamerV3ToolResult = {
+export function processDreamerModelOutputs(): DreamerModelToolResult {
+  const result: DreamerModelToolResult = {
     dreamsProposed: 0,
     dreamsPromoted: 0,
     errors: [],
@@ -133,7 +133,7 @@ export function processDreamerV3Outputs(): DreamerV3ToolResult {
       const raw = JSON.parse(fs.readFileSync(filePath, "utf-8"));
       if (!raw || !raw.tool || !VALID_TOOLS.has(raw.tool)) continue;
 
-      const call = raw as DreamerV3ToolCall;
+      const call = raw as DreamerModelToolCall;
 
       switch (call.tool) {
         case "propose_dream":
@@ -160,7 +160,7 @@ export function processDreamerV3Outputs(): DreamerV3ToolResult {
   sweepOrphanedFiles(obsDir);
 
   if (result.dreamsProposed > 0 || result.dreamsPromoted > 0) {
-    activityBus.log("system:info", "Dreamer v3 outputs processed", {
+    activityBus.log("system:info", "Dreamer outputs processed", {
       dreamsProposed: result.dreamsProposed,
       dreamsPromoted: result.dreamsPromoted,
       errors: result.errors.length,
@@ -181,7 +181,7 @@ function processProposeDream(call: ProposeDreamCall): void {
     confidence: 0.3,
     nodes_referenced: call.references || [],
     reasoning: call.reasoning,
-    source: "dreamer-v3",
+    source: "dreamer",
     created: new Date().toISOString(),
   };
 

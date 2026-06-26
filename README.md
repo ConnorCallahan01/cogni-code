@@ -108,7 +108,7 @@ That's it. Write memory, retrieve memory, inspect memory. The background pipelin
                  │  observer (writes to     │   ← always active, single node store
                  │  nodes/ alongside main)  │
                  │                          │
-                 │  compressor, dreamer-v3  │   ← code present, not active by default
+                  │  compressor, dreamer    │   ← code present, not active by default
                  └────────────┬────────────┘
                               │
                  ┌────────────▼────────────┐
@@ -155,7 +155,7 @@ The memory system runs a multi-stage background pipeline. Most of this happens a
 
 ### Mental model data (always active)
 
-The system runs a **merged v2/v3 hybrid** architecture. There is no separate "v3 pipeline." Mental model data is always active:
+The system is a single unified architecture. Mental model data is always active:
 
 | Data | What it provides |
 |------|-----------------|

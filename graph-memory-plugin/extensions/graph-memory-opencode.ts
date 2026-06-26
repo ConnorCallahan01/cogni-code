@@ -82,7 +82,7 @@ async function loadCore() {
   const scoring = await import(path.join(distDir, "scoring.js"));
   const soma = await import(path.join(distDir, "soma.js"));
   const project = await import(path.join(distDir, "project.js"));
-  const sessionStartV3 = await import(path.join(distDir, "session-start-context.js"));
+  const sessionStart = await import(path.join(distDir, "session-start-context.js"));
   _handleGraphMemory = tools.handleGraphMemory;
   _initializeGraph = index.initializeGraph;
   _CONFIG = config.CONFIG;
@@ -94,8 +94,8 @@ async function loadCore() {
   _detectProject = project.detectProject;
   _writeActiveProject = project.writeActiveProject;
   _removeActiveProject = project.removeActiveProject;
-  _hasMentalModelData = sessionStartV3.hasV3Data;
-  _buildMentalModelContext = sessionStartV3.buildV3Context;
+  _hasMentalModelData = sessionStart.hasMentalModelData;
+  _buildMentalModelContext = sessionStart.buildSessionStartContext;
 }
 
 export const GraphMemoryPlugin: Plugin = async ({ project, client, directory, worktree }) => {
@@ -250,7 +250,7 @@ export const GraphMemoryPlugin: Plugin = async ({ project, client, directory, wo
     return _hasMentalModelData();
   }
 
-  function buildMentalModelContext(): { context: string; tokensUsed: number; sources: { globalWhisper: boolean; projectWhisper: boolean; sessionLog: boolean; fallback: boolean } } {
+  function buildMentalModelContext(): { context: string; tokensUsed: number; sources: { globalModel: boolean; projectModel: boolean; sessionLog: boolean; guardrails: boolean; pickup: boolean; notionTasks: boolean; fallback: boolean } } {
     try {
       const currentProject = detectCurrentProject();
       const result = _buildMentalModelContext(currentProject || "global");
@@ -262,7 +262,7 @@ export const GraphMemoryPlugin: Plugin = async ({ project, client, directory, wo
     } catch {
       const parts: string[] = [];
       let tokensUsed = 0;
-      const sources = { globalWhisper: false, projectWhisper: false, sessionLog: false, fallback: false };
+      const sources = { globalModel: false, projectModel: false, sessionLog: false, guardrails: false, pickup: false, notionTasks: false, fallback: false };
       return { context: parts.join("\n\n---\n\n"), tokensUsed, sources };
     }
   }
@@ -402,27 +402,17 @@ export const GraphMemoryPlugin: Plugin = async ({ project, client, directory, wo
     const currentProject = detectCurrentProject();
 
     // ── Layer 1: Global user knowledge (always inject) ──
-    let whisperInjected = false;
+    let mentalModelInjected = false;
 
     if (hasMentalModelData()) {
       const mentalModel = buildMentalModelContext();
       if (!mentalModel.sources.fallback && mentalModel.context) {
         parts.push(mentalModel.context);
-        whisperInjected = true;
+        mentalModelInjected = true;
       }
     }
 
-    if (!whisperInjected) {
-      try {
-        const whisperPath = path.join(_CONFIG.paths.graphRoot, "mind", "whisper.txt");
-        if (fs.existsSync(whisperPath)) {
-          const wc = fs.readFileSync(whisperPath, "utf-8").trim();
-          if (wc) { parts.push(wc); whisperInjected = true; }
-        }
-      } catch { /* skip */ }
-    }
-
-    if (!whisperInjected) {
+    if (!mentalModelInjected) {
       try {
         const modelPath = path.join(_CONFIG.paths.graphRoot, "mind", "model.json");
         if (fs.existsSync(modelPath)) {
@@ -434,24 +424,12 @@ export const GraphMemoryPlugin: Plugin = async ({ project, client, directory, wo
       } catch { /* skip */ }
     }
 
-    // ── Layer 2: Project lens whisper (if not already in mental model context) ──
-    if (currentProject && currentProject !== "global" && !whisperInjected) {
-      try {
-        const slug = currentProject.replace(/[^a-zA-Z0-9._-]+/g, "__");
-        const lensesDir = _CONFIG.paths.lenses || path.join(_CONFIG.paths.graphRoot, "lenses");
-        const projectWhisperPath = path.join(lensesDir, slug, "whisper.txt");
-        if (fs.existsSync(projectWhisperPath)) {
-          const pw = fs.readFileSync(projectWhisperPath, "utf-8").trim();
-          if (pw) parts.push(pw);
-        }
-      } catch { /* skip */ }
-    }
-
-    // ── Layer 3: Per-project MAP ──
+    // ── Layer 2: Per-project MAP ──
     const projectMAP = buildProjectMAPInline(currentProject);
     if (projectMAP) parts.push(projectMAP);
 
     // ── Layer 4: DREAMS (speculative fragments) ──
+    // ── Layer 3: DREAMS (speculative fragments) ──
     try {
       if (fs.existsSync(_CONFIG.paths.dreamsContext)) {
         const dreams = fs.readFileSync(_CONFIG.paths.dreamsContext, "utf-8").trim();
@@ -459,11 +437,11 @@ export const GraphMemoryPlugin: Plugin = async ({ project, client, directory, wo
       }
     } catch { /* skip */ }
 
-    // ── Layer 5: Session handoff ──
+    // ── Layer 4: Session handoff ──
     const workingContent = loadProjectWorking(currentProject);
     if (workingContent) parts.push(workingContent);
 
-    // ── Layer 6: Pinned procedures (project-scoped) ──
+    // ── Layer 5: Pinned procedures (project-scoped) ──
     const pinned = loadPinnedNodes(currentProject);
     if (pinned.length > 0) {
       const sections = pinned.map(p => `### ${p.title}\n\n${p.content}`);
@@ -484,7 +462,7 @@ export const GraphMemoryPlugin: Plugin = async ({ project, client, directory, wo
         layerTokens: layerSizes,
         totalTokens: layerSizes.reduce((a, b) => a + b, 0),
         hasMentalModel: hasMentalModelData(),
-        whisperInjected,
+        mentalModelInjected,
       }) + "\n");
     } catch { /* non-critical */ }
 

@@ -95,7 +95,7 @@ export function buildSessionStartContext(cwd: string, sessionId: string): Sessio
   return { project, sessionId, mentalModelUsed: false, tokensUsed };
 }
 
-export function buildV2Injection(project: ProjectInfo): string {
+export function buildFallbackInjection(project: ProjectInfo): string {
   const maxSessionTokens = CONFIG.graph.maxSessionStartTokens || 15000;
   const globalBudget = 4000;
   const projectBudget = maxSessionTokens - globalBudget;

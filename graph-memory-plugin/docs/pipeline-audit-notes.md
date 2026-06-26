@@ -10,11 +10,10 @@ Working notes from a fresh audit of the graph-memory plugin. This file is intent
 - Runtime storage is resolved by `GRAPH_MEMORY_ROOT`, then `~/.graph-memory-config.yml`, then `~/.graph-memory`.
 - The daemon is the main pipeline scheduler. It owns a file-backed queue in `<graphRoot>/.jobs/{queued,running,done,failed}` and polls on `CONFIG.session.daemonPollMs`.
 - Pipeline workers are spawned as external agent harnesses through `worker-runner.ts`, using Codex, Claude Code, pi, or OpenCode based on env/runtime config.
-- The durable graph store is `nodes/`; v3 Layer 4 now points at the same markdown files instead of a separate `graph/` node tree.
-- v3 mental-model components are active by default: `observer`, `compressor`, `dreamer_v3`, v3 graph index, mind/lens/session storage, and project doc bootstrap.
-- The older `scribe` -> `auditor` -> `librarian` -> `dreamer` path still exists as a fallback/compatibility path, with `working_update` for project handoff files.
+- The durable graph store is `nodes/`; all pipeline stages read and write the same markdown files.
+- Optional pipeline components (observer, compressor, dreamer) are code-present but not active by default. Mind/lens/session storage and project doc bootstrap are active.
+- The active pipeline is `scribe` -> `auditor` -> `librarian` -> `dreamer`, with `working_update` for project handoff files.
 - Other daemon-owned background processes include daily memory analysis, Notion sync/inbound/merge, Skillforge scoring/refresh, decay, stale buffer scavenging, orphan snapshot cleanup, session pruning, and pipeline log rotation.
-- The target merge contract is now documented in [docs/v4-merge-plan.md](./v4-merge-plan.md): per-project `scribe -> auditor -> librarian -> dreamer`, global `observer -> compressor`.
 
 ## Entry Points And Triggers
 
@@ -33,7 +32,7 @@ Working notes from a fresh audit of the graph-memory plugin. This file is intent
   - `auditor` after enough completed scribes and active deltas.
   - `observer` after enough completed scribes.
   - `compressor` after enough completed observers.
-  - `dreamer_v3` after compressor completion.
+   - `dreamer` after compressor completion.
   - `memory_analysis` once per day after the configured local hour.
   - `notion_sync` once per day when enabled/configured.
   - `skillforge` and `skillforge_refresh` during each housekeeping tick.
@@ -123,12 +122,12 @@ Re-ran `npm test` after the patch set on 2026-05-18: 89/89 passing.
 
 ## Dashboard Follow-Up
 
-Audited `/Users/patrick/Desktop/agent_memory/memory-dashboard` after the v2/v3 storage unification. The cockpit needed wiring changes:
+Audited `/Users/patrick/Desktop/agent_memory/memory-dashboard` after the storage unification. The cockpit needed wiring changes:
 
-- Primary graph/project/health reads now prefer `graph/.index.json` when populated and fall back to the legacy `.index.json` when the v3 index exists but is empty.
+- Primary graph/project/health reads now prefer `graph/.index.json` when populated and fall back to the legacy `.index.json` when the index exists but is empty.
 - Active graph views exclude legacy archived node folders under `nodes/.archive/` and `nodes/archive/`.
 - Archive views include `archive/` plus the legacy archived folders under `nodes/`.
-- Startup context now reports actual v3 session-start layers: global whisper, guardrails, project whisper, recent session log, and pickup block.
+- Startup context now reports actual session-start layers: global model, guardrails, project model, recent session log, and pickup block.
 - Node edits update both index files when possible so inline dashboard edits do not leave the graph panel stale.
 
 Live endpoint check on 2026-05-18:

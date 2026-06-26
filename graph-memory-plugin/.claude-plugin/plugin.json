@@ -123,9 +123,9 @@
       "file": "./agents/memory-compressor.md"
     },
     {
-      "name": "memory-dreamer-v3",
-      "description": "V3 creative recombination using compressed mental models instead of raw nodes.",
-      "file": "./agents/memory-dreamer-v3.md"
+      "name": "memory-dreamer-models",
+      "description": "Creative recombination using compressed mental models instead of raw nodes.",
+      "file": "./agents/memory-dreamer-models.md"
     },
     {
       "name": "memory-skillforge",

@@ -1,5 +1,5 @@
 import { HarnessAdapter, HarnessType } from "./types.js";
-import { buildSessionStartContext, buildFullInjection, buildV2Injection, flushAndQueueJobs, cleanupSession } from "./shared.js";
+import { buildSessionStartContext, buildFullInjection, buildFallbackInjection, flushAndQueueJobs, cleanupSession } from "./shared.js";
 
 export class ClaudeCodeAdapter implements HarnessAdapter {
   name: HarnessType = "claude-code";
@@ -11,7 +11,7 @@ export class ClaudeCodeAdapter implements HarnessAdapter {
       return buildFullInjection(ctx.project);
     }
 
-    return buildV2Injection(ctx.project);
+    return buildFallbackInjection(ctx.project);
   }
 
   async onSessionEnd(sessionId: string): Promise<void> {

@@ -1,6 +1,6 @@
-# Graph Memory v3 — Mental Model Architecture
+# Graph Memory — Mental Model Architecture
 
-> **Status: Largely implemented (2026-05-29).** The system now runs a merged v2/v3 hybrid. v2 provides the active pipeline (scribe → auditor → librarian → dreamer) plus MAP, WORKING, DREAMS, pinned nodes, and decay. v3 provides mental models (mind/), observations, project lenses, and session logs. Session-start injection reads model.json directly (unconditional) → MAP → PINNED → WORKING. The whisper layer was eliminated 2026-05-22 in favor of direct model.json reads. The v3-only pipeline (observer → compressor → dreamer-v3) is code-present but not active by default. The diverged graph/ directory has been archived to archive/v3-graph-backup/. This spec remains useful for understanding the four-layer mental model architecture.
+> **Status: Implemented.** The system runs a unified architecture: an active pipeline (scribe → auditor → librarian → dreamer) plus MAP, WORKING, DREAMS, pinned nodes, and decay, with mental models (mind/), observations, project lenses, and session logs. Session-start injection reads model.json directly (unconditional) → MAP → PINNED → WORKING. Optional pipeline stages (observer → compressor → dreamer) are code-present but not active by default. The diverged graph/ directory has been archived to archive/v3-graph-backup/. This spec documents the mental model architecture.
 
 ## Overview
 
@@ -62,12 +62,12 @@ v3 Pipeline (code present, not active by default):
 
   observer:    watches conversation, writes observations + session logs + nodes
   compressor:  reads observations, folds into models
-  dreamer-v3:  periodic background job against compressed models + nodes
+  dreamer:     periodic background job against compressed models + nodes
   deep-audit:  on-demand full graph walk for bloat management
 
-Note: The v2 pipeline is the active, proven pipeline. v3 pipeline code exists
-but GRAPH_MEMORY_V3=1 is needed to activate it. The hybrid reads v3 mental
-models at session start while using v2 pipeline for graph operations.
+Note: The scribe → auditor → librarian → dreamer pipeline is the active,
+proven pipeline. Observer, compressor, and dreamer stages are code-present
+but not active by default.
 ```
 
 ### Anti-Patterns
@@ -431,10 +431,10 @@ Replace the current 5-file injection with the whisper model.
 
 **Implementation notes:**
 
-- New module `session-start-v3.ts` with `buildV3Context()` and `hasV3Data()` — shared across all harnesses
-- Claude Code hook (`session-start.ts`) tries v3 first via `hasV3Data()`, falls back to v2 when no whisper exists yet
-- OpenCode extension (`graph-memory-opencode.ts`) same pattern: v3 first, v2 fallback
-- Auto-creates project lens on first session via `ensureLens()` in `buildV3Context()`
+- Module `session-start-context.ts` with `buildSessionStartContext()` and `hasMentalModelData()` — shared across all harnesses
+- Claude Code hook tries mental model first via `hasMentalModelData()`, falls back to artifact injection when no model exists
+- OpenCode extension (`graph-memory-opencode.ts`) same pattern: mental model first, artifact fallback
+- Auto-creates project lens on first session via `ensureLens()` in `buildSessionStartContext()`
 - Session logs formatted with date, shipped, decisions, open threads, next session recommendation
 - Token budgets enforced: 400 global + 500 project + 200 session = 1,100 total
 - Added `compress` MCP action for manual compressor triggering (via `graph_memory(action="compress")`)
@@ -519,19 +519,19 @@ Adapt the dreamer to work against compressed models instead of the raw node grap
 
 **Tasks:**
 
-- [x] Write dreamer v3 prompt (`agents/memory-dreamer-v3.md`)
+- [x] Write dreamer prompt (`agents/memory-dreamer-models.md`)
   - Input: global model + project models + anti-patterns + graph stats + pending dreams
   - Looks for surprising connections between compressed model entries
   - Uses anti-patterns as "dream around" constraints
   - Strategies: self-model, connection, inversion, analogy, emergence, integration
-- [x] Implement dreamer v3 structured tools (`pipeline/dreamer-v3-tools.ts`)
+- [x] Implement dreamer structured tools (`pipeline/dreamer-tools.ts`)
   - `propose_dream` — creates new dream fragment JSON in dreams/pending/
   - `promote_dream` — raises confidence on existing dream
   - `buildDreamerV3Input()` — assembles models, anti-patterns, pending dreams
   - `processDreamerV3Outputs()` — reads JSON files from pipeline observations
   - Hard cap enforcement on pending dreams
 - [x] Update dreamer job in daemon
-  - `dreamer_v3` job type added to job-schema, job-queue
+  - `dreamer` job type added to job-schema, job-queue
   - Triggered after compressor completion (auto-enqueues)
   - `runDreamerV3()` builds input inline, processes outputs
 - [x] Update dream reinforcement
@@ -565,8 +565,8 @@ Implement the adapter pattern for all four harnesses.
   - tools: MCP server
   - project detection: cwd from process
 - [x] Shared session logic (`adapters/shared.ts`)
-  - `buildSessionStartContext()` — unified v3-first/v2-fallback context builder
-  - `buildV2Injection()` — traditional 5-file injection as fallback
+  - `buildSessionStartContext()` — unified context builder (mental model first, artifact fallback)
+  - `buildFallbackInjection()` — traditional 5-file injection as fallback
   - `flushAndQueueJobs()` — buffer flush + scribe/observer job enqueue
   - `cleanupSession()` — active project removal + dirty state clear
 - [x] Adapter factory (`adapters/factory.ts`)
@@ -579,7 +579,7 @@ Migrate existing graph data to the new format.
 
 **Tasks:**
 
-- [x] Implement migration script (`src/graph-memory/scripts/migrate-v2-to-v3.ts`)
+- [x] Implement migration script (`src/graph-memory/scripts/migrate-mental-model.ts`)
   - Read existing nodes from ~/.graph-memory/nodes/
   - Run a one-time "bootstrap compressor" pass
   - Generate initial mind/model.json from high-confidence nodes
@@ -596,18 +596,16 @@ Migrate existing graph data to the new format.
   - Verify anti-patterns are correctly identified
 - [x] Keep fallback paths functional during transition
   - Durable graph paths are unified on nodes/
-  - Feature flag: `GRAPH_MEMORY_V3=0` disables the v3 context path for emergency fallback
-  - Default: v3 active, shadow mode disabled unless `GRAPH_MEMORY_V3_SHADOW=1`
 
 ### Phase 10: Cleanup and Removal
 
 Remove v2 code after v3 is validated.
 
-> **Note (2026-05-29):** v2 and v3 coexist in a merged hybrid architecture. The v2 pipeline (scribe → auditor → librarian → dreamer) remains the active pipeline. The v3-only pipeline (observer → compressor → dreamer-v3) is code-present but not active by default. Items below are retained for historical reference but are not planned as described.
+> **Note (2026-05-29):** The scribe → auditor → librarian → dreamer pipeline remains the active pipeline. Optional stages (observer, compressor, dreamer) are code-present but not active by default. Items below are retained for historical reference but are not planned as described.
 
 **Tasks:**
 
-- [ ] ~~Remove old pipeline components~~ — Not planned: v2/v3 hybrid is the target architecture.
+- [ ] ~~Remove old pipeline components~~ — Not planned: unified architecture is the target.
   - `pipeline/spawn.ts` (already deprecated)
   - `pipeline/librarian.ts` (replaced by compressor)
   - Old scribe-related code in daemon.ts
@@ -626,7 +624,7 @@ Remove v2 code after v3 is validated.
   - Show anti-patterns as separate view
   - Show observation stream
   - Keep graph explorer for Layer 4
-- [ ] ~~Remove feature flag~~ — Not planned: `GRAPH_MEMORY_V3` flag retained for the hybrid toggle.
+- [x] ~~Remove feature flag~~ — Completed in 3.1.0: `GRAPH_MEMORY_V3` flag removed (was never read by source code).
 - [ ] ~~Update documentation~~ — Superseded by CLAUDE.md in repo root.
 
 ---
@@ -654,7 +652,7 @@ Phase 0 (types/structure)
 
 Phase 9 (migration) [depends on 1-8]
   │
-  └──► Phase 10 (cleanup) [depends on 9 — not planned, v2/v3 hybrid is target]
+  └──► Phase 10 (cleanup) [completed in 3.1.0]
 ```
 
 Phase 4 (graph redesign) and Phases 1-3 (observer/compressor/session-start) can be built in parallel.

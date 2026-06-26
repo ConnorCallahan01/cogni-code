@@ -1,18 +1,17 @@
 /**
- * Phase 9: Migrate existing v2 graph data to v3 mental model architecture.
+ * Migrate existing graph data to the mental model architecture.
  *
  * Reads all active nodes from nodes/, high-confidence ones feed into:
  *   - Global mental model (mind/model.json + mind/whisper.txt)
  *   - Project models (lenses/{project}/model.json + whisper.txt)
  *   - Graph index (graph/.index.json)
  *
- * v3 Layer 4 now uses the existing nodes/ directory directly. The migration
- * preserves existing node and archive paths and only builds the compressed
- * mental-model layers plus the v3 lookup index.
+ * The migration preserves existing node and archive paths and only builds
+ * the compressed mental-model layers plus the lookup index.
  *
  * Usage:
- *   npx tsx src/graph-memory/scripts/migrate-v2-to-v3.ts           # dry run
- *   npx tsx src/graph-memory/scripts/migrate-v2-to-v3.ts --apply    # apply
+ *   npx tsx src/graph-memory/scripts/migrate-mental-model.ts           # dry run
+ *   npx tsx src/graph-memory/scripts/migrate-mental-model.ts --apply    # apply
  *   GRAPH_MEMORY_ROOT=/path/to/data npx tsx ... --apply             # custom root
  */
 import fs from "fs";
@@ -27,7 +26,7 @@ import { writeWhisper, enforceWhisperCap, estimateTokens } from "../mind/whisper
 import { GlobalModel, GlobalModelFile } from "../mind/types.js";
 import { ensureLens, writeModel as writeProjectModel, writeWhisper as writeProjectWhisper, readModel as readProjectModel, listActiveLenses } from "../lenses/index.js";
 import { ProjectModel, ProjectModelFile } from "../lenses/types.js";
-import { rebuildV3Index as rebuildGraphIndex } from "../pipeline/graph-index.js";
+import { rebuildIndex as rebuildGraphIndex } from "../pipeline/graph-index.js";
 import { repairYamlFrontmatter, tryParseWithRepair } from "../pipeline/yaml-repair.js";
 
 interface MigratedNode {
@@ -262,10 +261,10 @@ export function buildProjectModels(nodes: MigratedNode[]): Map<string, { model: 
 
 function printStats(stats: MigrationStats, apply: boolean): void {
   const mode = apply ? "APPLY" : "DRY RUN";
-  console.log(`\n=== Migration v2 → v3 (${mode}) ===`);
+  console.log(`\n=== Mental Model Migration (${mode}) ===`);
   console.log(`Graph root: ${CONFIG.paths.graphRoot}`);
   console.log(`Nodes scanned: ${stats.nodesScanned}`);
-  console.log(`Nodes available for v3 graph layer: ${stats.nodesAvailable}`);
+  console.log(`Nodes available for graph layer: ${stats.nodesAvailable}`);
   console.log(`Global model entries: ${stats.globalModelEntries}`);
   console.log(`Project lenses created: ${stats.projectLenses.length}`);
   for (const proj of stats.projectLenses) {
@@ -295,7 +294,7 @@ async function main() {
   const lensesDir = CONFIG.paths.lenses;
 
   if (!fs.existsSync(nodesDir)) {
-    console.error(`No v2 nodes directory found at ${nodesDir}`);
+    console.error(`No nodes directory found at ${nodesDir}`);
     process.exit(1);
   }
 
@@ -309,15 +308,15 @@ async function main() {
     errors: [],
   };
 
-  // Step 1: Collect all v2 nodes
-  console.log("Scanning v2 nodes...");
+  // Step 1: Collect all nodes
+  console.log("Scanning nodes...");
   const nodes = collectNodes(nodesDir);
   stats.nodesScanned = nodes.length;
   console.log(`  Found ${nodes.length} active nodes`);
 
-  // Step 2: Reuse nodes/ directly for v3 Layer 4
+  // Step 2: Reuse nodes/ directly as the canonical node store
   stats.nodesAvailable = nodes.length;
-  console.log(`  Reusing ${nodes.length} nodes from nodes/ for v3 Layer 4`);
+  console.log(`  Reusing ${nodes.length} nodes from nodes/ as canonical store`);
 
   // Step 3: Build global mental model
   console.log("Building global mental model...");
@@ -375,7 +374,7 @@ async function main() {
   }
 
   // Step 5: Build graph index
-  console.log("Building v3 graph index...");
+  console.log("Building graph index...");
   const antiPatterns = nodes.filter((n) => n.anti_pattern || n.category === "anti-patterns");
   stats.antiPatterns = antiPatterns.length;
 
