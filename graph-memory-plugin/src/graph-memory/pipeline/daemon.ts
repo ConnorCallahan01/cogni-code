@@ -19,7 +19,7 @@ import { loadExternalInputsConfig, readRecentClassifiedInputs } from "../externa
 import { getProjectWorkingPath, getProjectWorkingStatePath, getProjectWorkingUpdatePath, getFileInteractionPath, getProjectAuditDir, getProjectPreflightPath, getProjectAuditReportPath, getProjectAuditBriefPath, getProjectDreamsDir, getProjectDreamSummaryPath, getProjectLockPath, getGlobalLockPath, ensureAuditDirectories, ensureDreamDirectories, ensureLockDirectories, sanitizeProjectSlug } from "../working-files.js";
 import { processObserverOutputs } from "./observer-tools.js";
 import { processCompressorOutputs, runAutoPrune } from "./compressor-tools.js";
-import { rebuildV3Index as rebuildGraphIndex } from "./graph-index.js";
+import { rebuildIndex as rebuildGraphIndex } from "./graph-index.js";
 import { bootstrapProjectDoc, detectDocDrift } from "./bootstrap.js";
 import { readNotionSyncState, writeNotionSyncState, buildNotionDiff, writeDiffReport, readSyncPlan, executeNotionSync, buildWorkspaceManifest, writeWorkspaceManifest, mergeStewardPlans, readStewardPlan, StewardPlan } from "./notion-sync.js";
 import { checkNtnReady, getPage } from "./notion-cli.js";

@@ -9,7 +9,7 @@
 | Notion sync | Operational — two-way, 5 stewards, chunked sync |
 | Session injection | model.json → MAP → PINNED → WORKING (~11k tokens) |
 | Phase 5 items | All completed (see below) |
-| Phase 10 cleanup | Deferred indefinitely — v2/v3 hybrid is the target architecture |
+| Phase 10 cleanup | Completed — version labels removed, unified architecture |
 
 ---
 
@@ -25,8 +25,8 @@
   - Scribe default confidence raised to 0.6 (R3 resolved)
   - Skillforge threshold lowered to 0.55 (R4 resolved)
   - MAP rebuilds after decay/archival
-- **v4 Merge:** Per-project scribe→auditor→librarian→dreamer pipeline, global observer→compressor, project-aware job scheduling, compatibility cruft removed.
-- **Dashboard:** V3 storage unification wiring, path audit fixes, node edit dual-index updates.
+- **Pipeline merge:** Per-project scribe→auditor→librarian→dreamer pipeline, global observer→compressor, project-aware job scheduling, compatibility cruft removed.
+- **Dashboard:** Storage unification wiring, path audit fixes, node edit dual-index updates.
 
 ---
 
@@ -91,4 +91,4 @@ Session injection uses a **split budget** — global context + project context:
 | Incremental MAP regeneration | Complex refactor; full regen is ~1s |
 | Combine auditor + librarian | Large refactor; clean separation works |
 | PRIORS entry age counter for auto-demotion | Nice-to-have; compression already handles it |
-| Phase 10 v2/v3 cleanup | v2/v3 hybrid is the target architecture, not a transitional state |
+| Architecture cleanup | Completed in 3.1.0 — version labels removed, single unified architecture |

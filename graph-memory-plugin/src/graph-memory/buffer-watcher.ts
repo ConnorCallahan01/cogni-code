@@ -13,7 +13,7 @@ export interface ConversationEntry {
 }
 
 /**
- * Simplified BufferWatcher for v2 plugin context.
+ * Simplified BufferWatcher for the plugin context.
  *
  * No direct scribe firing from hooks. This class only buffers, rotates, and queues.
  *

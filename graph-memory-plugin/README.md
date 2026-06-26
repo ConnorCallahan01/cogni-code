@@ -28,15 +28,15 @@ This directory is the active plugin surface in the repository. If you cloned the
 
 ## Architecture
 
-### Merged v2/v3 Hybrid
+### Unified Architecture
 
-The system runs a merged v2/v3 hybrid architecture:
+The system is a single unified architecture:
 
-- **v2 provides**: knowledge graph (`nodes/`), MAP, WORKING, DREAMS, pinned nodes, decay, context regeneration
-- **v3 provides**: mental models (`mind/`), observations, session logs, project lenses
-- **Single canonical node store**: `nodes/` — the diverged `graph/` directory has been archived to `archive/v3-graph-backup/`
+- **Knowledge graph** (`nodes/`), MAP, WORKING, DREAMS, pinned nodes, decay, context regeneration
+- **Mental models** (`mind/`), observations, session logs, project lenses
+- **Single canonical node store**: `nodes/` — the older `graph/` directory has been archived to `archive/v3-graph-backup/`
 
-The durable graph is stored once in `nodes/`; the v3 mental-model layers compress that graph into low-token session context.
+The durable graph is stored once in `nodes/`; the mental-model layers compress that graph into low-token session context.
 
 **Layers:**
 
@@ -64,11 +64,9 @@ Session-start uses a single injection path:
 
 **mental-model (model.json direct, unconditional) → MAP (per-project) → PINNED (project-gated) → WORKING**
 
-Both the merged path and the fallback share the same underlying durable nodes. Set `GRAPH_MEMORY_V3=0` only for emergency fallback while debugging the context path.
+### Optional Pipeline Stages
 
-### v2/v3 Pipeline Stages
-
-The v2 pipeline (scribe → auditor → librarian → dreamer) is the active, proven pipeline. Observer, compressor, and dreamer-v3 stages are present but not active by default — they can be re-enabled with `GRAPH_MEMORY_V3=1`. All stages read and write the same durable node files in `nodes/`, while `mind/`, `lenses/`, and `sessions/` hold compressed context layers.
+The scribe → auditor → librarian → dreamer pipeline is the active, proven pipeline. Observer, compressor, and dreamer stages are present but not active by default. All stages read and write the same durable node files in `nodes/`, while `mind/`, `lenses/`, and `sessions/` hold compressed context layers.
 
 ### Notion Sync
 
@@ -143,7 +141,7 @@ Detailed clone-to-first-run instructions are in [../docs/setup-from-clone.md](..
 
 ### Seeding the Mental Model from Existing Nodes (Legacy)
 
-The migration script `src/graph-memory/scripts/migrate-v2-to-v3.ts` was used during the v3 transition period to populate the mental model structure from existing v2 nodes. It is now legacy — new installations build the mental model organically through the pipeline. The script does not remove or alter existing v2 data.
+The migration script `src/graph-memory/scripts/migrate-mental-model.ts` was used during the initial transition to populate the mental model structure from existing nodes. It is now legacy — new installations build the mental model organically through the pipeline. The script does not remove or alter existing node data.
 
 ## Runtime Model
 
@@ -277,11 +275,10 @@ Resources:
 |----------|-------------|
 | `scribe` | Extract deltas from conversation buffer |
 | `observer` | v3: produce observations, session logs, node upserts |
-| `compressor` | v3: fold observations into mental models, generate whispers |
+| `compressor` | Fold observations into mental models, generate whispers |
 | `auditor` | Mechanical triage of scribe deltas |
 | `librarian` | Judgment-heavy graph updates and context regeneration |
-| `dreamer` | v2: creative cross-node associations |
-| `dreamer_v3` | v3: creative associations against compressed models |
+| `dreamer` | Creative cross-node associations |
 | `working_update` | Update per-project working state from session activity |
 | `skillforge` | Convert high-access nodes into slash commands |
 | `skillforge_refresh` | Update drifted skillforged skills |
@@ -298,8 +295,6 @@ Resources:
 | graph root pointer | `~/.graph-memory-config.yml` | `~/.graph-memory/` |
 | per-graph settings | `<graphRoot>/config.yml` | git enabled |
 | runtime config | `<graphRoot>/.runtime-config.json` | `manual` |
-| v3 enable | `GRAPH_MEMORY_V3` env var | enabled unless set to `0` |
-| v3 shadow mode | `GRAPH_MEMORY_V3_SHADOW` env var | disabled unless set to `1` |
 
 ## Storage Layout
 
@@ -367,7 +362,7 @@ Server: Express on port 3001. Frontend: React + Vite on port 5173.
 - pi extension: [`extensions/graph-memory.ts`](./extensions/graph-memory.ts)
 - memory section templates: [`templates/`](./templates/)
 - agent instructions: [`agents/`](./agents/)
-- v3 pipeline agents: observer, compressor, dreamer-v3
-- migration script: [`src/graph-memory/scripts/migrate-v2-to-v3.ts`](./src/graph-memory/scripts/migrate-v2-to-v3.ts) (legacy)
+- optional pipeline agents: observer, compressor, dreamer
+- migration script: [`src/graph-memory/scripts/migrate-mental-model.ts`](./src/graph-memory/scripts/migrate-mental-model.ts) (legacy)
 - Notion sync design spec: [`docs/notion-sync-spec.md`](./docs/notion-sync-spec.md)
 - examples: [`../examples/`](../examples/)

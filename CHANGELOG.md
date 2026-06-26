@@ -5,6 +5,18 @@ All notable changes to graph-memory will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.1.0] — 2026-06-25
+
+### Changed
+
+- **Version label cleanup** — removed all v2/v3/v4 version labels from source code and docs. File names and function names now describe function, not version history. The system is described as a single unified architecture.
+- **Extension import bug fixed** — both `graph-memory.ts` (pi) and `graph-memory-opencode.ts` imported `hasV3Data`/`buildV3Context` from `session-start-context.js`, but those exports were renamed to `hasMentalModelData`/`buildSessionStartContext` during the earlier naming cleanup. The broken imports meant mental model injection was silently dead in both extensions. Fixed to use correct export names.
+- **Whisper fallback removed** — extensions no longer read `mind/whisper.txt` as a fallback when mental model injection fails. Model.json is the single source of truth for mental model data.
+- **`buildV2Injection` renamed** — renamed to `buildFallbackInjection` across all adapters (claude-code, opencode, pi, index) to describe function instead of version.
+- **`GRAPH_MEMORY_V3` env var removed** — was a phantom toggle referenced in docs and tests but never read by source code. All references removed.
+- **Test file renamed** — `tests/v3-pipeline.check.mjs` → `tests/pipeline.check.mjs`. Test names and module import paths updated to current names.
+- **Migration script renamed** — `scripts/migrate-v2-to-v3.ts` → `scripts/migrate-mental-model.ts`.
+
 ## [3.0.1] — 2026-05-29
 
 ### Fixed

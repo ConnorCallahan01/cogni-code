@@ -2,10 +2,11 @@
  * Pi extension for graph-memory.
  *
  * Registers the `graph_memory` tool that gives pi agents access to the
- * persistent knowledge graph. Injectes all five context files (MAP,
- * PRIORS, SOMA, WORKING, DREAMS) at session start when the graph is
- * initialized. Captures conversation (user + assistant messages) to the
- * buffer, rotating snapshots to feed the scribe pipeline.
+ * persistent knowledge graph. Injects the mental-model session-start
+ * packet (via buildSessionStartContext) plus MAP/WORKING/DREAMS context
+ * files at session start when the graph is initialized. Captures
+ * conversation (user + assistant messages) to the buffer, rotating
+ * snapshots to feed the scribe pipeline.
  *
  * Usage (after installing as a pi package):
  *   pi install ./graph-memory-plugin   # local dev
@@ -27,8 +28,9 @@ let _enqueueJob: any;
 let _somaBoost: any;
 let _listManifests: any;
 let _ambientRecall: any;
-let _hasV3Data: any;
-let _buildV3Context: any;
+let _hasMentalModelData: any;
+let _buildMentalModelContext: any;
+let _detectProject: any;
 
 async function loadCore() {
   if (_handleGraphMemory) return;
@@ -42,7 +44,8 @@ async function loadCore() {
   const scoring = await import(path.join(distDir, "scoring.js"));
   const soma = await import(path.join(distDir, "soma.js"));
   const manifest = await import(path.join(distDir, "pipeline", "skillforge-manifest.js"));
-  const sessionStartV3 = await import(path.join(distDir, "session-start-context.js"));
+  const sessionStart = await import(path.join(distDir, "session-start-context.js"));
+  const projectMod = await import(path.join(distDir, "project.js"));
   _handleGraphMemory = tools.handleGraphMemory;
   _initializeGraph = index.initializeGraph;
   _CONFIG = config.CONFIG;
@@ -51,8 +54,9 @@ async function loadCore() {
   _somaBoost = soma.somaBoost;
   _ambientRecall = scoring.ambientRecall;
   _listManifests = manifest.listManifests;
-  _hasV3Data = sessionStartV3.hasV3Data;
-  _buildV3Context = sessionStartV3.buildV3Context;
+  _hasMentalModelData = sessionStart.hasMentalModelData;
+  _buildMentalModelContext = sessionStart.buildSessionStartContext;
+  _detectProject = projectMod.detectProject;
 }
 
 export default function (pi: ExtensionAPI) {
@@ -302,16 +306,27 @@ SETUP:
     captureSessionId = "";
   });
 
+  function detectCurrentProject(): string {
+    try {
+      if (_detectProject) {
+        const info = _detectProject(process.cwd());
+        if (info && info.name && info.name !== "global") return info.name;
+      }
+    } catch { /* fall through to global */ }
+    return "global";
+  }
+
   function doAmbientRecall(userMessage: string): string | null {
     if (!_CONFIG) return null;
-    const result = _ambientRecall(userMessage, _CONFIG.paths.index, undefined, _somaBoost);
+    const currentProject = detectCurrentProject();
+    const result = _ambientRecall(userMessage, _CONFIG.paths.index, currentProject !== "global" ? currentProject : undefined, _somaBoost);
     return result.context;
   }
 
-  // ── Inject context files + capture user message + ambient recall ─
-  // Loads all five artifacts, appends the user prompt to the
-  // conversation buffer, and runs ambient auto-recall to surface
-  // relevant graph nodes. This mirrors the full Claude Code hook.
+  // ── Inject session-start context + capture user message + ambient recall ─
+  // Builds the mental-model packet plus MAP/WORKING/DREAMS context files,
+  // appends the user prompt to the conversation buffer, and runs ambient
+  // auto-recall. Mirrors the Claude Code hook and OpenCode extension.
   pi.on("before_agent_start", async (event, _ctx) => {
     await ensureGraph();
     await loadCore();
@@ -341,38 +356,52 @@ SETUP:
       return;
     }
 
-    // v3 path: try whisper-based injection first
-    try {
-      if (_hasV3Data && _hasV3Data()) {
-        const v3 = _buildV3Context("global");
-        if (!v3.sources.fallback && v3.context) {
-          const v3Parts: string[] = [];
-          const recallBlock = doAmbientRecall(event.prompt);
-          if (recallBlock) v3Parts.push(recallBlock);
-          v3Parts.push(v3.context);
-          if (v3Parts.length > 0) {
-            return {
-              message: {
-                customType: "graph-memory-context",
-                content: v3Parts.join("\n\n"),
-                display: false,
-              },
-            };
-          }
-        }
-      }
-    } catch { /* v3 not available, fall through to v2 */ }
+    const parts: string[] = [];
 
-    const artifacts: Array<{ filePath: string; label: string }> = [
-      { filePath: _CONFIG.paths.priors, label: "PRIORS (behavioral guidelines)" },
-      { filePath: _CONFIG.paths.soma, label: "SOMA (emotional calibration)" },
+    // --- Layer 1: Mental model (current contract) ---
+    // buildSessionStartContext returns the global model + guardrails +
+    // project model + session log + pickup + Notion tasks. This is the
+    // canonical session-start packet shared with the Claude Code hook and
+    // the OpenCode extension.
+    let mentalModelInjected = false;
+    if (_hasMentalModelData && _hasMentalModelData()) {
+      try {
+        const currentProject = detectCurrentProject();
+        const mentalModel = _buildMentalModelContext(currentProject);
+        if (!mentalModel.sources.fallback && mentalModel.context) {
+          parts.push(mentalModel.context);
+          mentalModelInjected = true;
+        }
+      } catch { /* fall through to legacy artifacts */ }
+    }
+
+    // --- Legacy fallback: PRIORS/SOMA (only when no mental model) ---
+    // These pre-date mind/model.json and are retained so older installs
+    // that have never generated a mental model still inject something.
+    if (!mentalModelInjected) {
+      const legacyArtifacts: Array<{ filePath: string; label: string }> = [
+        { filePath: _CONFIG.paths.priors, label: "PRIORS (behavioral guidelines)" },
+        { filePath: _CONFIG.paths.soma, label: "SOMA (emotional calibration)" },
+      ];
+      for (const { filePath, label } of legacyArtifacts) {
+        try {
+          if (fs.existsSync(filePath)) {
+            const content = fs.readFileSync(filePath, "utf-8").trim();
+            if (content) {
+              parts.push(`<!-- Graph Memory ${label} -->\n${content}`);
+            }
+          }
+        } catch { /* skip unavailable files */ }
+      }
+    }
+
+    // --- Layers 2-4: MAP, WORKING, DREAMS (context files) ---
+    const contextFiles: Array<{ filePath: string; label: string }> = [
       { filePath: _CONFIG.paths.map, label: "MAP (compressed index)" },
       { filePath: _CONFIG.paths.working, label: "WORKING (volatile memory)" },
       { filePath: _CONFIG.paths.dreamsContext, label: "DREAMS (pending fragments)" },
     ];
-
-    const parts: string[] = [];
-    for (const { filePath, label } of artifacts) {
+    for (const { filePath, label } of contextFiles) {
       try {
         if (fs.existsSync(filePath)) {
           const content = fs.readFileSync(filePath, "utf-8").trim();

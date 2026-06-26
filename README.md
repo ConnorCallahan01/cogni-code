@@ -137,26 +137,28 @@ Cogni-Code runs a continuous loop with four phases: **capture, process, inject, 
   │ session hooks │────▶│ graph_memory  │   ← MCP tool you call directly
   │ capture state │     │ tool surface  │     (remember, recall, search...)
   └──────────────┘     └──────┬────────┘
-                               │
-                  ┌────────────▼────────────┐
-                  │   background pipeline   │
-                  │                          │
-                  │   scribe → auditor →     │   ← runs automatically
-                  │   librarian → dreamer    │
-                  │                          │
-                  │   observer, skillforge,  │   ← always-on enrichment
-                  │   working-update         │
-                  └────────────┬────────────┘
-                               │
-                  ┌────────────▼────────────┐
-                  │     ~/.graph-memory/    │
-                  │                          │
-                  │   mind/model.json        │  ← who you are (cognitive profile)
-                  │   lenses/{project}/      │  ← how each project works
-                  │   sessions/{project}/    │  ← what happened recently
-                  │   nodes/                 │  ← the durable knowledge graph
-                  │   dreams/                │  ← speculative associations
-                  └─────────────────────────┘
+                              │
+                 ┌────────────▼────────────┐
+                 │     background pipeline  │
+                 │                          │
+                 │  scribe → auditor →      │   ← active pipeline (always runs)
+                 │  librarian → dreamer     │
+                 │                          │
+                 │  observer (writes to     │   ← always active, single node store
+                 │  nodes/ alongside main)  │
+                 │                          │
+                  │  compressor, dreamer    │   ← code present, not active by default
+                 └────────────┬────────────┘
+                              │
+                 ┌────────────▼────────────┐
+                 │     ~/.graph-memory/     │
+                 │                          │
+                 │  mind/model.json         │   ← cognitive profile (always active)
+                 │  lenses/{project}/       │   ← project models (always active)
+                 │  sessions/{project}.jsonl│   ← session logs (always active)
+                 │  nodes/                  │   ← knowledge graph (canonical store)
+                 │  dreams/                 │   ← creative associations
+                 └─────────────────────────┘
 ```
 
 **Capture.** Session hooks watch your conversations and tool traces. Nothing is sent anywhere. The hooks write to a local buffer.
@@ -177,7 +179,7 @@ Cogni-Code stores memory in four layers, each serving a different purpose. The l
 
 `mind/model.json` is a compact profile of *how you work*. Cognitive style, decision patterns, preferences, guardrails, emotional profile. This is loaded at the start of every session, unconditionally. It is the difference between an agent that knows you and an agent that knows facts about you.
 
-### Layer 2: Project lenses (per-project)
+The system is a single unified architecture. Mental model data is always active:
 
 `lenses/{project}/` holds per-project context. Tech stack, conventions, active work, open threads. When you switch projects, the lens switches too. Your Keel3 context does not leak into your OpenPatient work.
 

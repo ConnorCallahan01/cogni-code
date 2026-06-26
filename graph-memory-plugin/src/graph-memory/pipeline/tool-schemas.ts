@@ -1,5 +1,5 @@
 /**
- * Structured tool schemas for the v3 pipeline workers.
+ * Structured tool schemas for the pipeline workers.
  *
  * These define the input/output contracts for observer, compressor, and dreamer.
  * Each worker receives these schemas in its prompt and calls them as structured tools.

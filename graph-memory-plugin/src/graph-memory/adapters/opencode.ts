@@ -1,5 +1,5 @@
 import { HarnessAdapter, HarnessType } from "./types.js";
-import { buildSessionStartContext, buildFullInjection, buildV2Injection, flushAndQueueJobs, cleanupSession } from "./shared.js";
+import { buildSessionStartContext, buildFullInjection, buildFallbackInjection, flushAndQueueJobs, cleanupSession } from "./shared.js";
 
 export class OpenCodeAdapter implements HarnessAdapter {
   name: HarnessType = "opencode";
@@ -16,7 +16,7 @@ export class OpenCodeAdapter implements HarnessAdapter {
       return buildFullInjection(ctx.project);
     }
 
-    return buildV2Injection(ctx.project);
+    return buildFallbackInjection(ctx.project);
   }
 
   async onSessionEnd(sessionId: string): Promise<void> {

@@ -84,7 +84,7 @@ STRICT project filtering:
 {
   "keyFiles": [
     { "path": "src/bridge/oliver-bridge-source.ts", "role": "edited", "note": "detached turn.run from fill" },
-    { "path": "tests/v3-pipeline.check.mjs", "role": "ran", "note": "35 tests passing" }
+    { "path": "tests/pipeline.check.mjs", "role": "ran", "note": "35 tests passing" }
   ]
 }
 ```

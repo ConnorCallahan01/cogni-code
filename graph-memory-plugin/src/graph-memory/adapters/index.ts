@@ -4,4 +4,4 @@ export { OpenCodeAdapter } from "./opencode.js";
 export { PiAdapter } from "./pi.js";
 export { CodexAdapter } from "./codex.js";
 export { createAdapter } from "./factory.js";
-export { buildSessionStartContext, buildV2Injection, flushAndQueueJobs, cleanupSession, SessionStartContext } from "./shared.js";
+export { buildSessionStartContext, buildFallbackInjection, flushAndQueueJobs, cleanupSession, SessionStartContext } from "./shared.js";

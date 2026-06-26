@@ -59,7 +59,7 @@ You are NOT re-extracting facts — the scribe already did that. You are looking
 ### 1. Cross-project patterns
 The user did X in project A and Y in project B. Are they the same instinct?
 - Example: User prefers incremental changes in Keel3 AND in openpatient → pattern: "prefers incremental over revolutionary changes"
-- Example: User abandoned v3 rewrite in agent_memory, reverted to proven v2 → pattern: "validate before replacing, trauma-driven decisions"
+- Example: User abandoned a rewrite in agent_memory, reverted to proven approach → pattern: "validate before replacing, trauma-driven decisions"
 
 ### 2. Cognitive style signals
 How does the user approach problems? What's their debugging instinct? Their design instinct?

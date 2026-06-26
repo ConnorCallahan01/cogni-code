@@ -116,7 +116,7 @@ node -e "
 
   const desired = {
     type: 'local',
-    command: ['node', command],
+    command: ['bash', command],
     enabled: true
   };
 

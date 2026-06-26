@@ -112,23 +112,18 @@ The v2 pipeline is the active, proven pipeline. All four prompts were improved t
 5. **Dreamer** creates speculative cross-node fragments.
 6. **Git** records graph history for rollback.
 
-### Session Start (merged v2 + mental model)
+### Session Start
 
-Session-start uses a tiered strategy:
+Session-start reads `mind/model.json` directly (unconditional) → guardrails (anti-patterns) → project model → session logs → pickup hints → Notion tasks. The structured mental model replaced the old PRIORS.md + SOMA.md approach.
 
-- **If `GRAPH_MEMORY_V3=1` and whisper data exists** — compressed whispers (~1,100 tokens): global whisper ~400, project whisper ~500, session logs ~200, guardrails ~150
-- **Otherwise (default)** — reads `mind/model.json` directly (unconditional) → MAP (per-project) → PINNED (project-gated) → WORKING. Whisper layer eliminated 2026-05-22 in favor of direct model.json reads.
+### Architecture
 
-Both paths use the same underlying mental model data. The structured model replaced the old PRIORS.md + SOMA.md approach.
+The system is a single unified architecture:
 
-### v2/v3 Hybrid Architecture
-
-The system runs a merged v2/v3 hybrid:
-
-- **v2 provides**: knowledge graph (nodes/), MAP, WORKING, DREAMS, pinned nodes, decay, context regeneration
-- **v3 provides**: mental models (mind/), whispers, observations, session logs, project lenses
-- **Single canonical node store**: `nodes/` — the diverged `graph/` directory has been archived to `archive/v3-graph-backup/`
-- Observer still runs but writes nodes to `nodes/` instead of `graph/`
+- **Knowledge graph** (`nodes/`), MAP, WORKING, DREAMS, pinned nodes, decay, context regeneration
+- **Mental models** (`mind/`), observations, session logs, project lenses
+- **Single canonical node store**: `nodes/` — the older `graph/` directory has been archived to `archive/v3-graph-backup/`
+- Observer writes to `nodes/`
 
 ### Mental Model Data
 
@@ -137,9 +132,9 @@ The system runs a merged v2/v3 hybrid:
 - **Session logs** (`sessions/{project}.jsonl`) — shipped work, decisions, blocked items, next-session hints
 - **Observations** (`mind/observations.jsonl`, `lenses/{project}/observations.jsonl`) — append-only feeds
 
-### v3 Pipeline Stages (code present, not active by default)
+### Optional Pipeline Stages (code present, not active by default)
 
-Observer, compressor, and dreamer-v3 were built but rolled back after failing to validate in production (worker spawn storms, compressor never triggered). Can be re-enabled with `GRAPH_MEMORY_V3=1`.
+Observer, compressor, and dreamer were built but rolled back after failing to validate in production (worker spawn storms, compressor never triggered).
 
 ### Additional Pipeline Stages
 
