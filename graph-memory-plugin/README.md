@@ -137,6 +137,23 @@ Then start OpenCode and run:
 /memory-onboard
 ```
 
+### Windows
+
+All supported installers are bash scripts — run them from **Git Bash** (installed with [Git for Windows](https://gitforwindows.org/)), not PowerShell or cmd.exe. PowerShell/cmd can't interpret the `#!/usr/bin/env bash` shebang.
+
+Two things to have in place first:
+
+- **Node ≥ 18 must resolve first on `PATH`.** If you have an older bundled Node (e.g. from a system-wide installer) ahead of a newer one in `PATH`, the build step (`tsc`) will fail with syntax errors on modern JS. Check with `node --version` from Git Bash before installing.
+- **`cygpath` must be on `PATH`.** It ships with Git for Windows and is used to convert paths into a form Windows-native processes (Claude Code, OpenCode, Codex) can spawn directly.
+
+What the installers do differently on Windows:
+
+- The plugin directory is linked into `~/.claude/plugins/` with a directory **junction** (`mklink /J`, unprivileged) instead of a symlink — real symlinks need admin rights or Developer Mode.
+- Slash commands are **copied** instead of symlinked, and kept in sync by content comparison — re-run the installer after pulling repo changes to refresh them.
+- **Hook and MCP server commands invoke `node.exe` directly** instead of the `.sh` wrapper scripts. This isn't just a missing-file-association issue: `bash.exe`, when a non-Git-Bash process (Claude Code, OpenCode, Codex) spawns it directly rather than through the Git Bash launcher, doesn't have Git's `usr/bin` on its `PATH` — it can't even run `dirname`, so the `.sh` wrappers fail before they reach `node`. The installers resolve `node`'s absolute path while running inside a properly-initialized Git Bash and bake it directly into `~/.claude/settings.json` / `~/.claude.json` / `config.toml`, bypassing bash entirely for these paths. Re-running an installer replaces any stale `.sh`-based entries a previous install left behind (e.g. from before this fix) rather than leaving duplicates.
+
+These are handled automatically; you shouldn't need to do anything beyond running the installer from Git Bash. If a step fails, the script's error message will say which prerequisite is missing (`cygpath`, `bash`, or `node`).
+
 Detailed clone-to-first-run instructions are in [../docs/setup-from-clone.md](../docs/setup-from-clone.md).
 
 ### Seeding the Mental Model from Existing Nodes (Legacy)
@@ -158,6 +175,7 @@ The migration script `src/graph-memory/scripts/migrate-mental-model.ts` was used
 - host agent stays on the host
 - graph root stays on the host filesystem
 - daemon and bounded workers run in Docker against the mounted graph root
+- also works with **Podman** as a drop-in replacement — `runtime-env.sh` detects whichever of `docker`/`podman` is on `PATH` and, if it's podman, defines a `docker` shell function that forwards to it, so every `docker-*.sh` script works unmodified. `docker-bootstrap.sh` and `docker-start.sh` additionally start the podman machine if it isn't already running (podman doesn't auto-start its VM the way Docker Desktop does).
 
 Useful helpers (harness-agnostic):
 

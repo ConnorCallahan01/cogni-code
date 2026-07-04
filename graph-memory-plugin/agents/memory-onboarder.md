@@ -59,6 +59,10 @@ Explain the runtime options:
 
 Strongly recommend Docker daemon mode unless the user explicitly wants otherwise.
 
+"Docker daemon mode" means container mode generically — **Podman works as a drop-in replacement for Docker** and is fully supported. Every `docker-*.sh` helper script auto-detects whichever of `docker`/`podman` is on `PATH` and works unmodified either way; `configure_runtime` still takes `runtimeMode="docker"` regardless of which engine is actually used.
+
+To check availability, don't just look for a literal `docker` binary — check for **either** `docker` or `podman` on PATH (e.g. `command -v docker || command -v podman`, or inspect `docker.state.engine` from `graph_memory(action="status")` once a runtime is configured). Only tell the user no container engine is available if neither is found. If podman is found but its machine isn't running, that's expected — `docker-bootstrap.sh` and `docker-start.sh` start it automatically.
+
 ## Step 3b: Choose Pipeline Worker Harness
 
 Ask which agent harness should run the background pipeline (scribe → auditor → librarian → dreamer):

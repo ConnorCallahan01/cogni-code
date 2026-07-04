@@ -9,15 +9,7 @@ if [ "$GRAPH_MEMORY_RUNTIME_MODE" != "docker" ]; then
   exit 1
 fi
 
-if ! command -v docker >/dev/null 2>&1; then
-  echo "Docker is not installed or not on PATH."
-  exit 1
-fi
-
-if ! docker info >/dev/null 2>&1; then
-  echo "Docker daemon is not running or not reachable."
-  exit 1
-fi
+source "$DIR/bin/docker-engine-check.sh"
 
 PROVIDER="${GRAPH_MEMORY_WORKER_PROVIDER:-}"
 
@@ -33,7 +25,7 @@ echo "[2/5] Starting container..."
 mkdir -p "$GRAPH_MEMORY_HOST_ROOT"
 docker rm -f "$GRAPH_MEMORY_DOCKER_CONTAINER" >/dev/null 2>&1 || true
 
-GRAPH_MEMORY_HOST_TIMEZONE="${TZ:-$(systemsetup -gettimezone 2>/dev/null | awk -F': ' 'NF>1{print $2}')}"
+GRAPH_MEMORY_HOST_TIMEZONE="${TZ:-$(systemsetup -gettimezone 2>/dev/null | awk -F': ' 'NF>1{print $2}' || true)}"
 if [ -z "${GRAPH_MEMORY_HOST_TIMEZONE:-}" ]; then
   GRAPH_MEMORY_HOST_TIMEZONE="UTC"
 fi
@@ -108,6 +100,15 @@ if [ "$PROVIDER" = "codex" ] || [ "$PROVIDER" = "auto" ] || [ -z "$PROVIDER" ]; 
     "$DIR/bin/docker-codex-import-host-auth.sh" >/dev/null 2>&1 && AUTH_IMPORTED=true || echo "  codex: import failed"
   else
     echo "  codex: no host auth"
+  fi
+fi
+
+if [ "$PROVIDER" = "claude" ] || [ "$PROVIDER" = "auto" ] || [ -z "$PROVIDER" ]; then
+  if command -v claude >/dev/null 2>&1 && claude auth status >/dev/null 2>&1; then
+    echo "  claude: importing host auth..."
+    "$DIR/bin/docker-claude-import-host-auth.sh" >/dev/null 2>&1 && AUTH_IMPORTED=true || echo "  claude: import failed"
+  else
+    echo "  claude: no host auth"
   fi
 fi
 
