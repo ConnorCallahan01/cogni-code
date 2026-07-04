@@ -9,7 +9,7 @@ dist/
 .firecrawl/
 .DS_Store
 **/.DS_Store
-graph/
-graph-memory/
+/graph/
+/graph-memory/
 *.log
 *.tgz
