@@ -8,10 +8,10 @@ RUN apt-get update \
 
 COPY package.json package-lock.json ./
 RUN npm ci --ignore-scripts
-RUN npm install -g @openai/codex @mariozechner/pi-coding-agent
+RUN npm install -g @openai/codex @mariozechner/pi-coding-agent @anthropic-ai/claude-code
 RUN ARCH=$(uname -m) && \
-    case "$ARCH" in aarch64) GOARCH="arm64" ;; x86_64) GOARCH="amd64" ;; esac && \
-    curl -fsSL "https://github.com/anomalyco/opencode/releases/latest/download/opencode-linux-${GOARCH}.tar.gz" \
+    case "$ARCH" in aarch64) OC_ARCH="arm64" ;; x86_64) OC_ARCH="x64" ;; esac && \
+    curl -fsSL "https://github.com/anomalyco/opencode/releases/latest/download/opencode-linux-${OC_ARCH}.tar.gz" \
     | tar xz -C /usr/local/bin opencode
 
 RUN curl -fsSL https://ntn.dev/install.sh | bash

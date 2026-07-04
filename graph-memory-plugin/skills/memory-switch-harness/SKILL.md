@@ -57,7 +57,7 @@ Available: codex | claude | pi | opencode
 11. **If the CLI is not found** (command fails or returns empty): rebuild the image and restart.
     - First, check the Dockerfile at `<plugin_dir>/docker/Dockerfile` to confirm the harness CLI is included in the install steps. If it's missing from the Dockerfile, add the appropriate install command:
       - **codex**: `@openai/codex` via `npm install -g`
-      - **claude**: already bundled in the base node image (no Dockerfile change needed)
+      - **claude**: `@anthropic-ai/claude-code` via `npm install -g`
       - **pi**: `@mariozechner/pi-coding-agent` via `npm install -g`
       - **opencode**: via `curl -fsSL https://opencode.ai/install | bash`
     - Then rebuild:
@@ -103,13 +103,13 @@ Available: codex | claude | pi | opencode
 
     **For claude:**
     ```
-    claude harness: auth is not automated. The container needs one of:
+    claude auth is not ready in the container. Choose a setup path:
 
-    A) ANTHROPIC_API_KEY env var set when the container starts
-       (add -e ANTHROPIC_API_KEY=sk-ant-... to docker-start.sh)
+    A) If you're already logged in on the host (claude auth status):
+       <plugin_dir>/bin/docker-claude-import-host-auth.sh
 
-    B) Claude OAuth token (if using Claude Code subscription)
-       (copy host ~/.claude.json to the auth volume)
+    B) If you have an Anthropic API key:
+       add -e ANTHROPIC_API_KEY=sk-ant-... to docker-start.sh and restart the container
     ```
 
      **For pi:**

@@ -18,8 +18,15 @@ case "$HARNESS" in
     fi
     ;;
   claude)
-    echo "claude harness: no automated auth check yet. Ensure ANTHROPIC_API_KEY or OAuth is available."
-    exit 0
+    if "$DIR/bin/docker-claude-auth-status.sh"; then
+      exit 0
+    fi
+    echo
+    echo "If Claude Code is already authenticated on the host, you can import it with:"
+    echo "  $DIR/bin/docker-claude-import-host-auth.sh"
+    echo
+    echo "Claude auth is not ready inside the container."
+    exit 1
     ;;
   codex|*)
     if "$DIR/bin/docker-codex-auth-status.sh"; then

@@ -17,6 +17,7 @@ test -f "$HOME/.local/share/opencode/auth.json" && echo "  opencode: auth found"
 test -f "$HOME/.config/opencode/opencode.json" && echo "  opencode config: found ($(grep -o '"model":"[^"]*"' "$HOME/.config/opencode/opencode.json" 2>/dev/null || echo 'no model set'))" || echo "  opencode config: not found"
 test -f "$HOME/.codex/auth.json" && echo "  codex: auth found" || echo "  codex: no auth"
 test -f "$HOME/.pi/agent/auth.json" && echo "  pi: auth found" || echo "  pi: no auth"
+test -f "$HOME/.claude/.credentials.json" && echo "  claude: auth found" || echo "  claude: no auth"
 echo "==================================="
 
 exec node "$DIR/dist/graph-memory/pipeline/daemon.js" "$@"
