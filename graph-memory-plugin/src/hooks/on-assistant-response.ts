@@ -22,9 +22,10 @@ import { appendAssistantTraceEvents, getAssistantTracePath, getConversationLogPa
 
 interface StopHookInput {
   session_id: string;
-  last_assistant_message: string;
+  last_assistant_message?: string;
   hook_event_name: string;
   cwd?: string;
+  transcript_path?: string;
 }
 
 interface BufferEntry {
@@ -34,6 +35,90 @@ interface BufferEntry {
   source?: "user_submit" | "stop_hook";
   final?: boolean;
   project?: string;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function normalizeTextContent(content: unknown): string | null {
+  if (typeof content === "string") {
+    const trimmed = content.trim();
+    return trimmed || null;
+  }
+
+  if (!Array.isArray(content)) return null;
+
+  const parts = content
+    .map((item) => {
+      if (typeof item === "string") return item.trim();
+      if (isRecord(item) && typeof item.text === "string") return item.text.trim();
+      if (isRecord(item) && typeof item.content === "string") return item.content.trim();
+      return "";
+    })
+    .filter(Boolean);
+
+  return parts.length > 0 ? parts.join("\n\n") : null;
+}
+
+function extractAssistantText(entry: Record<string, unknown>): string | null {
+  if (entry.role === "assistant") {
+    return normalizeTextContent(entry.content ?? entry.message);
+  }
+
+  if (entry.type === "assistant") {
+    if (isRecord(entry.message)) {
+      return normalizeTextContent(entry.message.content ?? entry.message.text);
+    }
+    return normalizeTextContent(entry.content ?? entry.text);
+  }
+
+  if (isRecord(entry.message) && entry.message.role === "assistant") {
+    return normalizeTextContent(entry.message.content ?? entry.message.text);
+  }
+
+  return null;
+}
+
+function collectAssistantTraceFromTranscript(
+  transcriptPath: string | undefined,
+  sessionId: string,
+  options: { project?: string; cwd?: string }
+) {
+  if (!transcriptPath || !fs.existsSync(transcriptPath)) {
+    return { transcriptPath: transcriptPath || null, events: [] };
+  }
+
+  const events = [];
+  for (const line of fs.readFileSync(transcriptPath, "utf-8").split("\n")) {
+    if (!line.trim()) continue;
+
+    let parsed: Record<string, unknown>;
+    try {
+      parsed = JSON.parse(line) as Record<string, unknown>;
+    } catch {
+      continue;
+    }
+
+    const text = extractAssistantText(parsed);
+    if (!text) continue;
+
+    events.push({
+      type: "assistant_text" as const,
+      timestamp: typeof parsed.timestamp === "string" ? parsed.timestamp : new Date().toISOString(),
+      sessionId,
+      project: options.project,
+      cwd: options.cwd,
+      kind: "final" as const,
+      text,
+      assistantUuid: typeof parsed.id === "string" ? parsed.id : undefined,
+      parentUuid: null,
+      source: "codex_transcript" as const,
+      transcriptPath,
+    });
+  }
+
+  return { transcriptPath, events };
 }
 
 async function main() {
@@ -55,8 +140,6 @@ async function main() {
     return;
   }
 
-  if (!input.last_assistant_message) return;
-
   const maxLen = 2000;
   const truncate = (s: string) =>
     s.length > maxLen ? s.slice(0, maxLen) + "..." : s;
@@ -65,10 +148,18 @@ async function main() {
   const cwd = input.cwd || process.cwd();
   const project = detectProject(cwd);
 
-  const transcript = collectVisibleAssistantTrace(sessionId, cwd, {
+  const claudeTranscript = collectVisibleAssistantTrace(sessionId, cwd, {
     project: project.name,
     cwd,
   });
+  const codexTranscript = collectAssistantTraceFromTranscript(input.transcript_path, sessionId, {
+    project: project.name,
+    cwd,
+  });
+  const transcript = claudeTranscript.events.length > 0 ? claudeTranscript : codexTranscript;
+  const fallbackAssistantMessage = input.last_assistant_message || transcript.events.at(-1)?.text;
+  if (!fallbackAssistantMessage) return;
+
   const assistantTraceEvents = transcript.events.length > 0
     ? transcript.events
     : [{
@@ -78,7 +169,7 @@ async function main() {
         project: project.name,
         cwd,
         kind: "final" as const,
-        text: input.last_assistant_message,
+        text: fallbackAssistantMessage,
         source: "stop_hook" as const,
         transcriptPath: null,
       }];
@@ -99,7 +190,7 @@ async function main() {
   // Append assistant message
   const assistantEntry: BufferEntry = {
     role: "assistant",
-    content: truncate(input.last_assistant_message),
+    content: truncate(fallbackAssistantMessage),
     timestamp: now,
     source: "stop_hook",
     final: true,

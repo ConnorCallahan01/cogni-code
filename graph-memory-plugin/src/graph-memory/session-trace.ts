@@ -36,7 +36,7 @@ export interface AssistantTraceEvent {
   text: string;
   assistantUuid?: string;
   parentUuid?: string | null;
-  source: "claude_session_log" | "stop_hook";
+  source: "claude_session_log" | "codex_transcript" | "stop_hook";
   transcriptPath?: string | null;
 }
 

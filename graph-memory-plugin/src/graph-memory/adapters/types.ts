@@ -4,8 +4,8 @@
  * The core is harness-agnostic. Each harness (Claude Code, Codex, Pi, OpenCode)
  * provides an adapter that implements this interface.
  *
- * Codex runs in degraded mode (MCP tools only, no hooks).
- * Claude Code, Pi, and OpenCode get full automatic operation.
+ * Claude Code and Codex expose hook lifecycles; Pi and OpenCode expose
+ * plugin events. All four can expose the graph_memory tool.
  */
 import { ProjectInfo } from "../project.js";
 
@@ -42,7 +42,7 @@ export const ADAPTER_CONFIGS: Record<HarnessType, AdapterConfig> = {
   },
   codex: {
     projectDocFilename: "AGENT.md",
-    supportsHooks: false,
+    supportsHooks: true,
     supportsPluginEvents: false,
     supportsMCP: true,
   },
@@ -60,6 +60,6 @@ export const ADAPTER_CONFIGS: Record<HarnessType, AdapterConfig> = {
   },
 };
 
-export function isDegradedMode(harness: HarnessType): boolean {
-  return harness === "codex";
+export function isDegradedMode(_harness: HarnessType): boolean {
+  return false;
 }

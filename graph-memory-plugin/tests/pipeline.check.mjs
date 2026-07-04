@@ -1439,14 +1439,39 @@ test("phase 8: shared session start context builds correctly", async () => {
   }
 });
 
-test("phase 8: codex adapter is no-op", async () => {
-  const { createAdapter } = await importModule("adapters/index.js");
-  const codex = createAdapter("codex");
+test("phase 8: codex adapter builds hook context", async () => {
+  const { tmp, graphRoot } = makeTempGraph();
+  try {
+    initGraph(graphRoot);
+    await setupEnv(graphRoot);
 
-  const startResult = await codex.onSessionStart("/tmp", "sess-1");
-  assert.equal(startResult, "", "Codex returns empty context");
+    const modelMod = await importModule("mind/model.js");
+    modelMod.writeModel({
+      model: {
+        version: 3,
+        generatedAt: new Date().toISOString(),
+        cognitiveStyle: "Prefer concise handoff summaries.",
+        decisionPatterns: [],
+        preferences: [],
+        guardrails: [],
+        emotionalProfile: "",
+        relationalNotes: [],
+        tokenEstimate: 0,
+      },
+      lastCompressorRun: "",
+      observationCount: 0,
+    });
 
-  await codex.onSessionEnd("sess-1");
+    const { createAdapter } = await importModule("adapters/index.js");
+    const codex = createAdapter("codex");
+
+    const startResult = await codex.onSessionStart(tmp, "sess-1");
+    assert.match(startResult, /Prefer concise handoff summaries/);
+
+    await codex.onSessionEnd("sess-1");
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
 });
 
 test("phase 8: adapter configs match harness capabilities", async () => {
@@ -1460,10 +1485,60 @@ test("phase 8: adapter configs match harness capabilities", async () => {
 
   assert.equal(ADAPTER_CONFIGS["pi"].supportsPluginEvents, true);
 
-  assert.equal(ADAPTER_CONFIGS["codex"].supportsHooks, false);
+  assert.equal(ADAPTER_CONFIGS["codex"].supportsHooks, true);
   assert.equal(ADAPTER_CONFIGS["codex"].supportsPluginEvents, false);
-  assert.equal(isDegradedMode("codex"), true);
+  assert.equal(isDegradedMode("codex"), false);
   assert.equal(isDegradedMode("claude-code"), false);
+});
+
+test("phase 8: codex hook config preserves user hooks and replaces stale graph-memory hooks", async () => {
+  const { buildCodexGraphMemoryHooks, mergeCodexHooks } = await importModule("codex-hooks-config.js");
+
+  const existing = {
+    hooks: {
+      Stop: [
+        {
+          hooks: [
+            {
+              type: "command",
+              command: "node /old/graph-memory/dist/hooks/on-assistant-response.js",
+            },
+          ],
+        },
+        {
+          hooks: [
+            {
+              type: "command",
+              command: "node /user/custom-stop.js",
+            },
+          ],
+        },
+      ],
+    },
+  };
+
+  const desired = buildCodexGraphMemoryHooks({
+    sessionStart: { command: "\"/opt/graph-memory/bin/session-start.sh\"" },
+    userPrompt: { command: "\"/opt/graph-memory/bin/on-user-message.sh\"" },
+    assistantStop: {
+      command: "\"/opt/graph-memory/bin/on-assistant-response.sh\"",
+      commandWindows: "\"C:/node/node.exe\" \"C:/graph-memory/dist/hooks/on-assistant-response.js\"",
+    },
+    preToolUse: { command: "\"/opt/graph-memory/bin/on-pre-tool-use.sh\"" },
+    postToolUse: { command: "\"/opt/graph-memory/bin/on-post-tool-use.sh\"" },
+  });
+
+  const changed = mergeCodexHooks(existing, desired);
+
+  assert.equal(changed, true);
+  assert.ok(existing.hooks.SessionStart.some((entry) => entry.matcher === "startup|resume|clear|compact"));
+  assert.ok(existing.hooks.UserPromptSubmit.some((entry) => entry.hooks[0].command.includes("on-user-message")));
+  assert.ok(existing.hooks.PreToolUse.some((entry) => entry.hooks[0].command.includes("on-pre-tool-use")));
+  assert.ok(existing.hooks.PostToolUse.some((entry) => entry.hooks[0].command.includes("on-post-tool-use")));
+  assert.ok(existing.hooks.Stop.some((entry) => entry.hooks[0].command === "node /user/custom-stop.js"));
+  assert.ok(existing.hooks.Stop.some((entry) => entry.hooks[0].command.includes("on-assistant-response")));
+  assert.equal(existing.hooks.Stop.some((entry) => entry.hooks[0].command.includes("/old/graph-memory")), false);
+  assert.ok(existing.hooks.Stop.some((entry) => entry.hooks[0].commandWindows?.includes("C:/node/node.exe")));
 });
 
 // --- Phase 9: Migration ---

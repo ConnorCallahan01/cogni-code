@@ -1,6 +1,6 @@
 # graph-memory plugin
 
-Persistent, graph-backed memory for Claude Code, OpenCode, and compatible agent workflows.
+Persistent, graph-backed memory for Claude Code, Codex, OpenCode, and compatible agent workflows.
 
 ```text
       o----o----o
@@ -22,7 +22,7 @@ This directory is the active plugin surface in the repository. If you cloned the
 - remembers preferences, decisions, project context, and recurring patterns across sessions
 - exposes a `graph_memory` tool for search, recall, remember, inspection, and maintenance
 - loads compact context into new sessions via **mental model injection**, with the older full-context path kept as a fallback
-- supports Claude Code (MCP + hooks), OpenCode (native plugin), and pi (extension)
+- supports Claude Code (MCP + hooks), Codex (MCP + hooks), OpenCode (native plugin), and pi (extension)
 - runs a background pipeline that extracts observations, compresses mental models, and generates creative associations
 - keeps git history for memory changes so you can inspect or revert them
 
@@ -94,13 +94,13 @@ The core is harness-agnostic via an adapter system:
 
 ```text
 adapters/
-  types.ts        — HarnessAdapter interface, HarnessType, AdapterConfig
-  claude-code.ts  — Claude Code (hooks + MCP)
-  opencode.ts     — OpenCode (plugin events + MCP)
-  pi.ts           — Pi (plugin events + MCP)
-  codex.ts        — Codex (MCP only, degraded mode)
-  factory.ts      — Adapter instantiation
-  shared.ts       — Shared adapter logic
+  types.ts        - HarnessAdapter interface, HarnessType, AdapterConfig
+  claude-code.ts  - Claude Code (hooks + MCP)
+  opencode.ts     - OpenCode (plugin events + MCP)
+  pi.ts           - Pi (plugin events + MCP)
+  codex.ts        - Codex (hooks + MCP)
+  factory.ts      - Adapter instantiation
+  shared.ts       - Shared adapter logic
 ```
 
 Each adapter declares capabilities and handles platform-specific session lifecycle.
@@ -136,6 +136,21 @@ Then start OpenCode and run:
 ```text
 /memory-onboard
 ```
+
+### Codex
+
+Codex supports both MCP and hook lifecycles, including session-start, user-prompt, tool-use, and stop events. That makes it a viable first-class capture surface for graph-memory, similar to Claude Code.
+
+Current repo status: `install-codex.sh` registers both the `graph_memory` MCP server and user-level Codex hooks in `$CODEX_HOME/hooks.json`. MCP provides recall/remember/search; hooks provide automatic session-start injection plus prompt, tool, and stop-event capture.
+
+From the repository root:
+
+```bash
+cd graph-memory-plugin
+./bin/install-codex.sh
+```
+
+This writes a `[mcp_servers.graph-memory]` table into `$CODEX_HOME/config.toml` (defaults to `~/.codex/config.toml`) and graph-memory hook entries into `$CODEX_HOME/hooks.json`. Restart Codex (or start a new session) to pick them up. If Codex prompts you to review hooks, open `/hooks` and trust the graph-memory entries.
 
 ### Windows
 

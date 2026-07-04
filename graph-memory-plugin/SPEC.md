@@ -92,7 +92,7 @@ interface HarnessAdapter {
 }
 ```
 
-Codex runs in degraded mode (MCP tools only, no hooks). Claude Code, Pi, and OpenCode get full automatic operation.
+Codex exposes both MCP and hooks, so it is a viable first-class capture surface alongside Claude Code. The Codex installer registers MCP in `config.toml` and graph-memory lifecycle hooks in `hooks.json` so session-start injection and session capture can be wired automatically after Codex hook review/trust.
 
 ### Project Doc Bootstrap
 
@@ -318,7 +318,7 @@ Create the new directory structure, type definitions, and harness adapter interf
 - `mind/` has 4 files: `types.ts` (Observation, GlobalModel, GlobalModelFile), `observations.ts` (append-only JSONL with prune/absorb), `model.ts` (read/write model.json), `whisper.ts` (read/write whisper.txt with token cap enforcement)
 - `lenses/` mirrors `mind/` structure per-project — `manager.ts` handles observations, models, whispers, plus archive/restore lifecycle
 - `sessions/` uses JSONL per project with 3-tier compaction (full → summary → delete) and 7/30 day boundaries
-- `adapters/types.ts` defines HarnessAdapter interface plus per-harness config (supportsHooks, supportsMCP, projectDocFilename), with `isDegradedMode()` for codex
+- `adapters/types.ts` defines HarnessAdapter interface plus per-harness config (supportsHooks, supportsMCP, projectDocFilename); Codex is hook-capable in current Codex docs
 - `pipeline/v3-tool-schemas.ts` has Zod schemas for all 16 structured tools (observe, log_session, upsert_node, get_observations, get_model, update_model, query_graph, get_anti_patterns, archive_observations, prune_session_logs, archive_graph_nodes, get_graph_stats, flag_for_deep_audit, get_models, get_graph_nodes, propose_dream, bootstrap_project_doc)
 - v3 paths added to config as `v3Mind`, `v3Lenses`, `v3Sessions`, `v3Graph`, `v3GraphIndex`, `v3GraphArchive`, `v3PipelineObservations` — no v2 paths removed
 - init creates `nodes/` with all 11 categories (patterns, anti-patterns, decisions, preferences, procedures, corrections, projects, concepts, architecture, people, tools)
@@ -559,9 +559,9 @@ Implement the adapter pattern for all four harnesses.
   - session-end: flush buffer via `session_shutdown` event
   - tools: `registerTool()` with TypeBox schema
   - project detection: cwd from process (no worktree API)
-- [x] Implement Codex adapter (`adapters/codex.ts`) — degraded mode
-  - session-start: none (no hooks available)
-  - session-end: daemon watches for orphaned buffers
+- [x] Implement Codex adapter (`adapters/codex.ts`) - hook-capable
+  - session-start: builds the same mental-model/fallback context used by hook-capable harnesses
+  - session-end: flushes queued session buffers
   - tools: MCP server
   - project detection: cwd from process
 - [x] Shared session logic (`adapters/shared.ts`)
@@ -571,7 +571,7 @@ Implement the adapter pattern for all four harnesses.
   - `cleanupSession()` — active project removal + dirty state clear
 - [x] Adapter factory (`adapters/factory.ts`)
   - `createAdapter(harness)` returns correct adapter instance
-- [x] Tests: factory routing, shared context, codex no-op, config validation (4 tests)
+- [x] Tests: factory routing, shared context, codex hook context, config validation (4 tests)
 
 ### Phase 9: Migration ✅
 
