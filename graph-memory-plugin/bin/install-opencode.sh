@@ -12,8 +12,21 @@ OPENCODE_DIR="$HOME/.config/opencode"
 PLUGINS_DIR="$OPENCODE_DIR/plugins"
 COMMANDS_DIR="$OPENCODE_DIR/commands"
 
+IS_WINDOWS=0
+if [ "${OS:-}" = "Windows_NT" ]; then
+  IS_WINDOWS=1
+fi
+
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PLUGIN_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+if [ "$IS_WINDOWS" = "1" ]; then
+  if ! command -v cygpath &>/dev/null; then
+    echo "Error: this looks like Windows but 'cygpath' isn't on PATH. Run this from Git Bash." >&2
+    exit 1
+  fi
+  PLUGIN_DIR="$(cygpath -m "$PLUGIN_DIR")"
+fi
 
 echo "Installing $PLUGIN_NAME for OpenCode from $PLUGIN_DIR"
 
@@ -55,10 +68,26 @@ else
   echo "Installed plugin file: $TARGET"
 fi
 
-# 5. Symlink commands into ~/.config/opencode/commands/
+# 5. Link commands into ~/.config/opencode/commands/
 link_command() {
   local source_file="$1"
   local target_file="$2"
+
+  if [ "$IS_WINDOWS" = "1" ]; then
+    # Real symlinks need admin/Developer Mode on Windows; copy and keep in
+    # sync by content hash instead.
+    if [ -e "$target_file" ] && [ ! -L "$target_file" ]; then
+      if cmp -s "$source_file" "$target_file"; then
+        return
+      fi
+      cp "$source_file" "$target_file"
+      echo "Updated command: $target_file"
+      return
+    fi
+    cp "$source_file" "$target_file"
+    echo "Installed command: $target_file"
+    return
+  fi
 
   if [ -L "$target_file" ]; then
     local existing_target
@@ -91,18 +120,36 @@ done
 #    useful for other MCP clients or advanced usage.
 OPENCODE_CONFIG="$OPENCODE_DIR/opencode.json"
 MCP_COMMAND="$PLUGIN_DIR/bin/mcp-server.sh"
+MCP_SCRIPT="$PLUGIN_DIR/dist/graph-memory/mcp-server.js"
+
+# mcp-server.sh has a bash shebang, and bash.exe spawned bare by OpenCode
+# (not via the Git Bash launcher) has no coreutils on PATH to even run it —
+# it fails on the script's first line before reaching node. Bypass bash
+# entirely on Windows: invoke node on the compiled script directly.
+MCP_RUNNER_COMMAND="bash"
+MCP_RUNNER_SCRIPT="$MCP_COMMAND"
+if [ "$IS_WINDOWS" = "1" ]; then
+  RESOLVED_NODE="$(command -v node || true)"
+  if [ -z "$RESOLVED_NODE" ]; then
+    echo "Error: node not found on PATH. Install Node 18+ and re-run from Git Bash." >&2
+    exit 1
+  fi
+  MCP_RUNNER_COMMAND="$(cygpath -m "$RESOLVED_NODE")"
+  MCP_RUNNER_SCRIPT="$MCP_SCRIPT"
+fi
 
 if [ ! -f "$OPENCODE_CONFIG" ]; then
   echo '{}' > "$OPENCODE_CONFIG"
   echo "Created $OPENCODE_CONFIG"
 fi
 
-OPENCODE_CONFIG="$OPENCODE_CONFIG" MCP_COMMAND="$MCP_COMMAND" PLUGIN_NAME="$PLUGIN_NAME" \
+OPENCODE_CONFIG="$OPENCODE_CONFIG" MCP_RUNNER_COMMAND="$MCP_RUNNER_COMMAND" MCP_RUNNER_SCRIPT="$MCP_RUNNER_SCRIPT" PLUGIN_NAME="$PLUGIN_NAME" \
 node -e "
   const fs = require('fs');
   const configPath = process.env.OPENCODE_CONFIG;
   const name = process.env.PLUGIN_NAME;
-  const command = process.env.MCP_COMMAND;
+  const runnerCommand = process.env.MCP_RUNNER_COMMAND;
+  const runnerScript = process.env.MCP_RUNNER_SCRIPT;
   let changed = false;
 
   let config;
@@ -116,7 +163,7 @@ node -e "
 
   const desired = {
     type: 'local',
-    command: ['bash', command],
+    command: [runnerCommand, runnerScript],
     enabled: true
   };
 

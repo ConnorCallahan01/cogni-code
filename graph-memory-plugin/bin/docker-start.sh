@@ -9,9 +9,11 @@ if [ "$GRAPH_MEMORY_RUNTIME_MODE" != "docker" ]; then
   exit 1
 fi
 
+source "$DIR/bin/docker-engine-check.sh"
+
 mkdir -p "$GRAPH_MEMORY_HOST_ROOT"
 
-GRAPH_MEMORY_HOST_TIMEZONE="${TZ:-$(systemsetup -gettimezone 2>/dev/null | awk -F': ' 'NF>1{print $2}')}"
+GRAPH_MEMORY_HOST_TIMEZONE="${TZ:-$(systemsetup -gettimezone 2>/dev/null | awk -F': ' 'NF>1{print $2}' || true)}"
 if [ -z "${GRAPH_MEMORY_HOST_TIMEZONE:-}" ]; then
   GRAPH_MEMORY_HOST_TIMEZONE="UTC"
 fi

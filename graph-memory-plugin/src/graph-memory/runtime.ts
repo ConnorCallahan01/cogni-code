@@ -143,6 +143,28 @@ export function ensureRuntimeConfig(): GraphMemoryRuntimeConfig {
   return loadRuntimeConfig();
 }
 
+function commandExists(cmd: string): boolean {
+  const check =
+    process.platform === "win32"
+      ? spawnSync("where", [cmd], { stdio: "ignore" })
+      : spawnSync("command", ["-v", cmd], { stdio: "ignore", shell: true });
+  return check.status === 0;
+}
+
+let cachedContainerEngine: "docker" | "podman" | null | undefined;
+
+// Podman is a drop-in, CLI-compatible replacement for every primitive the
+// docker-*.sh scripts and the calls below use (run/exec/cp/build/inspect) —
+// prefer docker if present, otherwise use podman rather than reporting no
+// container runtime at all.
+export function resolveContainerEngine(): "docker" | "podman" | null {
+  if (cachedContainerEngine !== undefined) return cachedContainerEngine;
+  if (commandExists("docker")) cachedContainerEngine = "docker";
+  else if (commandExists("podman")) cachedContainerEngine = "podman";
+  else cachedContainerEngine = null;
+  return cachedContainerEngine;
+}
+
 function runCommand(command: string, args: string[]): CommandResult {
   const result = spawnSync(command, args, {
     encoding: "utf-8",
@@ -165,15 +187,24 @@ function runCommand(command: string, args: string[]): CommandResult {
 }
 
 function getDockerState(runtime: GraphMemoryRuntimeConfig): Record<string, unknown> | null {
-  const dockerCheck = runCommand("docker", ["--version"]);
-  if (!dockerCheck.ok) {
+  const engine = resolveContainerEngine();
+  if (!engine) {
     return {
       available: false,
-      error: dockerCheck.error || dockerCheck.stderr || "docker not available",
+      error: "neither docker nor podman found on PATH",
     };
   }
 
-  const inspect = runCommand("docker", [
+  const dockerCheck = runCommand(engine, ["--version"]);
+  if (!dockerCheck.ok) {
+    return {
+      available: false,
+      engine,
+      error: dockerCheck.error || dockerCheck.stderr || `${engine} not available`,
+    };
+  }
+
+  const inspect = runCommand(engine, [
     "inspect",
     runtime.docker.containerName,
     "--format",
@@ -183,6 +214,7 @@ function getDockerState(runtime: GraphMemoryRuntimeConfig): Record<string, unkno
   if (!inspect.ok || !inspect.stdout) {
     return {
       available: true,
+      engine,
       present: false,
       error: inspect.stderr || inspect.error || "container missing",
     };
@@ -192,12 +224,14 @@ function getDockerState(runtime: GraphMemoryRuntimeConfig): Record<string, unkno
     const state = JSON.parse(inspect.stdout) as Record<string, unknown>;
     return {
       available: true,
+      engine,
       present: true,
       ...state,
     };
   } catch {
     return {
       available: true,
+      engine,
       present: true,
       raw: inspect.stdout,
     };
@@ -209,7 +243,7 @@ function getCodexAuthState(runtime: GraphMemoryRuntimeConfig, dockerState: Recor
     return null;
   }
 
-  const auth = runCommand("docker", [
+  const auth = runCommand((dockerState.engine as string) || "docker", [
     "exec",
     "-e", `HOME=${runtime.docker.authPathInContainer}`,
     runtime.docker.containerName,
@@ -237,7 +271,7 @@ function getOpenCodeAuthState(runtime: GraphMemoryRuntimeConfig, dockerState: Re
     return null;
   }
 
-  const auth = runCommand("docker", [
+  const auth = runCommand((dockerState.engine as string) || "docker", [
     "exec",
     "-e", `HOME=${runtime.docker.authPathInContainer}`,
     runtime.docker.containerName,
@@ -260,6 +294,34 @@ function getOpenCodeAuthState(runtime: GraphMemoryRuntimeConfig, dockerState: Re
   };
 }
 
+function getClaudeAuthState(runtime: GraphMemoryRuntimeConfig, dockerState: Record<string, unknown> | null): Record<string, unknown> | null {
+  if (!dockerState || dockerState.available !== true || dockerState.present !== true || dockerState.Running !== true) {
+    return null;
+  }
+
+  const auth = runCommand((dockerState.engine as string) || "docker", [
+    "exec",
+    "-e", `HOME=${runtime.docker.authPathInContainer}`,
+    runtime.docker.containerName,
+    "bash",
+    "-lc",
+    "claude auth status",
+  ]);
+
+  if (!auth.ok) {
+    return {
+      ready: false,
+      error: auth.stderr || auth.error || "claude auth unavailable",
+    };
+  }
+
+  const output = auth.stdout || auth.stderr || "";
+  return {
+    ready: /"loggedIn"\s*:\s*true/i.test(output),
+    status: output,
+  };
+}
+
 export function getRuntimeStatus(): Record<string, unknown> {
   const runtime = loadRuntimeConfig();
   let daemonState: Record<string, unknown> | null = null;
@@ -274,6 +336,7 @@ export function getRuntimeStatus(): Record<string, unknown> {
   const dockerState = runtime.mode === "docker" ? getDockerState(runtime) : null;
   const codexAuth = runtime.mode === "docker" ? getCodexAuthState(runtime, dockerState) : null;
   const opencodeAuth = runtime.mode === "docker" ? getOpenCodeAuthState(runtime, dockerState) : null;
+  const claudeAuth = runtime.mode === "docker" ? getClaudeAuthState(runtime, dockerState) : null;
 
   return {
     mode: runtime.mode,
@@ -293,6 +356,7 @@ export function getRuntimeStatus(): Record<string, unknown> {
       state: dockerState,
       codexAuth,
       opencodeAuth,
+      claudeAuth,
     } : null,
     daemonState,
     daemonLockPresent: fs.existsSync(CONFIG.paths.daemonLock),
