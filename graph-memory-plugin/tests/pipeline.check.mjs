@@ -1762,3 +1762,55 @@ test("renderProjectWorkingMarkdown includes Files section from keyFiles", async 
 
   fs.rmSync(path.dirname(graphRoot), { recursive: true, force: true });
 });
+
+// ── Worker fallback (usage-limit resilience) ─────────────────────────────────
+
+test("worker-fallback: planWorkerAttempts omits fallback when not configured", async () => {
+  const { planWorkerAttempts } = await importModule("pipeline/worker-runner.js");
+  const attempts = planWorkerAttempts({ provider: "opencode", model: "glm-5.1" }, null);
+  assert.equal(attempts.length, 1, "Only the primary attempt when no fallback");
+  assert.equal(attempts[0].provider, "opencode");
+});
+
+test("worker-fallback: planWorkerAttempts appends a distinct fallback", async () => {
+  const { planWorkerAttempts } = await importModule("pipeline/worker-runner.js");
+  const attempts = planWorkerAttempts(
+    { provider: "opencode", model: "glm-5.1" },
+    { provider: "codex", model: "gpt-5" }
+  );
+  assert.equal(attempts.length, 2, "Primary + fallback");
+  assert.equal(attempts[0].provider, "opencode");
+  assert.equal(attempts[1].provider, "codex");
+  assert.equal(attempts[1].model, "gpt-5");
+});
+
+test("worker-fallback: planWorkerAttempts dedups an identical fallback", async () => {
+  const { planWorkerAttempts } = await importModule("pipeline/worker-runner.js");
+  // Same provider AND same model → no point falling back to itself.
+  const same = planWorkerAttempts({ provider: "codex", model: "gpt-5" }, { provider: "codex", model: "gpt-5" });
+  assert.equal(same.length, 1, "Identical fallback is dropped");
+  // Same provider, different model → keep it (model-level fallback is valid).
+  const diffModel = planWorkerAttempts({ provider: "codex", model: "gpt-5" }, { provider: "codex", model: "o3" });
+  assert.equal(diffModel.length, 2, "Same-provider different-model fallback is kept");
+});
+
+test("worker-fallback: configure_runtime persists fallbackProvider/fallbackModel", async () => {
+  const { tmp, graphRoot } = makeTempGraph();
+  try {
+    initGraph(graphRoot);
+    await setupEnv(graphRoot);
+    const { saveRuntimeConfig, loadRuntimeConfig } = await importModule("runtime.js");
+
+    saveRuntimeConfig({
+      mode: "docker",
+      docker: { workerProvider: "opencode", fallbackProvider: "codex", fallbackModel: "gpt-5" },
+    });
+
+    const loaded = loadRuntimeConfig();
+    assert.equal(loaded.docker.workerProvider, "opencode", "Primary provider persisted");
+    assert.equal(loaded.docker.fallbackProvider, "codex", "Fallback provider persisted");
+    assert.equal(loaded.docker.fallbackModel, "gpt-5", "Fallback model persisted");
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});

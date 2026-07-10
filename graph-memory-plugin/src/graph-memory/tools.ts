@@ -967,6 +967,8 @@ function configureRuntime(args: {
   runtimeMode?: string;
   workerProvider?: string;
   workerModel?: string;
+  fallbackProvider?: string;
+  fallbackModel?: string;
   containerName?: string;
   imageName?: string;
   authVolume?: string;
@@ -990,6 +992,8 @@ function configureRuntime(args: {
       enabled: runtimeMode === "docker",
       ...(args.workerProvider ? { workerProvider: args.workerProvider as WorkerProvider } : {}),
       ...(args.workerModel ? { workerModel: args.workerModel } : {}),
+      ...(args.fallbackProvider ? { fallbackProvider: args.fallbackProvider as WorkerProvider } : {}),
+      ...(args.fallbackModel ? { fallbackModel: args.fallbackModel } : {}),
       ...(args.containerName ? { containerName: args.containerName } : {}),
       ...(args.imageName ? { image: args.imageName } : {}),
       ...(args.authVolume ? { authVolume: args.authVolume } : {}),
@@ -1363,6 +1367,10 @@ export const graphMemorySchema = {
     .describe("Worker harness for configure_runtime (codex, claude, pi, opencode)"),
   workerModel: z.string().optional()
     .describe("Model override for pipeline workers (e.g. 'sonnet', 'o3', 'gpt-4.1'). Harness-specific."),
+  fallbackProvider: z.enum(["codex", "claude", "pi", "opencode"]).optional()
+    .describe("Fallback worker harness for configure_runtime — used when the primary worker fails or times out (e.g. on a provider usage limit). Omit for no fallback."),
+  fallbackModel: z.string().optional()
+    .describe("Model for the fallback worker (harness-specific). Optional; defaults to the fallback harness's own default model."),
   runtimeMode: z.enum(["manual", "docker"]).optional()
     .describe("Runtime mode for configure_runtime"),
   containerName: z.string().optional()

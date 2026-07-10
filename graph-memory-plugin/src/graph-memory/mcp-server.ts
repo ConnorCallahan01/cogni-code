@@ -43,7 +43,7 @@ PIPELINE:
 
 SETUP:
 - initialize: First-time setup. Pass graphRoot to choose storage location (defaults to ~/.graph-memory/).
-- configure_runtime: Set manual or Docker runtime configuration. Pass workerProvider (codex, claude, pi, opencode) to choose the pipeline agent harness. Pass workerModel to override the model used by pipeline workers (e.g. 'sonnet', 'o3', 'gpt-4.1').`,
+- configure_runtime: Set manual or Docker runtime configuration. Pass workerProvider (codex, claude, pi, opencode) to choose the pipeline agent harness. Pass workerModel to override the model used by pipeline workers (e.g. 'sonnet', 'o3', 'gpt-4.1'). Pass fallbackProvider (and optionally fallbackModel) to have the daemon automatically retry a failed or timed-out worker on a second harness — useful when the primary provider hits a usage limit.`,
   graphMemorySchema,
   async (args) => {
     return handleGraphMemory(args);

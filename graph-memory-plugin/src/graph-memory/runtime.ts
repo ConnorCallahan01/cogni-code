@@ -17,6 +17,8 @@ export interface DockerRuntimeConfig {
   enabled: boolean;
   workerProvider: WorkerProvider;
   workerModel?: string;
+  fallbackProvider?: WorkerProvider;
+  fallbackModel?: string;
   image: string;
   containerName: string;
   authVolume: string;
@@ -345,6 +347,8 @@ export function getRuntimeStatus(): Record<string, unknown> {
       enabled: runtime.docker.enabled,
       workerProvider: runtime.docker.workerProvider,
       workerModel: runtime.docker.workerModel || null,
+      fallbackProvider: runtime.docker.fallbackProvider || null,
+      fallbackModel: runtime.docker.fallbackModel || null,
       image: runtime.docker.image,
       containerName: runtime.docker.containerName,
       authVolume: runtime.docker.authVolume,

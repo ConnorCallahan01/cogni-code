@@ -77,20 +77,27 @@ If the user isn't sure, recommend:
 - Claude if they have a Claude subscription
 - pi or opencode as provider-agnostic fallbacks
 
-Once chosen, hold this value for the configure_runtime call in the next step.
+Then ask two optional follow-ups:
+
+- **Model override** — each harness has a default model, but the user can pick one (e.g. `sonnet`, `o3`, `gpt-5`, `glm-5.1`). Skip to use the harness default.
+- **Fallback harness (recommended)** — a *second* harness the daemon automatically retries on when the primary worker fails or times out (e.g. the primary provider hits a usage limit). A good fallback is a different provider from the primary. Optionally a fallback model too. Skip for no fallback.
+
+Once chosen, hold the primary harness, model, fallback harness, and fallback model for the configure_runtime call in the next step.
 
 ## Step 4: Configure the chosen mode
+
+Include `workerModel`, `fallbackProvider`, and `fallbackModel` only if the user chose them; otherwise omit them.
 
 For Docker:
 
 ```text
-graph_memory(action="configure_runtime", runtimeMode="docker", workerProvider="<chosen_harness>")
+graph_memory(action="configure_runtime", runtimeMode="docker", workerProvider="<chosen_harness>", workerModel="<model or omit>", fallbackProvider="<fallback or omit>", fallbackModel="<fallback model or omit>")
 ```
 
 For manual:
 
 ```text
-graph_memory(action="configure_runtime", runtimeMode="manual", workerProvider="<chosen_harness>")
+graph_memory(action="configure_runtime", runtimeMode="manual", workerProvider="<chosen_harness>", workerModel="<model or omit>", fallbackProvider="<fallback or omit>", fallbackModel="<fallback model or omit>")
 ```
 
 ## Step 5: Docker Runtime Bootstrap
