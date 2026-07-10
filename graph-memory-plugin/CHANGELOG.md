@@ -178,15 +178,15 @@ Session-start now uses a tiered injection strategy:
 
 Both paths share the same underlying data (`mind/model.json`). The v3 whisper path is a further compression that can be enabled when ready.
 
-### v3 Pipeline Infrastructure (code present, not active by default)
+### Pipeline Infrastructure — Observer & Compressor (active)
 
-The observer, compressor, and dreamer-v3 pipeline stages were built but rolled back after the v3 pipeline failed to validate in production (worker spawn storms, compressor never triggered, unprocessed observations). The v2 pipeline with improved prompts is the proven path.
+The observer and compressor stages run by default as part of the pipeline (there is no `GRAPH_MEMORY_V3` gate — they are enqueued unconditionally by the daemon and harness extensions). The v2 scribe → auditor → librarian → dreamer chain remains the proven core; observer/compressor augment it.
 
-- **Observer** — single LLM pass producing observations, session logs, and node upserts. Present in code, gated behind `GRAPH_MEMORY_V3=1`.
-- **Compressor** — folds observations into mental models, generates whisper paragraphs. Present in code, not active.
-- **Dreamer V3** — creative recombination against compressed models. Present in code, not active.
+- **Observer** — single LLM pass producing observations, session logs, and node upserts. Active; enqueued on scribe/buffer thresholds.
+- **Compressor** — folds observations into mental models, generates whisper paragraphs. Active; enqueued after observer runs.
+- **Dreamer V3 / dreamer-models** — creative recombination against compressed models. Present in code but **not wired** as a runnable job; the active dreamer is the v2 project-chain dreamer.
 
-These stages can be re-enabled by setting `GRAPH_MEMORY_V3=1` when the v3 pipeline is validated.
+Reliability of the LLM-backed stages depends on the configured worker harness. If a worker fails or times out (e.g. a provider usage limit), the daemon automatically retries the job on the configured fallback worker (`fallbackProvider`/`fallbackModel`).
 
 ### Pipeline Prompt Improvements
 

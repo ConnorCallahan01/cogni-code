@@ -1,6 +1,6 @@
 # Graph Memory — Mental Model Architecture
 
-> **Status: Implemented.** The system runs a unified architecture: an active pipeline (scribe → auditor → librarian → dreamer) plus MAP, WORKING, DREAMS, pinned nodes, and decay, with mental models (mind/), observations, project lenses, and session logs. Session-start injection reads model.json directly (unconditional) → MAP → PINNED → WORKING. Optional pipeline stages (observer → compressor → dreamer) are code-present but not active by default. The diverged graph/ directory has been archived to archive/v3-graph-backup/. This spec documents the mental model architecture.
+> **Status: Implemented.** The system runs a unified architecture: an active pipeline (scribe → auditor → librarian → dreamer) plus MAP, WORKING, DREAMS, pinned nodes, and decay, with mental models (mind/), observations, project lenses, and session logs. Session-start injection reads model.json directly (unconditional) → MAP → PINNED → WORKING. Observer and compressor also run by default (ungated); the dreamer-v3 / dreamer-models variant is code-present but not wired. The diverged graph/ directory has been archived to archive/v3-graph-backup/. This spec documents the mental model architecture.
 
 ## Overview
 
@@ -57,17 +57,17 @@ Active Pipeline (v2, runs by default):
   Session hooks capture → scribe extracts deltas → auditor triages →
   librarian applies updates → dreamer creates speculative fragments
 
-v3 Pipeline (code present, not active by default):
+Observer + Compressor (active by default, ungated):
   observer → compressor (periodic, not every session)
 
   observer:    watches conversation, writes observations + session logs + nodes
   compressor:  reads observations, folds into models
-  dreamer:     periodic background job against compressed models + nodes
   deep-audit:  on-demand full graph walk for bloat management
 
-Note: The scribe → auditor → librarian → dreamer pipeline is the active,
-proven pipeline. Observer, compressor, and dreamer stages are code-present
-but not active by default.
+Note: The scribe → auditor → librarian → dreamer pipeline is the proven core.
+Observer and compressor also run by default (enqueued on scribe/buffer
+thresholds; no GRAPH_MEMORY_V3 gate). The dreamer-v3 / dreamer-models variant
+is code-present but not wired — the active dreamer is the v2 project-chain one.
 ```
 
 ### Anti-Patterns
@@ -601,7 +601,7 @@ Migrate existing graph data to the new format.
 
 Remove v2 code after v3 is validated.
 
-> **Note (2026-05-29):** The scribe → auditor → librarian → dreamer pipeline remains the active pipeline. Optional stages (observer, compressor, dreamer) are code-present but not active by default. Items below are retained for historical reference but are not planned as described.
+> **Note (2026-05-29, updated 2026-07-09):** The scribe → auditor → librarian → dreamer pipeline is the proven core. Observer and compressor also run by default (ungated); the dreamer-v3 / dreamer-models variant is code-present but not wired. Items below are retained for historical reference but are not planned as described.
 
 **Tasks:**
 
