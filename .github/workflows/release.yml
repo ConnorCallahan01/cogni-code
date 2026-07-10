@@ -47,7 +47,7 @@ jobs:
           python3 -c "
           import re, sys
           version = '${{ steps.version.outputs.version }}'
-          with open('CHANGELOG.md') as f:
+          with open('graph-memory-plugin/CHANGELOG.md') as f:
               content = f.read()
           for heading in ['Unreleased', version]:
               pattern = r'^## \[' + re.escape(heading) + r'\][^\n]*\n(.*?)(?=\n## \[|\Z)'
@@ -55,7 +55,7 @@ jobs:
               if m:
                   print(m.group(1).strip())
                   sys.exit(0)
-          print('No [Unreleased] or [' + version + '] section found in CHANGELOG.md')
+          print('No [Unreleased] or [' + version + '] section found in graph-memory-plugin/CHANGELOG.md')
           sys.exit(1)
           " > /tmp/body.md
           echo "body_path=/tmp/body.md" >> "$GITHUB_OUTPUT"
@@ -79,7 +79,7 @@ jobs:
       - name: Check for [Unreleased] section
         id: check_unreleased
         run: |
-          if grep -q '^## \[Unreleased\]' CHANGELOG.md; then
+          if grep -q '^## \[Unreleased\]' graph-memory-plugin/CHANGELOG.md; then
             echo "has_unreleased=true" >> "$GITHUB_OUTPUT"
           else
             echo "has_unreleased=false" >> "$GITHUB_OUTPUT"
@@ -88,17 +88,17 @@ jobs:
       - name: Warn if version not bumped
         if: steps.check_tag.outputs.exists == 'true' && steps.check_unreleased.outputs.has_unreleased == 'true'
         run: |
-          echo "::warning::Tag ${{ steps.version.outputs.tag }} already exists but CHANGELOG.md has [Unreleased] section. Did you forget to bump the version in package.json?"
+          echo "::warning::Tag ${{ steps.version.outputs.tag }} already exists but graph-memory-plugin/CHANGELOG.md has [Unreleased] section. Did you forget to bump the version in package.json?"
 
       - name: Update CHANGELOG [Unreleased] heading
         if: steps.check_tag.outputs.exists == 'false' && inputs.dry_run != true
         run: |
           VERSION="${{ steps.version.outputs.version }}"
           DATE=$(date +%Y-%m-%d)
-          sed -i "s/^## \[Unreleased\]$/## [${VERSION}] — ${DATE}/" CHANGELOG.md
+          sed -i "s/^## \[Unreleased\]$/## [${VERSION}] — ${DATE}/" graph-memory-plugin/CHANGELOG.md
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add CHANGELOG.md
+          git add graph-memory-plugin/CHANGELOG.md
           git diff --cached --quiet || git commit -m "Update changelog for v${VERSION}"
           git push
 
