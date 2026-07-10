@@ -1,5 +1,22 @@
 # Changelog
 
+## [3.2.0] (2026-07-09) — Worker Fallback & Pipeline Doc Corrections
+
+### Added
+
+- **User-selectable fallback worker** — the daemon now retries a failed or timed-out pipeline worker on a user-configured fallback harness/model (`fallbackProvider`/`fallbackModel`, set via `configure_runtime`), so a primary provider hitting a usage limit no longer drops the job. Fallback triggers on any worker failure, since usage-limit stalls surface as silent timeouts rather than usage-limit text. `/memory-switch-harness`, `/memory-onboard`, and the onboarder agent now prompt for both primary and fallback provider + model.
+
+### Fixed
+
+- **Notion batching regression** — restored `groupIntoBatches()` and the `notionSync.maxBatchSize` default (30), both dropped as collateral in an earlier Docker commit; fixes two stale tests.
+- **README missing `/skill-install`** — added to the plugin command table (fixes the release-surface test).
+
+### Changed
+
+- **Graph budget raised** — `maxNodesBeforePrune` 300 → 3000 and `maxMapTokens` 12000 → 16000, so the graph holds far more nodes before pruning.
+- **Docs corrected: observer & compressor are active** — README, SPEC, CLAUDE.md, and pipeline-audit-notes claimed these stages were "rolled back / not active" and gated behind a `GRAPH_MEMORY_V3` flag that does not exist in code. They actually run by default, ungated; only dreamer-v3 / dreamer-models remains unwired.
+- **Plugin manifest version synced** — `.claude-plugin/plugin.json` was stale at 3.0.0 and now tracks `package.json`.
+
 ## [3.1.0] (2026-06-25) — Version Label Cleanup
 
 ### Fixed
