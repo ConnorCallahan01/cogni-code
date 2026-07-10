@@ -11,6 +11,7 @@ Launch the `memory-onboarder` agent to handle the guided onboarding flow. This a
 3. If not initialized, guide through:
    - Choosing a storage location
    - Selecting runtime mode, with Docker daemon mode as the recommended default
+   - Choosing the **worker harness** (codex, claude, pi, opencode), an optional **worker model** override, and an optional **fallback** harness/model used when the primary provider fails or hits a usage limit
    - Creating or connecting the bind-mounted memory storage
    - Configuring worker auth for the container runtime, preferably by importing existing host Codex auth
    - Running healthchecks to verify queue, storage, and worker connectivity

@@ -111,7 +111,7 @@ function createConfig() {
     },
 
     graph: {
-      maxMapTokens: 12000,
+      maxMapTokens: 16000,
       maxMapInjectionTokens: 7000,
       maxSessionStartTokens: 15000,
       maxPinnedTokens: 3000,
@@ -139,7 +139,7 @@ function createConfig() {
       maxDreamsPerSession: 3,
       maxPriors: 30,
       maxPriorsTokens: 1500,
-      maxNodesBeforePrune: 300,
+      maxNodesBeforePrune: 3000,
       maxSomaTokens: 2000,
       maxWorkingTokens: 4000,
       maxDreamsContextTokens: 1500,
@@ -253,6 +253,7 @@ function createConfig() {
     notionSync: {
       enabled: local.notionSync?.enabled ?? false,
       syncHourLocal: local.notionSync?.syncHourLocal ?? 8,
+      maxBatchSize: local.notionSync?.maxBatchSize ?? 30,
       skipInbound: local.notionSync?.skipInbound ?? false,
       webhookSecret: local.notionSync?.webhookSecret
         ? local.notionSync.webhookSecret.replace(/^\$\{(\w+)\}$/, (_, v) => process.env[v] || "")

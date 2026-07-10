@@ -1,5 +1,28 @@
 # Changelog
 
+## [3.2.0] (2026-07-09) — Worker Fallback, Windows/Podman Support & Doc Corrections
+
+### Added
+
+- **User-selectable fallback worker** — the daemon now retries a failed or timed-out pipeline worker on a user-configured fallback harness/model (`fallbackProvider`/`fallbackModel`, set via `configure_runtime`), so a primary provider hitting a usage limit no longer drops the job. Fallback triggers on any worker failure, since usage-limit stalls surface as silent timeouts rather than usage-limit text. `/memory-switch-harness`, `/memory-onboard`, and the onboarder agent now prompt for both primary and fallback provider + model.
+- **Native Windows (Git Bash) support** — the installer now uses an unprivileged directory junction (`mklink /J`) for the plugin link and content-synced copies for slash commands (plain `ln -s` silently degrades to copies / frozen snapshots without admin rights), and registers **node-direct** hook and MCP commands by resolving node's absolute path — bare `bash.exe` spawned by a non-Git-Bash process has no Git `usr/bin` on PATH and couldn't even run `dirname`, so the `.sh` wrappers failed before reaching node. Adds `session-end-launcher.ts`, a pure-Node equivalent of the detached session-end consolidation. Verified on Windows 11 (Git Bash + Podman 5.6.1).
+- **Podman container-engine fallback** — `runtime-env.sh` detects `docker` or `podman` on PATH and, for Podman, emits a `docker()` forwarding function so every `docker-*.sh` script runs unmodified; `docker-bootstrap.sh` / `docker-start.sh` auto-start the Podman machine (it doesn't self-start like Docker Desktop); and `getRuntimeStatus()` resolves the same engine and reports it as `docker.state.engine`, so onboarding no longer claims no container runtime exists when only Podman is installed.
+
+### Fixed
+
+- **Notion batching regression** — restored `groupIntoBatches()` and the `notionSync.maxBatchSize` default (30), both dropped as collateral in an earlier Docker commit; fixes two stale tests.
+- **README missing `/skill-install`** — added to the plugin command table (fixes the release-surface test).
+- **Duplicate hook re-registration on Windows reinstall** — re-registration now replaces this plugin's stale entries for the same event/matcher instead of appending duplicates.
+- **Corrupted Windows paths** — `fs.realpathSync` backslash paths are normalized to forward slashes before hitting a shell, and `docker-healthcheck.sh` doubles the container-path leading slash so MSYS doesn't rewrite it to a Windows path.
+- **CRLF line endings breaking shell scripts** — added `.gitattributes` normalizing text files to LF (Windows checkouts had drifted to CRLF, showing 27 perpetually-"modified" `bin/*.sh` files); `.bat`/`.ps1` keep CRLF.
+- **Over-broad gitignore** — anchored the `graph/` and `graph-memory/` ignore patterns to the repo root so they match only the local data directories, not source under `graph-memory-plugin/src/graph-memory/` (which had silently ignored new source files there).
+
+### Changed
+
+- **Graph budget raised** — `maxNodesBeforePrune` 300 → 3000 and `maxMapTokens` 12000 → 16000, so the graph holds far more nodes before pruning.
+- **Docs corrected: observer & compressor are active** — README, SPEC, CLAUDE.md, and pipeline-audit-notes claimed these stages were "rolled back / not active" and gated behind a `GRAPH_MEMORY_V3` flag that does not exist in code. They actually run by default, ungated; only dreamer-v3 / dreamer-models remains unwired.
+- **Plugin manifest version synced** — `.claude-plugin/plugin.json` was stale at 3.0.0 and now tracks `package.json`.
+
 ## [3.1.0] (2026-06-25) — Version Label Cleanup
 
 ### Fixed
@@ -178,15 +201,15 @@ Session-start now uses a tiered injection strategy:
 
 Both paths share the same underlying data (`mind/model.json`). The v3 whisper path is a further compression that can be enabled when ready.
 
-### v3 Pipeline Infrastructure (code present, not active by default)
+### Pipeline Infrastructure — Observer & Compressor (active)
 
-The observer, compressor, and dreamer-v3 pipeline stages were built but rolled back after the v3 pipeline failed to validate in production (worker spawn storms, compressor never triggered, unprocessed observations). The v2 pipeline with improved prompts is the proven path.
+The observer and compressor stages run by default as part of the pipeline (there is no `GRAPH_MEMORY_V3` gate — they are enqueued unconditionally by the daemon and harness extensions). The v2 scribe → auditor → librarian → dreamer chain remains the proven core; observer/compressor augment it.
 
-- **Observer** — single LLM pass producing observations, session logs, and node upserts. Present in code, gated behind `GRAPH_MEMORY_V3=1`.
-- **Compressor** — folds observations into mental models, generates whisper paragraphs. Present in code, not active.
-- **Dreamer V3** — creative recombination against compressed models. Present in code, not active.
+- **Observer** — single LLM pass producing observations, session logs, and node upserts. Active; enqueued on scribe/buffer thresholds.
+- **Compressor** — folds observations into mental models, generates whisper paragraphs. Active; enqueued after observer runs.
+- **Dreamer V3 / dreamer-models** — creative recombination against compressed models. Present in code but **not wired** as a runnable job; the active dreamer is the v2 project-chain dreamer.
 
-These stages can be re-enabled by setting `GRAPH_MEMORY_V3=1` when the v3 pipeline is validated.
+Reliability of the LLM-backed stages depends on the configured worker harness. If a worker fails or times out (e.g. a provider usage limit), the daemon automatically retries the job on the configured fallback worker (`fallbackProvider`/`fallbackModel`).
 
 ### Pipeline Prompt Improvements
 

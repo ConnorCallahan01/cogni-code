@@ -152,6 +152,29 @@ export function buildNotionDiff(state: NotionSyncState): NotionSyncDiff {
   };
 }
 
+export function groupIntoBatches(diff: NotionSyncDiff, maxBatchSize: number): DiffItem[][] {
+  const changed = diff.items.filter(
+    (i) => i.classification === "new" || i.classification === "updated"
+  );
+  if (changed.length === 0) return [];
+
+  const byBatch = new Map<string, DiffItem[]>();
+  for (const item of changed) {
+    const existing = byBatch.get(item.batch) || [];
+    existing.push(item);
+    byBatch.set(item.batch, existing);
+  }
+
+  const result: DiffItem[][] = [];
+  for (const [, batchItems] of byBatch) {
+    for (let i = 0; i < batchItems.length; i += maxBatchSize) {
+      result.push(batchItems.slice(i, i + maxBatchSize));
+    }
+  }
+
+  return result;
+}
+
 function classifyByHash(
   key: string,
   currentHash: string,

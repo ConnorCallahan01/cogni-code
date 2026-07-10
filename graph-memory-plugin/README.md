@@ -64,9 +64,9 @@ Session-start uses a single injection path:
 
 **mental-model (model.json direct, unconditional) → MAP (per-project) → PINNED (project-gated) → WORKING**
 
-### Optional Pipeline Stages
+### Pipeline Stages
 
-The scribe → auditor → librarian → dreamer pipeline is the active, proven pipeline. Observer, compressor, and dreamer stages are present but not active by default. All stages read and write the same durable node files in `nodes/`, while `mind/`, `lenses/`, and `sessions/` hold compressed context layers.
+The scribe → auditor → librarian → dreamer pipeline is the proven core. Observer and compressor also run by default (observer produces observations/session logs/node upserts on scribe and buffer thresholds; compressor folds observations into mental models afterward). The separate dreamer-v3 / dreamer-models variant is present in code but not wired. All stages read and write the same durable node files in `nodes/`, while `mind/`, `lenses/`, and `sessions/` hold compressed context layers. LLM-backed stages retry on the configured fallback worker if the primary provider fails or hits a usage limit.
 
 ### Notion Sync
 
@@ -221,6 +221,7 @@ Installed slash commands (available in both Claude Code and OpenCode):
 | `/notion-sync` | Sync graph-memory content to Notion |
 | `/notion-consolidate` | Merge batched wiki pages into category pages, apply reviewed Notion edits back into memory |
 | `/refresh-skill` | Manually refresh a skillforged skill whose source node has drifted |
+| `/skill-install` | Install skillforged skills from graph memory into the current project |
 
 Claude Code also provides `/recall <query>` as a skill command with deeper graph lookup and edge traversal.
 

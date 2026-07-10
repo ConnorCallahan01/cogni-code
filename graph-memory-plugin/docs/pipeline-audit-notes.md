@@ -11,7 +11,7 @@ Working notes from a fresh audit of the graph-memory plugin. This file is intent
 - The daemon is the main pipeline scheduler. It owns a file-backed queue in `<graphRoot>/.jobs/{queued,running,done,failed}` and polls on `CONFIG.session.daemonPollMs`.
 - Pipeline workers are spawned as external agent harnesses through `worker-runner.ts`, using Codex, Claude Code, pi, or OpenCode based on env/runtime config.
 - The durable graph store is `nodes/`; all pipeline stages read and write the same markdown files.
-- Optional pipeline components (observer, compressor, dreamer) are code-present but not active by default. Mind/lens/session storage and project doc bootstrap are active.
+- Observer and compressor run by default (enqueued by the daemon and harness extensions; no `GRAPH_MEMORY_V3` gate). The dreamer-v3 / dreamer-models variant is code-present but not wired. Mind/lens/session storage and project doc bootstrap are active.
 - The active pipeline is `scribe` -> `auditor` -> `librarian` -> `dreamer`, with `working_update` for project handoff files.
 - Other daemon-owned background processes include daily memory analysis, Notion sync/inbound/merge, Skillforge scoring/refresh, decay, stale buffer scavenging, orphan snapshot cleanup, session pruning, and pipeline log rotation.
 

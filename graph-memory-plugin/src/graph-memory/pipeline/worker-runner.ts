@@ -238,26 +238,75 @@ function resolveHarness(): WorkerProvider {
   return "codex";
 }
 
+// ── Fallback Resolution ──────────────────────────────────────────────────────
+
+export interface WorkerAttempt {
+  provider: WorkerProvider;
+  model?: string;
+}
+
+/**
+ * Resolve the user-configured fallback worker, if any. An env override takes
+ * precedence over the persisted runtime config, mirroring resolveHarness().
+ * Returns null when no fallback is configured — the default is no fallback, so
+ * behavior is unchanged unless the user opts in.
+ */
+function resolveFallback(runtime: ReturnType<typeof loadRuntimeConfig>): WorkerAttempt | null {
+  const envProvider = process.env.GRAPH_MEMORY_WORKER_FALLBACK_PROVIDER as WorkerProvider | undefined;
+  const provider =
+    envProvider && ADAPTERS[envProvider]
+      ? envProvider
+      : runtime.docker.fallbackProvider && ADAPTERS[runtime.docker.fallbackProvider]
+        ? runtime.docker.fallbackProvider
+        : undefined;
+  if (!provider) return null;
+  const model =
+    process.env.GRAPH_MEMORY_WORKER_FALLBACK_MODEL ||
+    runtime.docker.fallbackModel ||
+    undefined;
+  return { provider, model };
+}
+
+/**
+ * Build the ordered list of worker attempts: primary first, then the fallback,
+ * but only when the fallback actually differs (different provider or model).
+ */
+export function planWorkerAttempts(primary: WorkerAttempt, fallback: WorkerAttempt | null): WorkerAttempt[] {
+  const attempts: WorkerAttempt[] = [primary];
+  if (
+    fallback &&
+    (fallback.provider !== primary.provider ||
+      (fallback.model || undefined) !== (primary.model || undefined))
+  ) {
+    attempts.push(fallback);
+  }
+  return attempts;
+}
+
 // ── Main Runner ─────────────────────────────────────────────────────────────
 
-export async function runPipelineWorker(opts: WorkerRunOptions): Promise<WorkerRunResult> {
-  const harness = resolveHarness();
-  const runtime = loadRuntimeConfig();
-  const adapter = ADAPTERS[harness];
+interface AttemptResult {
+  exitCode: number;
+  logFile: string;
+  pid: number | undefined;
+  timedOut: boolean;
+}
 
+async function runWorkerAttempt(
+  attempt: WorkerAttempt,
+  opts: WorkerRunOptions,
+  runtime: ReturnType<typeof loadRuntimeConfig>
+): Promise<AttemptResult> {
+  const adapter = ADAPTERS[attempt.provider];
   if (!adapter) {
-    throw new Error(`Unsupported worker harness: ${harness}`);
-  }
-
-  if (!fs.existsSync(opts.logDir)) {
-    fs.mkdirSync(opts.logDir, { recursive: true });
+    throw new Error(`Unsupported worker harness: ${attempt.provider}`);
   }
 
   const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-  const logFile = path.join(opts.logDir, `${opts.name}-${timestamp}.log`);
+  const logFile = path.join(opts.logDir, `${opts.name}-${attempt.provider}-${timestamp}.log`);
   const fd = fs.openSync(logFile, "w");
 
-  const plan = adapter.buildPlan(opts.prompt, opts, runtime);
+  const plan = adapter.buildPlan(opts.prompt, { ...opts, model: attempt.model }, runtime);
 
   // Redirect stdio to log file for detached output
   plan.spawnOptions.stdio = ["ignore", fd, fd];
@@ -268,11 +317,7 @@ export async function runPipelineWorker(opts: WorkerRunOptions): Promise<WorkerR
   });
 
   const pid = child.pid;
-  activityBus.log("system:info", `Worker spawned: ${plan.command} ${plan.args.slice(0, 3).join(" ")}... (pid=${pid})`, { harness, pid, logFile });
-
-  child.on("error", (err) => {
-    activityBus.log("system:error", `Worker spawn error (pid=${pid}): ${err.message}`, { harness, pid });
-  });
+  activityBus.log("system:info", `Worker spawned: ${plan.command} ${plan.args.slice(0, 3).join(" ")}... (pid=${pid})`, { harness: attempt.provider, pid, logFile });
 
   const timeoutMs = Math.max(30_000, opts.timeoutMs ?? 300_000);
   let timedOut = false;
@@ -290,38 +335,80 @@ export async function runPipelineWorker(opts: WorkerRunOptions): Promise<WorkerR
     }, 5_000);
   }, timeoutMs);
 
-  const exitCode = await new Promise<number>((resolve, reject) => {
-    child.once("error", reject);
-    child.once("close", (code) => resolve(code ?? 1));
-  });
-
-  clearTimeout(timeout);
-  if (forceKillTimer) {
-    clearTimeout(forceKillTimer);
-  }
-
+  let exitCode: number;
   try {
-    fs.closeSync(fd);
-  } catch { /* ignore */ }
+    exitCode = await new Promise<number>((resolve, reject) => {
+      child.once("error", reject);
+      child.once("close", (code) => resolve(code ?? 1));
+    });
+  } catch (err: any) {
+    // Spawn failure (e.g. harness CLI not on PATH) — treat as a failed attempt
+    // so the fallback still gets a chance rather than aborting outright.
+    activityBus.log("system:error", `Worker spawn error (${attempt.provider}, pid=${pid}): ${err?.message || err}`, { harness: attempt.provider, pid });
+    exitCode = 127;
+  } finally {
+    clearTimeout(timeout);
+    if (forceKillTimer) {
+      clearTimeout(forceKillTimer);
+    }
+    try {
+      fs.closeSync(fd);
+    } catch { /* ignore */ }
+  }
 
   // Write metadata alongside the log
   const metaPath = logFile + ".meta.json";
   try {
     fs.writeFileSync(metaPath, JSON.stringify({
       name: opts.name,
-      harness,
+      harness: attempt.provider,
+      model: attempt.model ?? null,
       pid,
       startedAt: new Date().toISOString(),
       logFile,
       exitCode,
+      timedOut,
       finishedAt: new Date().toISOString(),
-      status: exitCode === 0 ? "completed" : "failed",
+      status: exitCode === 0 && !timedOut ? "completed" : "failed",
     }, null, 2));
   } catch { /* ignore */ }
 
-  if (timedOut) {
-    throw new Error(`Worker (${harness}) timed out after ${timeoutMs}ms. See ${logFile}`);
+  return { exitCode, logFile, pid, timedOut };
+}
+
+export async function runPipelineWorker(opts: WorkerRunOptions): Promise<WorkerRunResult> {
+  const runtime = loadRuntimeConfig();
+  const primary: WorkerAttempt = { provider: resolveHarness(), model: opts.model };
+  const fallback = resolveFallback(runtime);
+  const attempts = planWorkerAttempts(primary, fallback);
+
+  if (!fs.existsSync(opts.logDir)) {
+    fs.mkdirSync(opts.logDir, { recursive: true });
   }
 
-  return { exitCode, logFile, pid };
+  let last: AttemptResult | null = null;
+  for (let i = 0; i < attempts.length; i++) {
+    const attempt = attempts[i];
+    if (i > 0) {
+      const prev = attempts[i - 1];
+      activityBus.log(
+        "system:info",
+        `Worker (${prev.provider}) failed — falling back to ${attempt.provider}${attempt.model ? ` (${attempt.model})` : ""}`,
+        { harness: attempt.provider, fallbackFrom: prev.provider }
+      );
+    }
+    last = await runWorkerAttempt(attempt, opts, runtime);
+    if (last.exitCode === 0 && !last.timedOut) {
+      return { exitCode: last.exitCode, logFile: last.logFile, pid: last.pid };
+    }
+  }
+
+  // Every attempt failed — preserve the original contract: throw on timeout so
+  // the daemon records a timeout, otherwise return the non-zero exit result.
+  const lastAttempt = attempts[attempts.length - 1];
+  if (last?.timedOut) {
+    const timeoutMs = Math.max(30_000, opts.timeoutMs ?? 300_000);
+    throw new Error(`Worker (${lastAttempt.provider}) timed out after ${timeoutMs}ms. See ${last.logFile}`);
+  }
+  return { exitCode: last?.exitCode ?? 1, logFile: last?.logFile ?? "", pid: last?.pid };
 }

@@ -132,9 +132,9 @@ The system is a single unified architecture:
 - **Session logs** (`sessions/{project}.jsonl`) — shipped work, decisions, blocked items, next-session hints
 - **Observations** (`mind/observations.jsonl`, `lenses/{project}/observations.jsonl`) — append-only feeds
 
-### Optional Pipeline Stages (code present, not active by default)
+### Pipeline Stages: Observer & Compressor (active)
 
-Observer, compressor, and dreamer were built but rolled back after failing to validate in production (worker spawn storms, compressor never triggered).
+Observer and compressor run by default — they are enqueued automatically (observer on scribe/buffer thresholds, compressor after observer runs) and are **not** gated behind any flag. Observer is a single LLM pass producing observations, session logs, and node upserts; compressor folds observations into mental models. Their reliability depends on the configured worker harness: if a worker times out (e.g. a provider usage limit), the daemon retries on the configured fallback worker (`fallbackProvider`/`fallbackModel`). The separate **dreamer-v3 / dreamer-models** variant is NOT wired — the active dreamer is the v2 project-chain dreamer.
 
 ### Additional Pipeline Stages
 
