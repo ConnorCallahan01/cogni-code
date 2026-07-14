@@ -1,17 +1,28 @@
 import { HarnessAdapter, HarnessType } from "./types.js";
+import { buildSessionStartContext, buildFullInjection, buildFallbackInjection, flushAndQueueJobs, cleanupSession } from "./shared.js";
 
 export class CodexAdapter implements HarnessAdapter {
   name: HarnessType = "codex";
 
-  async onSessionStart(_cwd: string, _sessionId: string): Promise<string> {
-    return "";
+  async onSessionStart(cwd: string, sessionId: string): Promise<string> {
+    const ctx = buildSessionStartContext(cwd, sessionId);
+
+    if (ctx.mentalModelUsed) {
+      return buildFullInjection(ctx.project);
+    }
+
+    return buildFallbackInjection(ctx.project);
   }
 
-  async onSessionEnd(_sessionId: string): Promise<void> {
-    // No-op: codex has no hooks. Daemon scavenges orphaned buffers.
+  async onSessionEnd(sessionId: string): Promise<void> {
+    const { readActiveProject } = await import("../project.js");
+    const active = readActiveProject();
+    const project = active?.name || "global";
+    flushAndQueueJobs(sessionId, project);
+    cleanupSession(sessionId, project);
   }
 
-  injectContext(_text: string): void {
-    // No-op: no injection mechanism for codex.
+  injectContext(text: string): void {
+    process.stdout.write(text);
   }
 }

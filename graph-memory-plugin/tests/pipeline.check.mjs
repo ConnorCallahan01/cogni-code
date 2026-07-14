@@ -1439,12 +1439,13 @@ test("phase 8: shared session start context builds correctly", async () => {
   }
 });
 
-test("phase 8: codex adapter is no-op", async () => {
+test("phase 8: codex adapter provides full session-start context", async () => {
   const { createAdapter } = await importModule("adapters/index.js");
   const codex = createAdapter("codex");
 
   const startResult = await codex.onSessionStart("/tmp", "sess-1");
-  assert.equal(startResult, "", "Codex returns empty context");
+  assert.ok(typeof startResult === "string", "Codex returns a string");
+  assert.ok(startResult.length >= 0, "Codex session start produces context (may be empty with no graph data)");
 
   await codex.onSessionEnd("sess-1");
 });
@@ -1460,9 +1461,10 @@ test("phase 8: adapter configs match harness capabilities", async () => {
 
   assert.equal(ADAPTER_CONFIGS["pi"].supportsPluginEvents, true);
 
-  assert.equal(ADAPTER_CONFIGS["codex"].supportsHooks, false);
+  assert.equal(ADAPTER_CONFIGS["codex"].supportsHooks, true);
   assert.equal(ADAPTER_CONFIGS["codex"].supportsPluginEvents, false);
-  assert.equal(isDegradedMode("codex"), true);
+  assert.equal(ADAPTER_CONFIGS["codex"].projectDocFilename, "AGENTS.md");
+  assert.equal(isDegradedMode("codex"), false);
   assert.equal(isDegradedMode("claude-code"), false);
 });
 

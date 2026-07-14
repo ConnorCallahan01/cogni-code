@@ -18,6 +18,12 @@ export const HARNESS_ADAPTERS: Record<string, HarnessAdapter> = {
     fileExtension: ".md",
     wrapper: (_name, _description, content) => content,
   },
+  "codex": {
+    harness: "codex",
+    installDir: ".codex/prompts",
+    fileExtension: ".md",
+    wrapper: (_name, _description, content) => content,
+  },
   "opencode": {
     harness: "opencode",
     installDir: ".opencode/commands",
