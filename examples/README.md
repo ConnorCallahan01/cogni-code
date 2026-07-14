@@ -1,6 +1,6 @@
 # Examples
 
-This folder collects concrete usage examples for the current `graph-memory` plugin surface.
+This folder collects concrete usage examples for the current `cogni-code` plugin surface.
 
 ## Files
 

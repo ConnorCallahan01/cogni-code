@@ -1,6 +1,6 @@
 # Claude Code Command Examples
 
-These examples show how the installed slash commands are meant to be used in Claude Code after running `graph-memory-plugin/bin/install.sh`.
+These examples show how the installed slash commands are meant to be used in Claude Code after running `cogni-code install` (or `graph-memory-plugin/bin/install.sh` from source).
 
 ## First-Time Setup
 

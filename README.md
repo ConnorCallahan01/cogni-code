@@ -12,7 +12,7 @@
 
 Every time you start a new session, your agent starts from zero. It forgets your preferences, your decisions, the bug you spent two hours on yesterday, the deployment strategy you settled on last week. Cogni-Code fixes that.
 
-It is a persistent, inspectable memory system for Claude Code, OpenCode, pi, and any MCP-compatible agent. Your agent learns how you work across sessions and gets sharper every time you use it. Memory lives as plain files on your disk. You can read it, edit it, diff it, and back it up with git.
+It is a persistent, inspectable memory system for Claude Code, Codex CLI, OpenCode, pi, and any MCP-compatible agent. Your agent learns how you work across sessions and gets sharper every time you use it. Memory lives as plain files on your disk. You can read it, edit it, diff it, and back it up with git.
 
 ---
 
@@ -69,29 +69,45 @@ Five ideas drive the design:
 
 ## Install
 
-**Claude Code:**
+**npm (recommended):**
+
+```bash
+npm install -g cogni-code
+cogni-code install
+```
+
+Auto-detects Claude Code, Codex CLI, and OpenCode. Initializes graph memory at `~/.graph-memory/` if needed. For a custom location: `cogni-code install --graph-root /path/to/memory`.
+
+**With background pipeline (Docker):**
+
+```bash
+npm install -g cogni-code
+cogni-code install --docker
+```
+
+Sets up the Docker daemon that runs the scribe/librarian/dreamer pipeline automatically. Requires Docker Desktop or Podman. Auto-detects the worker provider (codex, claude, or opencode) or specify with `--worker codex`.
+
+Updates are automatic — `npm update -g cogni-code` updates all hooks instantly (they call the `cogni-code` CLI, not absolute file paths).
+
+**From source (git clone):**
 
 ```bash
 git clone https://github.com/ConnorCallahan01/cogni-code.git
 cd cogni-code/graph-memory-plugin
-./bin/install.sh
+npm install && npm run build
+
+./bin/install.sh           # Claude Code
+./bin/install-codex.sh     # Codex CLI
+./bin/install-opencode.sh  # OpenCode
 ```
 
-**OpenCode:**
-
-```bash
-git clone https://github.com/ConnorCallahan01/cogni-code.git
-cd cogni-code/graph-memory-plugin
-./bin/install-opencode.sh
-```
-
-Both installers register the MCP server, wire up session hooks, and install slash commands. Then run:
+Then start a session and run:
 
 ```text
 /memory-onboard
 ```
 
-The onboard wizard walks you through storage location, runtime mode, and seeds your first memory nodes.
+The onboard wizard walks you through runtime mode and seeds your first memory nodes. (If you installed via npm, the graph is already initialized — onboarding is optional.)
 
 ---
 
@@ -336,7 +352,7 @@ The `graph_memory` MCP tool is the primary interface. Your agent uses it directl
 
 ## Slash commands
 
-Installed for both Claude Code and OpenCode during setup. See [Skills](#skills) for the full list.
+Installed for Claude Code, Codex CLI, and OpenCode during setup. See [Skills](#skills) for the full list.
 
 ---
 
@@ -377,14 +393,15 @@ Your memory is just files. Open them, grep them, edit them, back them up. Git tr
 ## Project structure
 
 ```text
-graph-memory-plugin/    # The installable plugin. Start here.
-  src/graph-memory/      # Core logic, pipeline, mental model, adapters
+graph-memory-plugin/    # The installable plugin (npm: cogni-code). Start here.
+  src/graph-memory/      # Core logic, pipeline, mental model, CLI, adapters
   agents/                # Background worker instructions
   bin/                   # Install scripts and Docker helpers
   commands/              # Slash commands (Claude Code)
   opencode-commands/     # Slash commands (OpenCode)
+  hooks/                 # Hook templates (Claude Code, Codex CLI)
   skills/                # Memory skill + /recall
-  extensions/            # Plugin entry points (Claude Code, OpenCode, pi)
+  extensions/            # Plugin entry points (OpenCode, pi)
   templates/             # Memory section templates
 
 memory-dashboard/        # Optional inspection UI (React + Express)

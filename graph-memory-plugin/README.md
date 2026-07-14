@@ -1,6 +1,6 @@
-# graph-memory plugin
+# cogni-code
 
-Persistent, graph-backed memory for Claude Code, OpenCode, and compatible agent workflows.
+Persistent, self-evolving memory for AI agents. Gives Claude Code, Codex CLI, OpenCode, and pi a knowledge graph that grows from conversations.
 
 ```text
       o----o----o
@@ -12,19 +12,52 @@ Persistent, graph-backed memory for Claude Code, OpenCode, and compatible agent 
              o
 
       C O G N I - C O D E
-      graph-memory onboarding
 ```
 
-This directory is the active plugin surface in the repository. If you cloned the repo, install from here rather than from the legacy root prototype.
+## Quick Start
+
+```bash
+npm install -g cogni-code
+cogni-code install          # auto-detects your harness(es)
+```
+
+Or specify a harness:
+
+```bash
+cogni-code install --codex
+cogni-code install --claude
+cogni-code install --opencode
+```
+
+Updates are automatic — `npm update -g cogni-code` updates the code and all hooks use the new version immediately (hooks call the `cogni-code` CLI, not absolute file paths).
+
+To also set up the Docker daemon for background pipeline processing:
+
+```bash
+cogni-code install --docker                 # auto-detects worker provider
+cogni-code install --docker --worker codex  # specify worker explicitly
+```
 
 ## What It Does
 
 - remembers preferences, decisions, project context, and recurring patterns across sessions
 - exposes a `graph_memory` tool for search, recall, remember, inspection, and maintenance
 - loads compact context into new sessions via **mental model injection**, with the older full-context path kept as a fallback
-- supports Claude Code (MCP + hooks), OpenCode (native plugin), and pi (extension)
+- supports Claude Code (MCP + hooks), Codex CLI (MCP + hooks), OpenCode (native plugin), and pi (extension)
 - runs a background pipeline that extracts observations, compresses mental models, and generates creative associations
 - keeps git history for memory changes so you can inspect or revert them
+
+### From Source (Git Clone)
+
+If you cloned the repo, install from `graph-memory-plugin/`:
+
+```bash
+cd graph-memory-plugin
+npm install && npm run build
+./bin/install.sh           # Claude Code
+./bin/install-codex.sh     # Codex CLI
+./bin/install-opencode.sh  # OpenCode
+```
 
 ## Architecture
 
@@ -122,6 +155,17 @@ Then start Claude Code and run:
 /memory-onboard
 ```
 
+### Codex CLI
+
+From the repository root:
+
+```bash
+cd graph-memory-plugin
+./bin/install-codex.sh
+```
+
+Then start Codex CLI and run `/hooks` to review and trust the graph-memory hooks. Codex supports lifecycle hooks (`SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `PreCompact`, `Stop`) with the same stdin/stdout contract as Claude Code.
+
 ### OpenCode
 
 From the repository root:
@@ -167,7 +211,7 @@ The migration script `src/graph-memory/scripts/migrate-mental-model.ts` was used
 - tool and graph storage only
 - no daemon container
 - useful for lightweight local testing
-- works with Claude Code, OpenCode, and pi
+- works with Claude Code, Codex CLI, OpenCode, and pi
 
 ### Docker daemon mode
 

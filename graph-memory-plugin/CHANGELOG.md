@@ -1,5 +1,28 @@
 # Changelog
 
+## [3.4.0] (2026-07-14) — npm Package (cogni-code) + CLI Dispatcher
+
+### Added
+
+- **npm package as `cogni-code`** — the plugin is now distributable via `npm install -g cogni-code` with automatic updates (`npm update -g cogni-code` updates all hooks immediately since they call the `cogni-code` CLI, not absolute file paths).
+  - New CLI dispatcher (`src/graph-memory/cli.ts`) with subcommands: `install`, `hook <event>`, `mcp`, `status`, `--version`. The `bin` field now points here instead of the raw MCP server.
+  - New install modules (`src/graph-memory/install/`) — Node-based harness detection + registration for Codex, Claude Code, and OpenCode. Auto-detects installed harnesses or accepts `--claude`/`--codex`/`--opencode`/`--all` flags.
+  - Hook registrations use `cogni-code hook <event>` commands instead of absolute `.sh` paths, so code updates propagate without re-running install.
+  - MCP registered as `command = "cogni-code", args = ["mcp"]` — version-independent.
+  - Claude Code install symlinks the package into `~/.claude/plugins/` so the existing manifest handles hooks/MCP/commands/discovery.
+  - Codex install merges hooks into `~/.codex/hooks.json` using CLI commands, including the `PreCompact` compaction-boundary flush.
+  - `--docker` flag configures Docker daemon mode: detects Docker/Podman, saves runtime config, and runs `docker-bootstrap.sh` to build the image, start the container, and import worker auth. Auto-detects worker provider (codex/claude/opencode) or accepts `--worker <provider>`.
+  - Graph initialization: auto-detects existing graph via `~/.graph-memory-config.yml` pointer, preserves on re-install/update, or initializes new at `~/.graph-memory/` (or custom `--graph-root <path>`).
+
+### Changed
+
+- **Package name `graph-memory` → `cogni-code`** — npm package name and CLI command updated. The MCP tool name remains `graph_memory` (what the LLM calls) and the Claude Code plugin manifest name remains `graph-memory` (for existing-install compatibility).
+- **`postinstall` → `prepare`** — standard npm lifecycle: builds on git clone and before publish, but not when installed as a dependency by consumers (dist ships pre-built).
+- **`peerDependenciesMeta`** — pi and typebox peer deps marked optional so non-pi installs don't show warnings.
+- **`files` whitelist** — added `CHANGELOG.md`.
+- **`engines.node`** — requires Node 18+.
+- **README** — updated with npm install instructions, Codex support, and CLI usage.
+
 ## [3.3.0] (2026-07-14) — Codex CLI First-Class Harness Support
 
 ### Added

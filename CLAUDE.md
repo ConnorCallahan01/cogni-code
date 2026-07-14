@@ -97,9 +97,11 @@ cd graph-memory-plugin && npx tsc --noEmit
 cd memory-dashboard && npx tsc --noEmit
 ```
 
+The plugin is published to npm as **`cogni-code`**. The CLI dispatcher (`src/graph-memory/cli.ts`) provides `install`, `hook <event>`, `mcp`, and `status` subcommands. The MCP tool name remains `graph_memory` (what the LLM calls).
+
 ## Pipeline Architecture
 
-The memory system runs automatically via hooks (Claude Code) or plugin events (OpenCode):
+The memory system runs automatically via hooks (Claude Code, Codex CLI) or plugin events (OpenCode, pi):
 
 ### Active Pipeline (scribe → auditor → librarian → dreamer)
 
@@ -203,7 +205,7 @@ graph_memory(action="remember", path="patterns/new-pattern", gist="One-sentence 
 <!-- BEGIN graph-memory plugin section -->
 ## Graph Memory
 
-The `graph_memory` tool provides persistent knowledge graph access across Claude Code, OpenCode, and pi sessions. Use it for recall, search, and remembering across sessions.
+The `graph_memory` tool provides persistent knowledge graph access across Claude Code, Codex CLI, OpenCode, and pi sessions. Use it for recall, search, and remembering across sessions.
 
 ### When to Recall
 
