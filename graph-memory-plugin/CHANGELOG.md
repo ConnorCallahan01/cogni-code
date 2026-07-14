@@ -1,5 +1,15 @@
 # Changelog
 
+## [3.4.1] (2026-07-14) — README fix + CI npm auto-publish
+
+### Fixed
+
+- **README stale reference** — Harness Adapters section listed Codex as "MCP only, degraded mode" (fixed to "hooks + MCP" after the 3.3.0 first-class promotion).
+
+### Changed
+
+- **CI auto-publish via npm Trusted Publishing** — the release workflow now publishes to npm automatically when a new version lands on master, using OIDC-based Trusted Publishing (no long-lived token secret). Adds SLSA provenance attestation on every publish.
+
 ## [3.4.0] (2026-07-14) — npm Package (cogni-code) + CLI Dispatcher
 
 ### Added
