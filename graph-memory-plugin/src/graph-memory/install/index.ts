@@ -1,11 +1,30 @@
 import { detectHarnesses, resolvePkgRoot, HarnessInfo } from "./detect.js";
 import { installCodex } from "./codex.js";
 import { installClaudeCode } from "./claude-code.js";
+import { isGraphInitialized, saveGlobalConfig, reloadConfig, CONFIG } from "../config.js";
+import { initializeGraph } from "../index.js";
 import fs from "fs";
 import path from "path";
 
 export async function runInstall(args: string[]): Promise<void> {
-  const flags = args.filter((a) => a.startsWith("--"));
+  let customGraphRoot: string | null = null;
+  const filteredArgs: string[] = [];
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === "--graph-root" && i + 1 < args.length) {
+      customGraphRoot = args[i + 1];
+      i++;
+    } else if (args[i].startsWith("--graph-root=")) {
+      customGraphRoot = args[i].slice("--graph-root=".length);
+    } else {
+      filteredArgs.push(args[i]);
+    }
+  }
+  const flags = filteredArgs.filter((a) => a.startsWith("--"));
+
+  console.log("── Graph Memory ──");
+  const graphMsg = ensureGraphInitialized(customGraphRoot);
+  console.log(`  ${graphMsg}\n`);
+
   const harnesses = detectHarnesses();
 
   let targets: HarnessInfo[];
@@ -122,4 +141,28 @@ function installOpencode(opencodeDir: string, pkgRoot: string): string[] {
   messages.push(`Registered MCP in ${configPath}`);
 
   return messages;
+}
+
+function ensureGraphInitialized(customGraphRoot: string | null): string {
+  if (isGraphInitialized()) {
+    reloadConfig();
+    return `Using existing graph at ${CONFIG.paths.graphRoot}`;
+  }
+
+  const home = process.env.HOME || process.env.USERPROFILE || "~";
+  const graphRoot = customGraphRoot
+    ? path.resolve(customGraphRoot.replace(/^~/, home))
+    : path.join(home, ".graph-memory");
+
+  const normalized = graphRoot.replace(/\/+$/, "");
+  const dangerous = ["/etc", "/usr", "/var", "/bin", "/sbin", "/lib", "/sys", "/proc"];
+  if (normalized === "/" || dangerous.some((d) => normalized === d || normalized.startsWith(d + "/"))) {
+    throw new Error(`Refusing to initialize graph at system path: ${graphRoot}`);
+  }
+
+  saveGlobalConfig(graphRoot);
+  reloadConfig();
+  initializeGraph();
+
+  return `Initialized new graph at ${graphRoot}`;
 }
