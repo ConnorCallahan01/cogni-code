@@ -31,6 +31,13 @@ cogni-code install --opencode
 
 Updates are automatic — `npm update -g cogni-code` updates the code and all hooks use the new version immediately (hooks call the `cogni-code` CLI, not absolute file paths).
 
+To also set up the Docker daemon for background pipeline processing:
+
+```bash
+cogni-code install --docker                 # auto-detects worker provider
+cogni-code install --docker --worker codex  # specify worker explicitly
+```
+
 ## What It Does
 
 - remembers preferences, decisions, project context, and recurring patterns across sessions

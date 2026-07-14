@@ -3,11 +3,15 @@ import { installCodex } from "./codex.js";
 import { installClaudeCode } from "./claude-code.js";
 import { isGraphInitialized, saveGlobalConfig, reloadConfig, CONFIG } from "../config.js";
 import { initializeGraph } from "../index.js";
+import { saveRuntimeConfig, loadRuntimeConfig, WorkerProvider } from "../runtime.js";
+import { spawn, spawnSync } from "child_process";
 import fs from "fs";
 import path from "path";
 
 export async function runInstall(args: string[]): Promise<void> {
   let customGraphRoot: string | null = null;
+  let enableDocker = false;
+  let workerOverride: string | null = null;
   const filteredArgs: string[] = [];
   for (let i = 0; i < args.length; i++) {
     if (args[i] === "--graph-root" && i + 1 < args.length) {
@@ -15,6 +19,13 @@ export async function runInstall(args: string[]): Promise<void> {
       i++;
     } else if (args[i].startsWith("--graph-root=")) {
       customGraphRoot = args[i].slice("--graph-root=".length);
+    } else if (args[i] === "--docker") {
+      enableDocker = true;
+    } else if (args[i] === "--worker" && i + 1 < args.length) {
+      workerOverride = args[i + 1];
+      i++;
+    } else if (args[i].startsWith("--worker=")) {
+      workerOverride = args[i].slice("--worker=".length);
     } else {
       filteredArgs.push(args[i]);
     }
@@ -78,6 +89,11 @@ export async function runInstall(args: string[]): Promise<void> {
   }
 
   console.log(`Done! Installed for ${installed} harness(es).`);
+
+  if (enableDocker) {
+    console.log();
+    setupDocker(workerOverride);
+  }
 
   if (targets.some((t) => t.id === "codex")) {
     console.log("\nIMPORTANT — Codex hook trust:");
@@ -165,4 +181,67 @@ function ensureGraphInitialized(customGraphRoot: string | null): string {
   initializeGraph();
 
   return `Initialized new graph at ${graphRoot}`;
+}
+
+function setupDocker(workerOverride: string | null): void {
+  console.log("── Docker Daemon ──");
+
+  const engine = detectContainerEngine();
+  if (!engine) {
+    console.error("  Docker/Podman not found. Install Docker Desktop or Podman, then run:");
+    console.error("    cogni-code install --docker");
+    console.error("  Skipping Docker setup — running in manual mode.");
+    return;
+  }
+  console.log(`  Container engine: ${engine}`);
+
+  const provider = resolveWorkerProvider(workerOverride);
+  console.log(`  Worker provider: ${provider}`);
+
+  saveRuntimeConfig({
+    mode: "docker",
+    docker: { enabled: true, workerProvider: provider },
+  });
+
+  const bootstrapScript = path.join(resolvePkgRoot(), "bin", "docker-bootstrap.sh");
+  if (!fs.existsSync(bootstrapScript)) {
+    console.error(`  Bootstrap script not found: ${bootstrapScript}`);
+    console.error("  Docker mode configured but container not started.");
+    console.error("  Run bin/docker-bootstrap.sh manually from the package directory.");
+    return;
+  }
+
+  console.log("  Building image and starting container...\n");
+  const result = spawnSync("bash", [bootstrapScript], {
+    stdio: "inherit",
+    env: { ...process.env },
+  });
+
+  if (result.status === 0) {
+    console.log("\n  Docker daemon is running.");
+  } else {
+    console.error("\n  Docker bootstrap failed. The runtime is configured for docker mode");
+    console.error("  but the container may not have started. Check bin/docker-doctor.sh");
+    console.error("  or switch back to manual mode: cogni-code install (without --docker)");
+  }
+}
+
+function detectContainerEngine(): string | null {
+  for (const cmd of ["docker", "podman"]) {
+    try {
+      const r = spawnSync("which", [cmd], { stdio: ["ignore", "pipe", "ignore"] });
+      if (r.status === 0) return cmd;
+    } catch { /* try next */ }
+  }
+  return null;
+}
+
+function resolveWorkerProvider(override: string | null): WorkerProvider {
+  if (override) {
+    const valid: WorkerProvider[] = ["codex", "claude", "pi", "opencode"];
+    if (valid.includes(override as WorkerProvider)) return override as WorkerProvider;
+    console.error(`  Unknown worker: ${override}, auto-detecting...`);
+  }
+  const runtime = loadRuntimeConfig();
+  return runtime.docker.workerProvider;
 }

@@ -11,6 +11,8 @@
   - MCP registered as `command = "cogni-code", args = ["mcp"]` — version-independent.
   - Claude Code install symlinks the package into `~/.claude/plugins/` so the existing manifest handles hooks/MCP/commands/discovery.
   - Codex install merges hooks into `~/.codex/hooks.json` using CLI commands, including the `PreCompact` compaction-boundary flush.
+  - `--docker` flag configures Docker daemon mode: detects Docker/Podman, saves runtime config, and runs `docker-bootstrap.sh` to build the image, start the container, and import worker auth. Auto-detects worker provider (codex/claude/opencode) or accepts `--worker <provider>`.
+  - Graph initialization: auto-detects existing graph via `~/.graph-memory-config.yml` pointer, preserves on re-install/update, or initializes new at `~/.graph-memory/` (or custom `--graph-root <path>`).
 
 ### Changed
 

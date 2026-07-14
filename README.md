@@ -78,6 +78,15 @@ cogni-code install
 
 Auto-detects Claude Code, Codex CLI, and OpenCode. Initializes graph memory at `~/.graph-memory/` if needed. For a custom location: `cogni-code install --graph-root /path/to/memory`.
 
+**With background pipeline (Docker):**
+
+```bash
+npm install -g cogni-code
+cogni-code install --docker
+```
+
+Sets up the Docker daemon that runs the scribe/librarian/dreamer pipeline automatically. Requires Docker Desktop or Podman. Auto-detects the worker provider (codex, claude, or opencode) or specify with `--worker codex`.
+
 Updates are automatic — `npm update -g cogni-code` updates all hooks instantly (they call the `cogni-code` CLI, not absolute file paths).
 
 **From source (git clone):**

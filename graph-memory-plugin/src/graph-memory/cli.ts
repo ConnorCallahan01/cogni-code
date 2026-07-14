@@ -27,11 +27,18 @@ function printHelp(): void {
 cogni-code v${pkg.version} — Persistent, self-evolving memory for AI agents
 
 Usage:
-  cogni-code install [--claude|--codex|--opencode|--all]   Set up for your harness(es)
-  cogni-code hook <event>                                   Run a hook handler (stdin passthrough)
-  cogni-code mcp                                            Start the MCP server (stdio transport)
-  cogni-code status                                         Show graph memory health
-  cogni-code --version                                      Print version
+  cogni-code install [--claude|--codex|--opencode|--all] [--docker] [--worker <provider>]
+                                                          Set up for your harness(es)
+  cogni-code install --graph-root <path>                  Use a custom graph memory location
+  cogni-code hook <event>                                 Run a hook handler (stdin passthrough)
+  cogni-code mcp                                          Start the MCP server (stdio transport)
+  cogni-code status                                       Show graph memory health
+  cogni-code --version                                    Print version
+
+Flags:
+  --docker        Also set up the Docker daemon for background pipeline processing
+  --worker <p>    Worker provider for Docker mode (codex, claude, opencode, pi)
+  --graph-root    Custom graph memory storage location (first-time init only)
 
 Hook events:
   session-start, user-prompt-submit, post-tool-use, pre-tool-use,

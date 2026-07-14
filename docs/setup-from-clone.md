@@ -2,7 +2,7 @@
 
 This is the public setup path for someone cloning the repository and installing the plugin locally.
 
-> **Prefer npm?** `npm install -g cogni-code && cogni-code install` handles everything — graph initialization, harness detection, MCP + hooks registration. The steps below are for contributors and advanced users who want to install from source.
+> **Prefer npm?** `npm install -g cogni-code && cogni-code install` handles everything — graph initialization, harness detection, MCP + hooks registration. Add `--docker` to also set up the background pipeline daemon. The steps below are for contributors and advanced users who want to install from source.
 
 ## Prerequisites
 
