@@ -1,5 +1,11 @@
 # Changelog
 
+## [3.4.2] (2026-07-14) — Fix CI npm publish authentication
+
+### Fixed
+
+- **CI npm publish authentication** — the Trusted Publishing (OIDC) approach handled provenance signing but not authentication. Restored `NODE_AUTH_TOKEN` env var with `NPM_TOKEN` secret for publish authentication. Provenance attestation (`--provenance`) is retained.
+
 ## [3.4.1] (2026-07-14) — README fix + CI npm auto-publish
 
 ### Fixed

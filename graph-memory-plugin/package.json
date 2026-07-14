@@ -1,6 +1,6 @@
 {
   "name": "cogni-code",
-  "version": "3.4.1",
+  "version": "3.4.2",
   "type": "module",
   "description": "Persistent, self-evolving memory for AI agents. Gives Claude Code, Codex CLI, OpenCode, and pi a knowledge graph that grows from conversations.",
   "license": "MIT",
