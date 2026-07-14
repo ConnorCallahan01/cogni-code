@@ -131,7 +131,7 @@ adapters/
   claude-code.ts  — Claude Code (hooks + MCP)
   opencode.ts     — OpenCode (plugin events + MCP)
   pi.ts           — Pi (plugin events + MCP)
-  codex.ts        — Codex (MCP only, degraded mode)
+  codex.ts        — Codex (hooks + MCP)
   factory.ts      — Adapter instantiation
   shared.ts       — Shared adapter logic
 ```
