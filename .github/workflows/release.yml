@@ -15,6 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      id-token: write
     steps:
       - uses: actions/checkout@v4
         with:
@@ -23,6 +24,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+          registry-url: 'https://registry.npmjs.org'
 
       - name: Read version from package.json
         id: version
@@ -75,6 +77,14 @@ jobs:
           gh release create "${{ steps.version.outputs.tag }}" \
             --title "${{ steps.version.outputs.tag }}" \
             --notes-file "${{ steps.changelog.outputs.body_path }}"
+
+      - name: Publish to npm
+        if: steps.check_tag.outputs.exists == 'false' && inputs.dry_run != true
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          cd graph-memory-plugin
+          npm publish --provenance --access public
 
       - name: Check for [Unreleased] section
         id: check_unreleased
