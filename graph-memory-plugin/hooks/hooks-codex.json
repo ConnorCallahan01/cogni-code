@@ -1,5 +1,5 @@
 {
-  "_comment": "Source-of-truth for Codex CLI hooks. install-codex.sh reads this, substitutes $GRAPH_MEMORY_PLUGIN_DIR with the resolved plugin directory, and merges into ~/.codex/hooks.json. Codex supports SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, and Stop (but NOT SessionEnd — the daemon scavenges orphaned buffers instead).",
+  "_comment": "Source-of-truth for Codex CLI hooks. install-codex.sh reads this, substitutes $GRAPH_MEMORY_PLUGIN_DIR with the resolved plugin directory, and merges into ~/.codex/hooks.json. Codex supports SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, PreCompact, PostCompact, and Stop. There is no SessionEnd event — PreCompact serves as the compaction-boundary flush trigger (the Codex-native equivalent of session-end), and SessionStart(source=compact) re-injects context after compaction.",
   "hooks": {
     "SessionStart": [
       {
@@ -40,6 +40,17 @@
           {
             "type": "command",
             "command": "$GRAPH_MEMORY_PLUGIN_DIR/bin/on-post-tool-use.sh"
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "matcher": "manual|auto",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$GRAPH_MEMORY_PLUGIN_DIR/bin/on-pre-compact.sh"
           }
         ]
       }

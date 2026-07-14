@@ -147,6 +147,7 @@ node -e "
           .replace('\$GRAPH_MEMORY_PLUGIN_DIR/bin/session-start.sh', pluginDir + '/dist/hooks/session-start.js')
           .replace('\$GRAPH_MEMORY_PLUGIN_DIR/bin/on-user-message.sh', pluginDir + '/dist/hooks/on-user-message.js')
           .replace('\$GRAPH_MEMORY_PLUGIN_DIR/bin/on-post-tool-use.sh', pluginDir + '/dist/hooks/on-post-tool-use.js')
+          .replace('\$GRAPH_MEMORY_PLUGIN_DIR/bin/on-pre-compact.sh', pluginDir + '/dist/hooks/on-pre-compact.js')
           .replace('\$GRAPH_MEMORY_PLUGIN_DIR/bin/on-assistant-response.sh', pluginDir + '/dist/hooks/on-assistant-response.js')
           .replace('\$GRAPH_MEMORY_PLUGIN_DIR/bin/session-end.sh', pluginDir + '/dist/hooks/session-end.js');
         return nodeBin + ' ' + script;

@@ -7,8 +7,9 @@
 - **Codex CLI as a first-class harness** — Codex now gets the same automatic memory operation as Claude Code and OpenCode: session-start context injection (mental model, MAP, pinned nodes, WORKING), ambient auto-recall on each prompt, conversation capture for the scribe pipeline, and the full `graph_memory` tool surface. Promotes Codex out of the degraded-mode stub (`codex.ts` no-oped everything and `isDegradedMode("codex")` returned `true`).
   - Codex CLI added lifecycle hooks (`SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `Stop`) with an stdin/stdout contract compatible with the existing Claude Code hook handlers, so the same hook scripts power both harnesses.
   - New `bin/install-codex.sh` registers the MCP server in `~/.codex/config.toml`, merges lifecycle hooks into `~/.codex/hooks.json`, and handles Windows parity (node-direct hook commands when bash.exe can't run the `.sh` wrappers).
-  - New `hooks/hooks-codex.json` source-of-truth for the Codex hook registration. Codex has no `SessionEnd` event (only per-turn `Stop`), so the session-end buffer flush relies on the daemon scavenging orphaned buffers.
+  - New `hooks/hooks-codex.json` source-of-truth for the Codex hook registration. Since Codex has no `SessionEnd` event, the `PreCompact` hook (matcher `manual|auto`) serves as the compaction-boundary flush trigger — it flushes the conversation buffer to a snapshot and queues scribe + observer right before context gets compressed. `SessionStart` already matches `compact` as a source, so context re-injection fires automatically after compaction.
   - New `templates/CODEX-memory-section.md` for AGENTS.md.
+  - New `src/hooks/on-pre-compact.ts` + `bin/on-pre-compact.sh` — a synchronous, flush-only hook (no session-state cleanup) purpose-built for the Codex compaction boundary.
   - Codex added to the Skillforge harness adapters (`~/.codex/prompts`).
 
 ### Changed
