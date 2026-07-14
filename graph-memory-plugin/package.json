@@ -34,11 +34,11 @@
   },
   "scripts": {
     "build": "tsc && npm run copy-prompts",
-    "copy-prompts": "rm -rf dist/graph-memory/prompts && cp -r src/graph-memory/prompts dist/graph-memory/prompts",
+    "copy-prompts": "rm -rf dist/graph-memory/prompts && cp -R src/graph-memory/prompts dist/graph-memory/prompts",
     "dev": "tsc --watch",
     "mcp": "node dist/graph-memory/mcp-server.js",
     "prepare": "npm run build",
-    "prepublishOnly": "npm test",
+    "prepublishOnly": "node --test tests/*.check.mjs",
     "status": "node -e \"import('./dist/graph-memory/tools.js').then(m => m.handleGraphMemory({action:'status'}).then(r => console.log(r.content[0].text)))\"",
     "test": "npm run build && node --test tests/*.check.mjs"
   },
