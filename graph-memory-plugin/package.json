@@ -1,6 +1,6 @@
 {
   "name": "graph-memory",
-  "version": "3.2.0",
+  "version": "3.3.0",
   "type": "module",
   "description": "Persistent, self-evolving memory for AI agents. A Claude Code plugin, Codex CLI plugin, pi package, and OpenCode plugin that gives any agent a knowledge graph.",
   "license": "MIT",

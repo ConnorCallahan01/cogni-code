@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased] — Codex CLI First-Class Harness Support
+## [3.3.0] (2026-07-14) — Codex CLI First-Class Harness Support
 
 ### Added
 
