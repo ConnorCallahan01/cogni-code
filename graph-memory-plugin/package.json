@@ -1,22 +1,43 @@
 {
-  "name": "graph-memory",
-  "version": "3.3.0",
+  "name": "cogni-code",
+  "version": "3.4.0",
   "type": "module",
-  "description": "Persistent, self-evolving memory for AI agents. A Claude Code plugin, Codex CLI plugin, pi package, and OpenCode plugin that gives any agent a knowledge graph.",
+  "description": "Persistent, self-evolving memory for AI agents. Gives Claude Code, Codex CLI, OpenCode, and pi a knowledge graph that grows from conversations.",
   "license": "MIT",
+  "author": "Connor Callahan",
+  "homepage": "https://github.com/ConnorCallahan01/cogni-code",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ConnorCallahan01/cogni-code.git",
+    "directory": "graph-memory-plugin"
+  },
+  "bugs": {
+    "url": "https://github.com/ConnorCallahan01/cogni-code/issues"
+  },
   "keywords": [
-    "pi-package"
+    "ai-memory",
+    "knowledge-graph",
+    "mcp",
+    "claude-code",
+    "codex",
+    "opencode",
+    "agent-memory",
+    "persistent-memory",
+    "context-management"
   ],
   "main": "dist/graph-memory/mcp-server.js",
   "bin": {
-    "graph-memory": "dist/graph-memory/mcp-server.js"
+    "cogni-code": "dist/graph-memory/cli.js"
+  },
+  "engines": {
+    "node": ">=18"
   },
   "scripts": {
     "build": "tsc && npm run copy-prompts",
     "copy-prompts": "rm -rf dist/graph-memory/prompts && cp -r src/graph-memory/prompts dist/graph-memory/prompts",
     "dev": "tsc --watch",
     "mcp": "node dist/graph-memory/mcp-server.js",
-    "postinstall": "[ -d dist ] || npm run build",
+    "prepare": "npm run build",
     "prepublishOnly": "npm test",
     "status": "node -e \"import('./dist/graph-memory/tools.js').then(m => m.handleGraphMemory({action:'status'}).then(r => console.log(r.content[0].text)))\"",
     "test": "npm run build && node --test tests/*.check.mjs"
@@ -45,6 +66,7 @@
     "extensions/",
     "opencode-commands/",
     "templates/",
+    "CHANGELOG.md",
     "LICENSE"
   ],
   "pi": {
@@ -61,5 +83,13 @@
   "peerDependencies": {
     "@mariozechner/pi-coding-agent": "*",
     "typebox": "*"
+  },
+  "peerDependenciesMeta": {
+    "@mariozechner/pi-coding-agent": {
+      "optional": true
+    },
+    "typebox": {
+      "optional": true
+    }
   }
 }
