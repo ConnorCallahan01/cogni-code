@@ -55,7 +55,7 @@ function resolveDistDir(): string {
   const candidates = [
     path.resolve(realDir, "..", "dist", "graph-memory"),
     path.resolve(rawDir, "..", "dist", "graph-memory"),
-    path.join(home, "Desktop", "agent_memory", "graph-memory-plugin", "dist", "graph-memory"),
+    path.join(home, ".cogni-code", "dist", "graph-memory"),
   ];
   return candidates.find((d) => fs.existsSync(path.join(d, "tools.js"))) || candidates[0];
 }
