@@ -33,7 +33,7 @@ graph-memory-plugin/
   extensions/             # Plugin extension entry points
                            #   graph-memory.ts (pi), graph-memory-opencode.ts (OpenCode)
   skills/                 # Memory skill + /recall
-  templates/              # Memory section templates (Claude, OpenCode, generic)
+  templates/              # Memory section templates (Claude, OpenCode, Codex, generic)
   docs/                   # Design specs (notion-sync-spec.md)
   bin/                    # Install, runtime, Docker, and hook shell wrappers
 
@@ -158,7 +158,7 @@ Two-way sync between graph-memory and a Notion workspace for human-readable acce
 
 ## Using The Memory System
 
-The `graph_memory` tool is available in Claude Code, OpenCode, and pi sessions after installation. Common actions:
+The `graph_memory` tool is available in Claude Code, Codex CLI, OpenCode, and pi sessions after installation. Common actions:
 
 ### Recall
 

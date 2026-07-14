@@ -1,5 +1,20 @@
 # Changelog
 
+## [Unreleased] — Codex CLI First-Class Harness Support
+
+### Added
+
+- **Codex CLI as a first-class harness** — Codex now gets the same automatic memory operation as Claude Code and OpenCode: session-start context injection (mental model, MAP, pinned nodes, WORKING), ambient auto-recall on each prompt, conversation capture for the scribe pipeline, and the full `graph_memory` tool surface. Promotes Codex out of the degraded-mode stub (`codex.ts` no-oped everything and `isDegradedMode("codex")` returned `true`).
+  - Codex CLI added lifecycle hooks (`SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `Stop`) with an stdin/stdout contract compatible with the existing Claude Code hook handlers, so the same hook scripts power both harnesses.
+  - New `bin/install-codex.sh` registers the MCP server in `~/.codex/config.toml`, merges lifecycle hooks into `~/.codex/hooks.json`, and handles Windows parity (node-direct hook commands when bash.exe can't run the `.sh` wrappers).
+  - New `hooks/hooks-codex.json` source-of-truth for the Codex hook registration. Codex has no `SessionEnd` event (only per-turn `Stop`), so the session-end buffer flush relies on the daemon scavenging orphaned buffers.
+  - New `templates/CODEX-memory-section.md` for AGENTS.md.
+  - Codex added to the Skillforge harness adapters (`~/.codex/prompts`).
+
+### Changed
+
+- **`isDegradedMode()` now always returns `false`** — no harness runs in degraded mode. Codex's `ADAPTER_CONFIGS.supportsHooks` corrected to `true`; project doc filename corrected from `AGENT.md` to `AGENTS.md` (Codex's canonical name).
+
 ## [3.2.0] (2026-07-09) — Worker Fallback, Windows/Podman Support & Doc Corrections
 
 ### Added

@@ -1,0 +1,59 @@
+{
+  "_comment": "Source-of-truth for Codex CLI hooks. install-codex.sh reads this, substitutes $GRAPH_MEMORY_PLUGIN_DIR with the resolved plugin directory, and merges into ~/.codex/hooks.json. Codex supports SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, and Stop (but NOT SessionEnd — the daemon scavenges orphaned buffers instead).",
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|clear|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$GRAPH_MEMORY_PLUGIN_DIR/bin/session-start.sh"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$GRAPH_MEMORY_PLUGIN_DIR/bin/on-user-message.sh"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "mcp__graph-memory__graph_memory",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"allow\"}}'"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$GRAPH_MEMORY_PLUGIN_DIR/bin/on-post-tool-use.sh"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$GRAPH_MEMORY_PLUGIN_DIR/bin/on-assistant-response.sh"
+          }
+        ]
+      }
+    ]
+  }
+}
