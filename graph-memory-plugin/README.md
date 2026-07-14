@@ -148,6 +148,17 @@ Then start Claude Code and run:
 /memory-onboard
 ```
 
+### Codex CLI
+
+From the repository root:
+
+```bash
+cd graph-memory-plugin
+./bin/install-codex.sh
+```
+
+Then start Codex CLI and run `/hooks` to review and trust the graph-memory hooks. Codex supports lifecycle hooks (`SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `PreCompact`, `Stop`) with the same stdin/stdout contract as Claude Code.
+
 ### OpenCode
 
 From the repository root:
@@ -193,7 +204,7 @@ The migration script `src/graph-memory/scripts/migrate-mental-model.ts` was used
 - tool and graph storage only
 - no daemon container
 - useful for lightweight local testing
-- works with Claude Code, OpenCode, and pi
+- works with Claude Code, Codex CLI, OpenCode, and pi
 
 ### Docker daemon mode
 

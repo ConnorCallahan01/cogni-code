@@ -2,10 +2,12 @@
 
 This is the public setup path for someone cloning the repository and installing the plugin locally.
 
+> **Prefer npm?** `npm install -g cogni-code && cogni-code install` handles everything — graph initialization, harness detection, MCP + hooks registration. The steps below are for contributors and advanced users who want to install from source.
+
 ## Prerequisites
 
-- An AI coding agent: **Claude Code**, **OpenCode**, or **pi**
-- Node.js 20+ and `npm`
+- An AI coding agent: **Claude Code**, **Codex CLI**, **OpenCode**, or **pi**
+- Node.js 18+ and `npm`
 - Git
 - Optional: Docker Desktop if you want background daemon mode
 - Optional: Codex CLI auth on the host if you want Docker workers to run bounded background jobs
@@ -37,6 +39,23 @@ What `./bin/install.sh` does:
 5. Installs slash commands into `~/.claude/commands/`
 6. Registers Claude Code hooks in `~/.claude/settings.json`
 
+### Codex CLI
+
+```bash
+cd graph-memory-plugin
+./bin/install-codex.sh
+```
+
+What `./bin/install-codex.sh` does:
+
+1. Installs plugin dependencies if needed
+2. Builds the TypeScript sources into `dist/`
+3. Registers the MCP server in `~/.codex/config.toml`
+4. Merges lifecycle hooks into `~/.codex/hooks.json` (SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, PreCompact, Stop)
+5. After install, run `/hooks` in Codex CLI to review and trust the hooks
+
+Codex hooks use the same stdin/stdout contract as Claude Code hooks, so the same hook handlers power both harnesses. The `PreCompact` hook serves as the compaction-boundary flush trigger (Codex has no SessionEnd event).
+
 ### OpenCode
 
 ```bash
@@ -58,7 +77,7 @@ If you prefer to do this manually, inspect the install scripts first and mirror 
 
 ## 3. Start Your Agent And Onboard
 
-Start a new Claude Code or OpenCode session, then run:
+Start a new Claude Code, Codex CLI, or OpenCode session, then run:
 
 ```text
 /memory-onboard
@@ -66,8 +85,8 @@ Start a new Claude Code or OpenCode session, then run:
 
 The onboarding flow will:
 
-1. Check whether graph memory is already initialized
-2. Ask where to store the graph root
+1. Check whether graph memory is already initialized (it is, if you ran `cogni-code install`)
+2. Ask where to store the graph root (if not already set)
 3. Help you choose runtime mode
 4. Seed initial memory nodes and priors
 
@@ -75,6 +94,8 @@ Default graph storage:
 
 - pointer file: `~/.graph-memory-config.yml`
 - default graph root: `~/.graph-memory/`
+
+If you installed via npm (`cogni-code install`), the graph is already initialized at the default location and this step is optional — onboarding adds runtime configuration and seed memory.
 
 ## 4. Choose A Runtime Mode
 
@@ -241,6 +262,19 @@ If `graph_memory` is missing:
 
 - confirm the extension symlink points to `extensions/graph-memory-opencode.ts`
 - check `~/.config/opencode/opencode.json` for the plugin registration
+
+### Codex CLI
+
+If hooks do not fire:
+
+- run `/hooks` in Codex CLI to review and trust the hooks (Codex requires explicit trust before hooks run)
+- confirm hooks are registered in `~/.codex/hooks.json`
+- confirm the MCP server is in `~/.codex/config.toml` under `[mcp_servers.graph-memory]`
+
+If `graph_memory` is missing:
+
+- confirm `cogni-code` is on PATH (`which cogni-code`)
+- check `~/.codex/config.toml` for `command = "cogni-code"` (or `command = "bash"` pointing to `bin/mcp-server.sh` for git-clone installs)
 
 ### Docker
 

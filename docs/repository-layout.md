@@ -1,23 +1,33 @@
 # Repository Layout
 
-This repository contains both the current product and earlier prototype/reference material. The public entrypoint is the plugin in [`graph-memory-plugin/`](../graph-memory-plugin/).
+This repository contains both the current product and earlier prototype/reference material. The public entrypoint is the plugin in [`graph-memory-plugin/`](../graph-memory-plugin/), published to npm as **`cogni-code`**.
+
+## Install
+
+```bash
+npm install -g cogni-code
+cogni-code install
+```
+
+Or clone and install from source (see [setup-from-clone.md](./setup-from-clone.md)).
 
 ## Active Directories
 
 ### `graph-memory-plugin/`
 
-Current installable product surface.
+Current installable product surface — published to npm as `cogni-code`.
 
-- `src/graph-memory/`: graph logic, MCP server, runtime configuration, and pipeline
-- `src/hooks/`: Claude Code hook entrypoints
-- `bin/`: install, runtime, Docker, and hook shell wrappers
+- `src/graph-memory/`: graph logic, MCP server, CLI dispatcher (`cli.ts`), install modules (`install/`), runtime configuration, and pipeline
+- `src/hooks/`: lifecycle hook entrypoints (shared by Claude Code and Codex CLI)
+- `bin/`: install, runtime, Docker, and hook shell wrappers (for git-clone installs)
 - `commands/`: slash command specs installed into Claude Code
-- `agents/`: background agent instructions (pipeline prompts, Notion stewards: notion-knowledge-steward.md, notion-project-steward.md, notion-tasks-steward.md, notion-enrichment-steward.md, notion-workspace-steward.md, notion-inbound-triage.md)
+- `agents/`: background agent instructions (pipeline prompts, Notion stewards)
 - `skills/`: memory skill instructions and invocable recall skill
 - `opencode-commands/`: slash command specs installed into OpenCode
-- `scripts/`: migration, backfill, and cleanup scripts (Notion sync utilities)
+- `scripts/`: migration, backfill, and cleanup scripts
 - `docs/`: design specs (notion-sync-spec.md, notion-webhook-troubleshooting.md)
 - `.claude-plugin/`: plugin manifest metadata
+- `hooks/`: hook JSON templates (`hooks.json` for Claude Code, `hooks-codex.json` for Codex CLI)
 
 ### `memory-dashboard/`
 
