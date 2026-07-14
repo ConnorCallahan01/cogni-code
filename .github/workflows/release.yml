@@ -70,6 +70,14 @@ jobs:
           npm install
           npm run build
 
+      - name: Publish to npm
+        if: steps.check_tag.outputs.exists == 'false' && inputs.dry_run != true
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          cd graph-memory-plugin
+          npm publish --provenance --access public
+
       - name: Create release
         if: steps.check_tag.outputs.exists == 'false' && inputs.dry_run != true
         env:
@@ -78,14 +86,6 @@ jobs:
           gh release create "${{ steps.version.outputs.tag }}" \
             --title "${{ steps.version.outputs.tag }}" \
             --notes-file "${{ steps.changelog.outputs.body_path }}"
-
-      - name: Publish to npm
-        if: steps.check_tag.outputs.exists == 'false' && inputs.dry_run != true
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: |
-          cd graph-memory-plugin
-          npm publish --provenance --access public
 
       - name: Check for [Unreleased] section
         id: check_unreleased

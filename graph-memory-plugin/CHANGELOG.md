@@ -1,5 +1,11 @@
 # Changelog
 
+## [3.4.3] (2026-07-14) — Fix CI publish ordering
+
+### Fixed
+
+- **CI release workflow ordering** — npm publish now runs *before* GitHub Release creation. Previously, a failed npm publish left a stale tag that blocked all future workflow runs. Now if npm publish fails, no tag is created and the next run retries cleanly.
+
 ## [3.4.2] (2026-07-14) — Fix CI npm publish authentication
 
 ### Fixed
