@@ -95,16 +95,32 @@ export async function runInstall(args: string[]): Promise<void> {
     setupDocker(workerOverride);
   }
 
-  if (targets.some((t) => t.id === "codex")) {
-    console.log("\nIMPORTANT — Codex hook trust:");
-    console.log("  Run /hooks in Codex CLI to review and trust the cogni-code hooks.");
-  }
-  if (targets.some((t) => t.id === "claude-code")) {
-    console.log("\nRestart Claude Code or run /mcp to reconnect.");
+  console.log("\n── Next Steps ──");
+
+  let step = 1;
+
+  if (!enableDocker) {
+    console.log(`\n${step}. Set up the background pipeline (recommended):`);
+    console.log("   cogni-code install --docker");
+    console.log("   This runs the scribe/librarian/dreamer pipeline automatically so");
+    console.log("   your memory evolves from conversations. Requires Docker or Podman.");
+    console.log("   Skip if you only want on-demand memory (manual mode).");
+    step++;
   }
 
-  console.log("\nOptional: add memory instructions to your project's AGENTS.md or CLAUDE.md");
-  console.log("  by copying a template from the templates/ directory.");
+  if (targets.some((t) => t.id === "codex")) {
+    console.log(`\n${step}. Trust Codex hooks:`);
+    console.log("   Run /hooks in Codex CLI to review and trust the cogni-code hooks.");
+    step++;
+  }
+  if (targets.some((t) => t.id === "claude-code")) {
+    console.log(`\n${step}. Restart Claude Code or run /mcp to reconnect.`);
+    step++;
+  }
+
+  console.log(`\n${step}. Add memory instructions to your project's AGENTS.md or CLAUDE.md`);
+  console.log("   by copying a template from the templates/ directory.");
+  console.log("   Or run /memory-onboard inside your agent for guided setup.");
 }
 
 function installOpencode(opencodeDir: string, pkgRoot: string): string[] {
