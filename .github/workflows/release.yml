@@ -13,6 +13,7 @@ on:
 jobs:
   release:
     runs-on: ubuntu-latest
+    environment: npm
     permissions:
       contents: write
       id-token: write
@@ -80,8 +81,6 @@ jobs:
 
       - name: Publish to npm
         if: steps.check_tag.outputs.exists == 'false' && inputs.dry_run != true
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           cd graph-memory-plugin
           npm publish --provenance --access public

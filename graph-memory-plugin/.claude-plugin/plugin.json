@@ -1,6 +1,6 @@
 {
   "name": "graph-memory",
-  "version": "3.4.0",
+  "version": "3.4.1",
   "description": "Persistent, self-evolving memory for AI agents. Gives any agent a knowledge graph that grows from conversations.",
   "author": "graph-memory",
   "mcpServers": {
