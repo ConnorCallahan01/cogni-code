@@ -1,0 +1,143 @@
+---
+// Animated hero: the real Cogni-Code brain-graph logo, with memory
+// flowing through its nodes and down into a harness-provider session.
+// Node/edge geometry is lifted verbatim from docs/branding/cogni-code-logo.svg
+---
+
+<div class="hero-anim" aria-hidden="true">
+  <svg viewBox="50 80 270 450" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <linearGradient id="ha-line" x1="0" x2="1" y1="0" y2="0">
+        <stop offset="0" stop-color="var(--slate)" />
+        <stop offset="1" stop-color="var(--slate-soft)" />
+      </linearGradient>
+      <filter id="ha-soft" x="-80%" y="-80%" width="260%" height="260%">
+        <feGaussianBlur stdDeviation="3" />
+      </filter>
+    </defs>
+
+    <!-- ── The logo brain graph (verbatim geometry) ───────────── -->
+    <g stroke="var(--ink)" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M88 186L112 136" />
+      <path d="M112 136L164 116" />
+      <path d="M164 116L214 116" />
+      <path d="M214 116L262 140" />
+      <path d="M262 140L274 186" />
+      <path d="M274 186L248 214" />
+      <path d="M248 214L218 204" />
+      <path d="M218 204L192 228" />
+      <path d="M192 228L186 270" />
+      <path d="M218 204L164 186" />
+      <path d="M164 186L164 116" />
+      <path d="M164 186L112 136" />
+      <path d="M164 186L88 186" />
+      <path d="M218 204L262 140" />
+      <path d="M218 204L274 186" />
+    </g>
+
+    <!-- central hub pulse (logo node stays cream; slate glow marks the core) -->
+    <circle class="hub-glow" cx="164" cy="186" r="14" fill="var(--slate)" opacity="0.22" filter="url(#ha-soft)" />
+
+    <g fill="var(--cream)" stroke="var(--ink)" stroke-width="3.4">
+      <circle cx="88" cy="186" r="9" />
+      <circle cx="112" cy="136" r="9" />
+      <circle cx="164" cy="116" r="9" />
+      <circle cx="214" cy="116" r="9" />
+      <circle cx="262" cy="140" r="9" />
+      <circle cx="274" cy="186" r="9" />
+      <circle cx="248" cy="214" r="9" />
+      <circle cx="218" cy="204" r="9" />
+      <circle cx="192" cy="228" r="9" />
+      <circle cx="186" cy="270" r="9" />
+      <circle cx="164" cy="186" r="9" />
+    </g>
+
+    <!-- ── Descent channels → session ────────────────────────── -->
+    <!-- single descent spine from the bottom brain node into the session -->
+    <g stroke="var(--line-2)" stroke-width="1.6" fill="none" stroke-linecap="round">
+      <path id="ha-ch-j" d="M186 270 C185 300 182 332 180 362" />
+    </g>
+
+    <!-- ── Memory particles ──────────────────────────────────── -->
+    <!-- main traversal: hub → over the top → down the right → bottom node → into session -->
+    <circle r="4.5" fill="var(--slate)">
+      <animateMotion dur="5s" begin="0s" repeatCount="indefinite"
+        path="M164 186 L164 116 L214 116 L262 140 L274 186 L248 214 L218 204 L192 228 L186 270 C185 300 182 332 180 362" />
+      <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.08;0.9;1" dur="5s" begin="0s" repeatCount="indefinite" />
+    </circle>
+    <!-- left-top circulation -->
+    <circle r="3.8" fill="var(--slate-soft)">
+      <animateMotion dur="3.1s" begin="0.7s" repeatCount="indefinite"
+        path="M164 186 L112 136 L164 116 L214 116 L262 140" />
+      <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.12;0.85;1" dur="3.1s" begin="0.7s" repeatCount="indefinite" />
+    </circle>
+    <!-- drain down the spine -->
+    <circle r="4" fill="var(--slate)">
+      <animateMotion dur="2.5s" begin="1.6s" repeatCount="indefinite">
+        <mpath href="#ha-ch-j" />
+      </animateMotion>
+      <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.14;0.82;1" dur="2.5s" begin="1.6s" repeatCount="indefinite" />
+    </circle>
+    <!-- drain down the spine -->
+    <circle r="3.6" fill="var(--slate-soft)">
+      <animateMotion dur="3.2s" begin="2.3s" repeatCount="indefinite">
+        <mpath href="#ha-ch-j" />
+      </animateMotion>
+      <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.12;0.84;1" dur="3.2s" begin="2.3s" repeatCount="indefinite" />
+    </circle>
+    <!-- drain down the spine -->
+    <circle r="3.6" fill="var(--slate)">
+      <animateMotion dur="1.9s" begin="2.9s" repeatCount="indefinite">
+        <mpath href="#ha-ch-j" />
+      </animateMotion>
+      <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.16;0.8;1" dur="1.9s" begin="2.9s" repeatCount="indefinite" />
+    </circle>
+
+    <!-- ── Session window (harness provider) ─────────────────── -->
+    <g class="session">
+      <rect x="80" y="346" width="200" height="162" rx="14" fill="var(--paper)" stroke="var(--line)" stroke-width="1.5" />
+      <circle cx="100" cy="368" r="3.4" fill="#e0a19a" />
+      <circle cx="113" cy="368" r="3.4" fill="#e4c98a" />
+      <circle cx="126" cy="368" r="3.4" fill="#9ec7a8" />
+      <text x="262" y="371" text-anchor="end" font-family="var(--font-mono)" font-size="9.5" fill="var(--text-3)" letter-spacing="0.4">session · harness</text>
+
+      <g transform="translate(100 400)">
+        <rect class="ln ln-1" x="0" y="0" width="118" height="8" rx="4" fill="url(#ha-line)" />
+        <rect class="ln ln-2" x="0" y="20" width="156" height="8" rx="4" fill="var(--line-2)" />
+        <rect class="ln ln-3" x="0" y="40" width="96" height="8" rx="4" fill="var(--line-2)" />
+      </g>
+      <text x="100" y="482" font-family="var(--font-mono)" font-size="11" fill="var(--text-2)">
+        <tspan fill="var(--slate)">$</tspan> recall deployment<tspan class="caret">▍</tspan>
+      </text>
+    </g>
+  </svg>
+</div>
+
+<style>
+  .hero-anim { width: 100%; max-width: 380px; margin: 0 auto; }
+  .hero-anim svg { width: 100%; height: auto; display: block; overflow: visible; }
+
+  @keyframes ha-hub {
+    0%, 100% { opacity: 0.16; transform: scale(1); }
+    50% { opacity: 0.4; transform: scale(1.18); }
+  }
+  .hub-glow { transform-box: fill-box; transform-origin: center; animation: ha-hub 3s ease-in-out infinite; }
+
+  @keyframes ha-type {
+    0%, 100% { transform: scaleX(0); opacity: 0.2; }
+    18%, 82% { transform: scaleX(1); opacity: 1; }
+  }
+  .ln { transform-box: fill-box; transform-origin: left center; transform: scaleX(0); }
+  .ln-1 { animation: ha-type 6s ease-in-out infinite; }
+  .ln-2 { animation: ha-type 6s ease-in-out infinite 0.6s; }
+  .ln-3 { animation: ha-type 6s ease-in-out infinite 1.2s; }
+
+  @keyframes ha-blink { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0; } }
+  .caret { animation: ha-blink 1.05s steps(1) infinite; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .hub-glow, .ln, .caret { animation: none; }
+    .ln { transform: scaleX(1); opacity: 1; }
+    :global(.hero-anim animate, .hero-anim animateMotion) { display: none; }
+  }
+</style>

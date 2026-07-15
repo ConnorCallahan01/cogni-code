@@ -1,0 +1,90 @@
+/* ── Self-hosted type ───────────────────────────────────────── */
+@import '@fontsource-variable/fraunces/opsz.css';
+@import '@fontsource-variable/hanken-grotesk/wght.css';
+@import '@fontsource-variable/jetbrains-mono/wght.css';
+
+/* ── Brand palette ─────────────────────────────────────────── */
+:root {
+  --ink: #232323;
+  --cream: #fcfbf7;
+  --cream-2: #f5f3ec;
+  --paper: #ffffff;
+
+  --slate: #526b8d;
+  --slate-deep: #3d5273;
+  --slate-soft: #7e97bb;
+
+  /* warm neutral text scale (harmonizes with cream — not flat gray) */
+  --text: #2a2723;
+  --text-2: #56514a;
+  --text-3: #8a8478;
+
+  /* warm hairlines */
+  --line: #ece8de;
+  --line-2: #dfd9cb;
+
+  --font-display: 'Fraunces Variable', Georgia, 'Times New Roman', serif;
+  --font-sans: 'Hanken Grotesk Variable', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono Variable', ui-monospace, 'SF Mono', Menlo, monospace;
+
+  --radius: 14px;
+  --radius-sm: 9px;
+}
+
+/* ── Starlight theme integration ───────────────────────────── */
+:root {
+  --sl-color-accent: var(--slate);
+  --sl-color-accent-low: #e9eef4;
+  --sl-color-accent-high: var(--slate-deep);
+  --sl-color-bg: var(--cream);
+  --sl-color-bg-nav: var(--cream-2);
+  --sl-color-bg-sidebar: var(--cream-2);
+  --sl-color-bg-inline-code: #efece3;
+  --sl-color-hairline: var(--line);
+  --sl-color-hairline-shade: var(--line-2);
+  --sl-content-width: 48rem;
+  --sl-font: var(--font-sans);
+  --sl-font-mono: var(--font-mono);
+  --sl-nav-height: 4rem;
+}
+
+:root[data-theme='dark'] {
+  --cream: #18171440;
+  --sl-color-accent: var(--slate-soft);
+  --sl-color-accent-low: #1d2632;
+  --sl-color-accent-high: var(--slate-soft);
+  --sl-color-bg: #1a1815;
+  --sl-color-bg-nav: #15140f;
+  --sl-color-bg-sidebar: #15140f;
+  --sl-color-bg-inline-code: #26221b;
+}
+
+/* ── Base ──────────────────────────────────────────────────── */
+html {
+  scroll-behavior: smooth;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  font-family: var(--font-sans);
+  color: var(--text);
+  background: var(--cream);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  font-feature-settings: 'kern' 1, 'liga' 1;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--slate) 22%, transparent);
+  color: var(--ink);
+}
+
+/* Fraunces optical sizing for display use */
+.font-display,
+h1.landing-h1,
+h2.landing-h2,
+.cta-band h2 {
+  font-optical-sizing: auto;
+  font-variation-settings: 'opsz' 96, 'SOFT' 0, 'WONK' 0;
+}
