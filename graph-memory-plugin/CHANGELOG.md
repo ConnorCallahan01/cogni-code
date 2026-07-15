@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+
+### Changed
+
+- **Homepage & README now link the docs site** — `package.json` `homepage` and the shipped README point to the new documentation & landing site at [cognicode.app](https://cognicode.app). No functional changes to the plugin.
+
 ## [3.4.3] (2026-07-14) — Fix CI publish ordering
 
 ### Fixed
