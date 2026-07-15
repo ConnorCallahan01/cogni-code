@@ -2,7 +2,7 @@ import { defineConfig } from 'astro/config';
 import starlight from '@astrojs/starlight';
 
 export default defineConfig({
-  site: 'https://cogni-code.dev',
+  site: 'https://cognicode.app',
   integrations: [
     starlight({
       title: 'Cogni-Code',
