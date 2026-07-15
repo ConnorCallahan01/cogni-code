@@ -1,0 +1,369 @@
+---
+import LandingLayout from '../layouts/LandingLayout.astro';
+import BrainMark from '../components/BrainMark.astro';
+import HeroAnimation from '../components/HeroAnimation.astro';
+const gh = 'https://github.com/ConnorCallahan01/cogni-code';
+const npm = 'https://www.npmjs.com/package/cogni-code';
+---
+
+<LandingLayout>
+  <!-- Header -->
+  <header class="landing-header" id="site-header">
+    <div class="landing-header__bar">
+      <a class="landing-header__brand" href="/">
+        <BrainMark class="landing-header__mark" />
+        <span class="landing-header__name">Cogni-<b>Code</b></span>
+      </a>
+      <nav class="landing-header__nav">
+        <a class="nav-docs" href="/getting-started/">Docs</a>
+        <a href="/quick-start/">Quick Start</a>
+        <a href={gh}>GitHub</a>
+        <a class="landing-header__cta" href="/getting-started/">Get Started</a>
+      </nav>
+      <div class="landing-progress" id="scroll-progress"></div>
+    </div>
+  </header>
+
+  <!-- Hero -->
+  <section class="landing-hero">
+    <div class="landing-hero__copy">
+      <p class="landing-hero__kicker">Persistent memory for AI agents</p>
+      <h1 class="landing-h1">Give your agent a memory that <em>outlasts the session.</em></h1>
+      <p class="landing-hero__sub">
+        Every new session starts from zero &mdash; forgetting your preferences, decisions, and the bug you spent hours on yesterday. Cogni-Code fixes that with a persistent, inspectable knowledge graph that learns how you work across sessions.
+      </p>
+      <div class="landing-install" id="install-box">
+        <span class="prompt">$</span>
+        <code id="install-cmd">npm install -g cogni-code</code>
+        <button id="copy-btn" type="button" aria-label="Copy install command">Copy</button>
+      </div>
+      <div class="landing-hero__actions">
+        <a class="landing-btn landing-btn--primary" href="/getting-started/">Read the docs &rarr;</a>
+        <a class="landing-btn landing-btn--ghost" href={gh} target="_blank" rel="noopener">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .5C5.7.5.5 5.7.5 12c0 5.1 3.3 9.4 7.9 10.9.6.1.8-.2.8-.5v-2c-3.2.7-3.9-1.4-3.9-1.4-.5-1.3-1.3-1.7-1.3-1.7-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1 1.8 2.7 1.3 3.4 1 .1-.8.4-1.3.7-1.6-2.6-.3-5.3-1.3-5.3-5.7 0-1.3.4-2.3 1.2-3.1-.1-.3-.5-1.5.1-3.1 0 0 1-.3 3.3 1.2 1-.3 2-.4 3-.4s2 .1 3 .4c2.3-1.5 3.3-1.2 3.3-1.2.6 1.6.2 2.8.1 3.1.8.8 1.2 1.8 1.2 3.1 0 4.4-2.7 5.4-5.3 5.7.4.4.8 1.1.8 2.2v3.3c0 .3.2.6.8.5 4.6-1.5 7.9-5.8 7.9-10.9C23.5 5.7 18.3.5 12 .5z"/></svg>
+          View on GitHub
+        </a>
+      </div>
+    </div>
+    <div class="landing-hero__visual">
+      <HeroAnimation />
+    </div>
+  </section>
+
+  <!-- Works with your stack -->
+  <section class="strip">
+    <p class="strip__label">Works with the agent you already use</p>
+    <div class="strip__row">
+      <span class="strip__item"><span class="glyph">✻</span> Claude Code</span>
+      <span class="strip__item"><span class="glyph">&lt;/&gt;</span> Codex CLI</span>
+      <span class="strip__item"><span class="glyph">◇</span> OpenCode</span>
+      <span class="strip__item"><span class="glyph">π</span> pi</span>
+    </div>
+  </section>
+
+  <!-- Harness agnostic -->
+  <section class="harness" id="harnesses">
+    <div class="harness__head">
+      <p class="landing-eyebrow">Provider &amp; harness agnostic</p>
+      <h2 class="landing-h2">Works with the agent you already use &mdash; on both ends.</h2>
+      <p class="landing-lead">
+        Cogni-Code is two independent layers, and each is swappable. Run the <strong>coding agent</strong> you prefer in front, and pick the <strong>memory worker</strong> that powers the background pipeline behind it. Nothing locks you in.
+      </p>
+    </div>
+
+    <div class="harness__stage">
+      <div class="harness__rail">
+        <span class="harness__rail-label">Your coding agent &mdash; the one you chat with</span>
+        <span class="harness__chip"><span class="dot"></span>Claude Code</span>
+        <span class="harness__chip"><span class="dot"></span>Codex CLI</span>
+        <span class="harness__chip"><span class="dot"></span>OpenCode</span>
+        <span class="harness__chip"><span class="dot"></span>pi</span>
+      </div>
+
+      <div class="harness__core">
+        <span class="harness__core-badge">
+          <BrainMark class="harness-mark" />
+          Cogni-<b>Code</b>
+        </span>
+        <span class="harness__core-note">graph_memory &middot; shared knowledge graph</span>
+      </div>
+
+      <div class="harness__rail">
+        <span class="harness__rail-label">Memory worker &mdash; the backend daemon LLM</span>
+        <span class="harness__chip harness__chip--muted"><span class="dot"></span>codex</span>
+        <span class="harness__chip harness__chip--muted"><span class="dot"></span>claude</span>
+        <span class="harness__chip harness__chip--muted"><span class="dot"></span>opencode</span>
+        <span class="harness__chip harness__chip--muted"><span class="dot"></span>pi</span>
+      </div>
+
+      <div class="harness__foot">
+        <div>
+          <h4>Switch your coding agent</h4>
+          <p>Install into whichever harness you run &mdash; <code>--claude</code>, <code>--codex</code>, <code>--opencode</code>, or <code>--all</code>. Memory is shared, so switching is seamless.</p>
+        </div>
+        <div>
+          <h4>Switch your memory worker</h4>
+          <p>Set the daemon's LLM with <code>--worker</code> at install, or <code>/memory-switch-harness</code> anytime. Add a <code>fallback</code> for resilience.</p>
+        </div>
+      </div>
+    </div>
+    <div style="margin-top:1.75rem;">
+      <a class="landing-btn landing-btn--ghost" href="/harnesses/">How to configure both &rarr;</a>
+    </div>
+  </section>
+
+  <!-- What makes it different -->
+  <section class="landing-section">
+    <p class="landing-eyebrow">Why Cogni-Code</p>
+    <h2 class="landing-h2">A fourth option for agent memory.</h2>
+    <p class="landing-lead">
+      Most agent memory is built-in and opaque, locked in a vector database, or hand-written by you. Cogni-Code is something else: <strong>plain files on disk, maintained automatically, capturing behavior &mdash; not just facts.</strong>
+    </p>
+    <div class="compare-wrap" style="margin-top:2.25rem;">
+      <table class="compare">
+        <thead>
+          <tr>
+            <th></th>
+            <th class="col-cogni">Cogni-Code</th>
+            <th>Built-in memory</th>
+            <th>Vector-DB memory</th>
+            <th>Hand-written files</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><th>Where it lives</th><td class="col-cogni">Your filesystem</td><td>Vendor cloud</td><td>Database / SaaS</td><td>Your repo</td></tr>
+          <tr><th>Can you read it?</th><td class="col-cogni"><span class="yes">Yes</span> &mdash; cat, grep, diff</td><td>Limited UI</td><td>Partial</td><td><span class="yes">Yes</span></td></tr>
+          <tr><th>Self-hosted</th><td class="col-cogni"><span class="yes">Yes</span></td><td><span class="no">No</span></td><td>Sometimes</td><td><span class="yes">Yes</span></td></tr>
+          <tr><th>Maintained by</th><td class="col-cogni">Background pipeline</td><td>Vendor</td><td>Agent or app</td><td><span class="meh">You, manually</span></td></tr>
+          <tr><th>Captures</th><td class="col-cogni">Behavior + facts</td><td>Mostly facts</td><td>Mostly facts</td><td>Whatever you write</td></tr>
+          <tr><th>Decays when stale</th><td class="col-cogni"><span class="yes">Yes</span></td><td><span class="no">No</span></td><td><span class="meh">Usually no</span></td><td><span class="no">No</span></td></tr>
+          <tr><th>Multi-agent</th><td class="col-cogni"><span class="yes">Yes</span> &mdash; Claude, Codex, OpenCode, pi</td><td><span class="no">No</span></td><td>Sometimes</td><td><span class="meh">Manual</span></td></tr>
+          <tr><th>Writes its own tools</th><td class="col-cogni"><span class="yes">Yes</span> &mdash; Skillforge</td><td><span class="no">No</span></td><td><span class="no">No</span></td><td><span class="no">No</span></td></tr>
+          <tr><th>Git-backed history</th><td class="col-cogni"><span class="yes">Yes</span></td><td><span class="no">No</span></td><td>Rarely</td><td>If you commit it</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- How it works -->
+  <section class="landing-section" style="background: var(--cream-2); border-block: 1px solid var(--line);">
+    <p class="landing-eyebrow">How it works</p>
+    <h2 class="landing-h2">Capture, process, inject, evolve.</h2>
+    <p class="landing-lead">
+      You just talk to your agent. Session hooks capture state into a local buffer. A separate background pipeline distills it into memory, and your next session starts already knowing who you are and where you left off.
+    </p>
+    <div class="phases">
+      <div class="phase">
+        <span class="phase__step">Phase 01</span>
+        <h3>Capture</h3>
+        <p>Session hooks watch conversations and tool traces. Nothing is sent anywhere &mdash; hooks write to a local buffer.</p>
+      </div>
+      <div class="phase">
+        <span class="phase__step">Phase 02</span>
+        <h3>Process</h3>
+        <p>The scribe extracts deltas, the auditor finds stale nodes, the librarian applies judgment-heavy updates, the dreamer makes associations.</p>
+      </div>
+      <div class="phase">
+        <span class="phase__step">Phase 03</span>
+        <h3>Inject</h3>
+        <p>The next session starts layered: who you are, how this project works, what happened recently, what's most relevant. A few thousand tokens.</p>
+      </div>
+      <div class="phase">
+        <span class="phase__step">Phase 04</span>
+        <h3>Evolve</h3>
+        <p>Memory decays when unused, dreams surface unexpected connections, and Skillforge promotes frequently-recalled memories into commands.</p>
+      </div>
+    </div>
+    <div style="margin-top:2.5rem;">
+      <a class="landing-btn landing-btn--ghost" href="/how-it-works/">See the full architecture &rarr;</a>
+    </div>
+  </section>
+
+  <!-- Pipeline -->
+  <section class="landing-section">
+    <p class="landing-eyebrow">The background pipeline</p>
+    <h2 class="landing-h2">Watch a session flow through the pipeline.</h2>
+    <p class="landing-lead">It runs in the background, so your agent never manages memory mid-conversation. Each stage lights up as memory passes through &mdash; scribe to dreamer is the active chain.</p>
+
+    <div class="pipe-grid" id="pipe">
+      <aside class="pipe-names" aria-label="Pipeline stages">
+        <ol>
+          <li class="pipe-name-item is-active" data-i="0"><span class="pipe-node"></span>scribe<span class="pipe-tag">core</span></li>
+          <li class="pipe-name-item" data-i="1"><span class="pipe-node"></span>auditor<span class="pipe-tag">core</span></li>
+          <li class="pipe-name-item" data-i="2"><span class="pipe-node"></span>librarian<span class="pipe-tag">core</span></li>
+          <li class="pipe-name-item" data-i="3"><span class="pipe-node"></span>dreamer<span class="pipe-tag">core</span></li>
+          <li class="pipe-name-item" data-i="4"><span class="pipe-node"></span>observer<span class="pipe-tag">aux</span></li>
+          <li class="pipe-name-item" data-i="5"><span class="pipe-node"></span>skillforge<span class="pipe-tag">aux</span></li>
+          <li class="pipe-name-item" data-i="6"><span class="pipe-node"></span>bootstrap<span class="pipe-tag">aux</span></li>
+        </ol>
+      </aside>
+
+      <div class="pipe-details">
+        <article class="pipe-detail is-visible" data-i="0">
+          <header><span class="pipe-stage-name">scribe</span><span class="pipe-tag">core</span></header>
+          <p class="pipe-desc">Reads the session buffer and extracts structured deltas &mdash; evolving opinions, frustrations, and contradictions, not just hard facts.</p>
+          <pre class="pipe-example"><span class="ex-label">delta &middot; session 2026-07-15</span>
+<span class="ex-add">+ prefers blue-green deploys for prod</span>   <span class="ex-meta">0.82</span>
+<span class="ex-add">+ frustrated by silent deploy waits</span>      <span class="ex-meta">0.61</span>
+<span class="ex-mut">~ decisions/deploys: canary-everywhere</span>  <span class="ex-meta">stale</span></pre>
+        </article>
+
+        <article class="pipe-detail" data-i="1">
+          <header><span class="pipe-stage-name">auditor</span><span class="pipe-tag">core</span></header>
+          <p class="pipe-desc">Mechanical triage &mdash; scans the whole graph for stale, contradictory, and noisy nodes.</p>
+          <pre class="pipe-example"><span class="ex-label">triage &middot; 412 nodes</span>
+<span class="ex-del">✗ 6 stale</span>      confidence &lt; 0.3, 34d untouched
+<span class="ex-del">✗ 2 contradicts</span> decisions/auth-strategy
+<span class="ex-mut">~ 11 bloat</span>     candidates flagged for prune</pre>
+        </article>
+
+        <article class="pipe-detail" data-i="2">
+          <header><span class="pipe-stage-name">librarian</span><span class="pipe-tag">core</span></header>
+          <p class="pipe-desc">Applies judgment-heavy updates with a prune-over-preserve philosophy, then regenerates the context files.</p>
+          <pre class="pipe-example"><span class="ex-label">applied</span>
+3 upserts &middot; 2 archived &middot; 1 merged
+<span class="ex-add">→ regenerated MAP.md</span>      <span class="ex-meta">174 entries</span>
+<span class="ex-add">→ regenerated WORKING.md</span>
+<span class="ex-meta">commit a1f3c9e</span></pre>
+        </article>
+
+        <article class="pipe-detail" data-i="3">
+          <header><span class="pipe-stage-name">dreamer</span><span class="pipe-tag">core</span></header>
+          <p class="pipe-desc">Recombines distant nodes into speculative fragments for later validation.</p>
+          <pre class="pipe-example"><span class="ex-label">fragment &middot; emergence</span>  <span class="ex-meta">0.57</span>
+&ldquo;single-custody flows&rdquo; &mdash; reminder
+delivery, cron restore, and the token
+cache all broke on shared custody.
+<span class="ex-add">→ linked 3 nodes</span></pre>
+        </article>
+
+        <article class="pipe-detail" data-i="4">
+          <header><span class="pipe-stage-name">observer</span><span class="pipe-tag">aux</span></header>
+          <p class="pipe-desc">Turns conversation patterns into structured observations, session logs, and node upserts.</p>
+          <pre class="pipe-example"><span class="ex-label">observations</span>
+<span class="ex-add">+ mind/observations.jsonl</span>
+  ships by vertical slice, not feature flags
+<span class="ex-add">+ sessions/cogni-code.jsonl</span>
+  shipped, decided, blocked, next</pre>
+        </article>
+
+        <article class="pipe-detail" data-i="5">
+          <header><span class="pipe-stage-name">skillforge</span><span class="pipe-tag">aux</span></header>
+          <p class="pipe-desc">Promotes frequently-recalled nodes into executable slash-command skills.</p>
+          <pre class="pipe-example"><span class="ex-label">recall heat</span>
+&ldquo;ssh provisioning&rdquo;  <span class="ex-meta">× 8 sessions</span>
+<span class="ex-add">→ generated /provision-ssh</span>
+<span class="ex-add">→ installed ~/.claude/commands</span></pre>
+        </article>
+
+        <article class="pipe-detail" data-i="6">
+          <header><span class="pipe-stage-name">bootstrap</span><span class="pipe-tag">aux</span></header>
+          <p class="pipe-desc">Auto-generates project docs from mental-model data.</p>
+          <pre class="pipe-example"><span class="ex-label">lens &middot; cogni-code</span>
++ tech stack, conventions, active threads
+<span class="ex-add">→ wrote ./CLAUDE.md</span>  <span class="ex-meta">4.2 KB</span>
+<span class="ex-add">→ wrote ./AGENT.md</span>   <span class="ex-meta">codex</span></pre>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <!-- CTA -->
+  <section class="landing-section">
+    <div class="cta-band">
+      <p class="landing-eyebrow" style="justify-content:center;">Start in seconds</p>
+      <h2>Your agent starts from zero every time.</h2>
+      <p>Install, run one command, and your agent picks up where the last session left off instead of reconstructing the world from scratch.</p>
+      <div class="landing-hero__actions">
+        <a class="landing-btn landing-btn--primary" href="/quick-start/">Get started &rarr;</a>
+        <a class="landing-btn landing-btn--ghost" style="color:#c3b69c; border-color:#3a3833;" href={npm} target="_blank" rel="noopener">View on npm</a>
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer class="landing-footer">
+    <div class="landing-header__brand">
+      <BrainMark class="landing-header__mark" />
+      <span class="landing-header__name">Cogni-<b>Code</b></span>
+    </div>
+    <nav class="landing-footer__links">
+      <a href="/getting-started/">Docs</a>
+      <a href="/tool-reference/">Tool Reference</a>
+      <a href={gh}>GitHub</a>
+      <a href={npm}>npm</a>
+      <a href="/project-structure/">Project Structure</a>
+    </nav>
+    <div>MIT License &middot; Built by <a href={gh}>Connor Callahan</a></div>
+  </footer>
+</LandingLayout>
+
+<script is:inline>
+  const btn = document.getElementById('copy-btn');
+  const cmd = document.getElementById('install-cmd');
+  if (btn && cmd) {
+    btn.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(cmd.textContent.trim());
+        const old = btn.textContent;
+        btn.textContent = 'Copied';
+        btn.style.color = '#9ed4b0';
+        setTimeout(() => { btn.textContent = old; btn.style.color = ''; }, 1600);
+      } catch (e) {}
+    });
+  }
+
+  // Scroll-aware floating capsule nav + progress indicator
+  const header = document.getElementById('site-header');
+  const progress = document.getElementById('scroll-progress');
+  const onScroll = () => {
+    const y = window.scrollY || document.documentElement.scrollTop;
+    header.classList.toggle('is-scrolled', y > 12);
+    const h = document.documentElement.scrollHeight - window.innerHeight;
+    const frac = h > 0 ? Math.min(1, y / h) : 0;
+    if (progress) progress.style.transform = `scaleX(${frac})`;
+  };
+  onScroll();
+  window.addEventListener('scroll', onScroll, { passive: true });
+
+  // Scrollytelling pipeline: the detail on the right drives the name highlight on the left.
+  const pipe = document.getElementById('pipe');
+  if (pipe) {
+    const details = [...pipe.querySelectorAll('.pipe-detail')];
+    const names = [...pipe.querySelectorAll('.pipe-name-item')];
+    let cur = 0;
+    const setActive = (i) => {
+      const clamped = Math.max(0, Math.min(names.length - 1, i));
+      if (clamped === cur) return;
+      cur = clamped;
+      names.forEach((n, k) => n.classList.toggle('is-active', k === clamped));
+    };
+    const onPipeScroll = () => {
+      const trigger = window.innerHeight * 0.4;
+      let i = 0;
+      details.forEach((d, k) => {
+        if (d.getBoundingClientRect().top <= trigger) i = k;
+      });
+      setActive(i);
+    };
+    onPipeScroll();
+    window.addEventListener('scroll', onPipeScroll, { passive: true });
+    window.addEventListener('resize', onPipeScroll, { passive: true });
+
+    // reveal each detail card as it enters the viewport
+    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (!reduce && 'IntersectionObserver' in window) {
+      const io = new IntersectionObserver((entries) => {
+        entries.forEach((e) => {
+          if (e.isIntersecting) {
+            e.target.classList.add('is-visible');
+            io.unobserve(e.target);
+          }
+        });
+      }, { rootMargin: '-15% 0px -55% 0px' });
+      details.forEach((d) => io.observe(d));
+    } else {
+      details.forEach((d) => d.classList.add('is-visible'));
+    }
+  }
+</script>

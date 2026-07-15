@@ -1,0 +1,34 @@
+---
+import '../styles/global.css';
+import '../styles/landing.css';
+
+interface Props {
+  title?: string;
+  description?: string;
+}
+const {
+  title = 'Cogni-Code — Persistent memory for AI agents',
+  description = 'Give your AI agent a memory that outlasts the session. A persistent, inspectable knowledge graph for Claude Code, Codex CLI, OpenCode, and pi. Plain files on disk, maintained automatically.',
+} = Astro.props;
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="generator" content={Astro.generator} />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+  </head>
+  <body>
+    <div class="landing">
+      <slot />
+    </div>
+  </body>
+</html>
