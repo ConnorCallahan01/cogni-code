@@ -3,8 +3,6 @@ title: Introduction
 description: Cogni-Code gives your AI agent a persistent, inspectable memory that outlasts the session.
 ---
 
-import { Card, CardGrid } from '@astrojs/starlight/components';
-
 Every time you start a new session, your agent starts from zero. It forgets your preferences, your decisions, the bug you spent two hours on yesterday, the deployment strategy you settled on last week. **Cogni-Code fixes that.**
 
 It is a persistent, inspectable memory system for Claude Code, Codex CLI, OpenCode, pi, and any MCP-compatible agent. Your agent learns how you work across sessions and gets sharper every time you use it. Memory lives as plain files on your disk &mdash; you can read it, edit it, diff it, and back it up with git.
@@ -31,17 +29,10 @@ Cogni-Code is a fourth option: **plain files on disk, maintained automatically, 
 | **Generates its own tools** | Yes (Skillforge) | No | No | No |
 | **Git-backed history** | Yes | No | Rarely | If you commit it |
 
-<CardGrid stagger>
-  <Card title="Install" icon="rocket">
-    Get up and running with a single command.
-  </Card>
-  <Card title="How it works" icon="seti:settings">
-    The capture &rarr; process &rarr; inject &rarr; evolve loop.
-  </Card>
-  <Card title="The memory model" icon="brain">
-    Layered always-loaded context over an on-demand graph.
-  </Card>
-  <Card title="Tool reference" icon="seti:api">
-    Every `graph_memory` action, documented.
-  </Card>
-</CardGrid>
+## Read next
+
+- **[Install](/install/)** — get up and running with a single command.
+- **[How it works](/how-it-works/)** — the capture &rarr; process &rarr; inject &rarr; evolve loop.
+- **[The memory model](/memory-model/)** — layered always-loaded context over an on-demand graph.
+- **[Harnesses & providers](/harnesses/)** — provider-agnostic on both ends.
+- **[Tool reference](/tool-reference/)** — every `graph_memory` action, documented.

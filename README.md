@@ -6,6 +6,9 @@
 
 **Give your AI agent a memory that outlasts the session.**
 
+🌐 **Website &amp; docs: [cognicode.app](https://cognicode.app)**
+
+[![Website](https://img.shields.io/badge/website-cognicode.app-526B8D.svg)](https://cognicode.app)
 [![MIT License](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
 
 </div>
@@ -413,6 +416,7 @@ examples/                # Command examples, tool actions, SDK usage
 
 ## Read next
 
+- **[Website &amp; docs](https://cognicode.app)** — the hosted landing page and full documentation
 - **[Setup guide](docs/setup-from-clone.md)** — detailed clone-to-first-memory walkthrough
 - **[Plugin README](graph-memory-plugin/README.md)** — full architecture, configuration, and pipeline internals
 - **[Examples](examples/)** — commands, tool actions, skill usage, SDK integration
