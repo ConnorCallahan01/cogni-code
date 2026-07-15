@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [3.4.4] (2026-07-15) — Point npm homepage & README at cognicode.app
 
 ### Changed
 
