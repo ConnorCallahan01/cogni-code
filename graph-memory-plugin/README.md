@@ -2,6 +2,8 @@
 
 Persistent, self-evolving memory for AI agents. Gives Claude Code, Codex CLI, OpenCode, and pi a knowledge graph that grows from conversations.
 
+🌐 **Docs & landing site: [cognicode.app](https://cognicode.app)**
+
 ```text
       o----o----o
      / \  / \    \

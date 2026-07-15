@@ -1,11 +1,11 @@
 {
   "name": "cogni-code",
-  "version": "3.4.3",
+  "version": "3.4.4",
   "type": "module",
   "description": "Persistent, self-evolving memory for AI agents. Gives Claude Code, Codex CLI, OpenCode, and pi a knowledge graph that grows from conversations.",
   "license": "MIT",
   "author": "Connor Callahan",
-  "homepage": "https://github.com/ConnorCallahan01/cogni-code",
+  "homepage": "https://cognicode.app",
   "repository": {
     "type": "git",
     "url": "https://github.com/ConnorCallahan01/cogni-code.git",
