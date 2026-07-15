@@ -709,6 +709,7 @@ body {
   pointer-events: none;
 }
 .cta-band > * { position: relative; }
+.cta-band .landing-hero__actions { justify-content: center; }
 .cta-band .landing-eyebrow { color: var(--slate-soft); }
 .cta-band .landing-eyebrow::before { background: var(--slate-soft); opacity: 0.6; }
 .cta-band h2 {
