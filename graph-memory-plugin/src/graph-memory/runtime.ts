@@ -11,7 +11,7 @@ export interface RepoMountConfig {
   mode: "ro" | "rw";
 }
 
-export type WorkerProvider = "codex" | "claude" | "pi" | "opencode";
+export type WorkerProvider = "codex" | "claude" | "pi" | "opencode" | "api";
 
 export interface DockerRuntimeConfig {
   enabled: boolean;
@@ -65,6 +65,9 @@ function resolveDefaultWorkerProvider(): WorkerProvider {
   if (which("opencode")) return "opencode";
   if (which("codex")) return "codex";
   if (which("claude")) return "claude";
+  // No CLI binary on PATH — if API credentials exist, use the direct-API worker.
+  // Checks both ANTHROPIC_API_KEY (direct) and ANTHROPIC_AUTH_TOKEN (proxy).
+  if (process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN) return "api";
   return "codex";
 }
 

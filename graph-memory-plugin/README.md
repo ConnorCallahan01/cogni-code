@@ -23,6 +23,11 @@ npm install -g cogni-code
 cogni-code install          # auto-detects your harness(es)
 ```
 
+> **Permission denied (EACCES)?** Locked-down containers may block global installs. Use a local install instead:
+> ```bash
+> npm install cogni-code && npx cogni-code install
+> ```
+
 Or specify a harness:
 
 ```bash
@@ -38,6 +43,27 @@ To also set up the Docker daemon for background pipeline processing:
 ```bash
 cogni-code install --docker                 # auto-detects worker provider
 cogni-code install --docker --worker codex  # specify worker explicitly
+```
+
+### No Docker? Direct API Mode
+
+If your environment has no Docker or Podman (e.g. a NanoClaw container, sandbox, or CI runner), the `api` worker runs the full pipeline (scribe, auditor, librarian, dreamer) via direct HTTP — no CLI agent binary, no subprocess:
+
+```bash
+cogni-code install --docker --worker api
+```
+
+The `api` worker respects the standard Anthropic env-var surface, so it routes through whatever credential infrastructure your agent already uses:
+
+| Env var | Auth method | Use case |
+|---|---|---|
+| `ANTHROPIC_API_KEY` | `x-api-key` header | Direct API key (bills per-token) |
+| `ANTHROPIC_AUTH_TOKEN` + `ANTHROPIC_BASE_URL` | `Authorization: Bearer` | **Credential proxy** (e.g. OneCLI Agent Vault in NanoClaw) — routes to your **subscription**, no API billing |
+
+It auto-activates when credentials are present and no CLI harness is on PATH. Start the daemon directly without Docker:
+
+```bash
+node "$(npm root -g)/cogni-code/dist/graph-memory/pipeline/daemon.js"
 ```
 
 ## What It Does
@@ -261,7 +287,7 @@ Installed slash commands (available in both Claude Code and OpenCode):
 | `/memory-morning-kickoff` | Turn the latest brief into a focused daily kickoff |
 | `/memory-connect-inputs` | Configure host-side external inputs for briefs and context enrichment |
 | `/memory-input-refresh` | Refresh configured external inputs and ingest new data |
-| `/memory-switch-harness` | Switch the background pipeline worker between codex, claude, pi, and opencode |
+| `/memory-switch-harness` | Switch the background pipeline worker between codex, claude, pi, opencode, and api |
 | `/memory-wire-project` | Wire (or refresh) the graph-memory section in this project's `CLAUDE.md` |
 | `/notion-setup` | Configure Notion sync for a parent page or database |
 | `/notion-sync` | Sync graph-memory content to Notion |

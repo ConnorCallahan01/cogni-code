@@ -19,7 +19,7 @@ The `graph_memory` MCP tool is the primary interface. Your agent uses it directl
 | `revert` | Roll back to an earlier state |
 | `resurface` | Restore an archived node to active memory |
 | `initialize` | Create graph structure and pointer file |
-| `configure_runtime` | Choose manual or Docker runtime |
+| `configure_runtime` | Choose manual or Docker runtime, set worker provider (codex, claude, pi, opencode, api) |
 | `consolidate` | Run consolidation manually |
 | `notion_setup` | Create Notion workspace structure |
 | `notion_sync` | Run outbound sync (diff + plan + execute) |

@@ -1,6 +1,6 @@
 ---
 name: memory-switch-harness
-description: Switch the background pipeline worker harness (codex, claude, pi, opencode) for an already-initialized graph memory system. Use when the user wants to change which agent runs the scribe/auditor/librarian/dreamer daemon pipeline.
+description: Switch the background pipeline worker harness (codex, claude, pi, opencode, api) for an already-initialized graph memory system. Use when the user wants to change which agent runs the scribe/auditor/librarian/dreamer daemon pipeline.
 ---
 
 # /memory-switch-harness
@@ -20,7 +20,7 @@ Switch the agent harness that runs the background memory pipeline (scribe → au
 ```
 Current harness: <current>
 Runtime mode: <mode>
-Available: codex | claude | pi | opencode
+Available: codex | claude | pi | opencode | api
 ```
 
 6. Briefly explain what each harness means:
@@ -28,6 +28,7 @@ Available: codex | claude | pi | opencode
    - **claude** — Anthropic Claude Code. Best for Claude subscribers. Uses existing OAuth or `ANTHROPIC_API_KEY`.
    - **pi** — pi coding agent. Open-source, provider-agnostic. Uses `/login` subscription or API keys (any supported provider: Anthropic, OpenAI, OpenRouter, etc.).
    - **opencode** — OpenCode. Open-source, provider-agnostic. Uses provider API keys configured via `opencode providers`.
+   - **api** — Direct API call. No CLI binary or Docker needed. Calls Anthropic Messages API via `fetch`. Uses `ANTHROPIC_API_KEY` or `ANTHROPIC_AUTH_TOKEN` + `ANTHROPIC_BASE_URL` (routes through credential proxies like OneCLI Agent Vault for subscription access).
 
 7. Ask which harness they want to switch to.
 
@@ -48,11 +49,13 @@ Available: codex | claude | pi | opencode
 
 ### Phase 3: Ensure Docker image has the harness CLI
 
-10. **Docker mode only (skip if manual mode).** Verify the chosen harness CLI is available inside the running container:
+10. **Skip for `api` worker** — it runs in-process via `fetch`, no CLI binary needed. Go to Phase 4.
+    **Skip for manual mode** — no container to verify. Go to Phase 4.
+    **Docker mode only.** Verify the chosen harness CLI is available inside the running container:
     ```bash
     docker exec "$GRAPH_MEMORY_DOCKER_CONTAINER" which <harness_cli> 2>/dev/null
     ```
-    Where `<harness_cli>` is `codex` for codex, `claude` for claude, `pi` for pi, or `opencode` for opencode.
+    Where `<harness_cli>` is `codex` for codex, `claude` for claude, `pi` for pi, or `opencode` for opencode. (The `api` provider has no CLI binary — it was skipped above.)
 
 11. **If the CLI is not found** (command fails or returns empty): rebuild the image and restart.
     - First, check the Dockerfile at `<plugin_dir>/docker/Dockerfile` to confirm the harness CLI is included in the install steps. If it's missing from the Dockerfile, add the appropriate install command:

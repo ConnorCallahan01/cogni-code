@@ -569,7 +569,7 @@ SETUP:
           authPathInContainer: z.string().optional().describe("Container auth mount path for configure_runtime"),
           memoryLimit: z.string().optional().describe("Container memory limit for configure_runtime"),
           cpuLimit: z.string().optional().describe("Container CPU limit for configure_runtime"),
-          workerProvider: z.enum(["codex", "claude", "pi", "opencode"]).optional().describe("Worker harness for configure_runtime"),
+          workerProvider: z.enum(["codex", "claude", "pi", "opencode", "api"]).optional().describe("Worker harness for configure_runtime"),
           workerModel: z.string().optional().describe("Model override for pipeline workers (e.g. 'sonnet', 'o3', 'gpt-4.1')"),
         },
 

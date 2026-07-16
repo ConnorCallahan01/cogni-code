@@ -20,9 +20,17 @@ The pipeline runs in the background so your agent does not have to manage its ow
 
 ## Runtime modes
 
-The pipeline runs either in **manual mode** (just the tool, no daemon) for lightweight local testing, or **Docker daemon mode** (recommended) where the host agent stays on your machine and bounded workers run in a container against the mounted graph root.
+The pipeline runs either in **manual mode** (just the tool, no daemon) for lightweight local testing, **Docker daemon mode** (recommended for desktops) where the host agent stays on your machine and bounded workers run in a container, or **API mode** where workers call the Anthropic API directly — ideal for containers and sandboxes without Docker.
 
-Configure the runtime with the `configure_runtime` action or `--docker` at install time.
+| Mode | Daemon | Worker execution | Best for |
+|------|--------|-------------------|----------|
+| Manual | No | None (on-demand only) | Local testing |
+| Docker | Docker container | CLI subprocess (codex/claude/pi/opencode) | Desktops with Docker |
+| API | Node process (no Docker) | Direct `fetch` to Anthropic API | Containers, sandboxes, CI |
+
+In API mode, the worker routes through your existing credential proxy (e.g. OneCLI Agent Vault in NanoClaw), so it uses your **subscription** rather than accruing API costs. See [Install](/install/) for setup.
+
+Configure the runtime with the `configure_runtime` action or `--docker --worker api` at install time.
 
 ## Reliability
 

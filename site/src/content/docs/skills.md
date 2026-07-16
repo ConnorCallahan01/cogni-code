@@ -15,7 +15,7 @@ Cogni-Code ships with skills that become part of how your agent operates. They a
 | `/recall <query>` | Deep graph lookup with edge traversal |
 | `/memory-morning-kickoff` | Start-of-day briefing built from your memory |
 | `/memory-wire-project` | Inject memory context into your project's `CLAUDE.md` or `AGENT.md` |
-| `/memory-switch-harness` | Switch background pipeline worker (codex, claude, pi, opencode) |
+| `/memory-switch-harness` | Switch background pipeline worker (codex, claude, pi, opencode, api) |
 | `/memory-connect-inputs` | Configure external inputs (Gmail, Calendar, Slack) for briefings |
 | `/memory-input-refresh` | Refresh configured external input sources |
 | `/refresh-skill` | Update a Skillforge-generated skill whose source node has drifted |
