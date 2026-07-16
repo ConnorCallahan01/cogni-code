@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import "./suppress-warnings.js";
 /**
  * MCP server for graph-memory plugin.
  * Exposes the graph_memory tool and graph://map, graph://priors resources over stdio.
