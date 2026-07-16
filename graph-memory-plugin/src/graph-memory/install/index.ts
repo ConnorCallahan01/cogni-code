@@ -101,9 +101,16 @@ export async function runInstall(args: string[]): Promise<void> {
 
   if (!enableDocker) {
     console.log(`\n${step}. Set up the background pipeline (recommended):`);
-    console.log("   cogni-code install --docker");
-    console.log("   This runs the scribe/librarian/dreamer pipeline automatically so");
-    console.log("   your memory evolves from conversations. Requires Docker or Podman.");
+    if (process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN) {
+      console.log("   Anthropic credentials detected — run the pipeline without Docker:");
+      console.log("   cogni-code install --docker --worker api");
+      console.log("   Routes through your existing credential proxy (subscription, no API billing).");
+    } else {
+      console.log("   cogni-code install --docker");
+      console.log("   This runs the scribe/librarian/dreamer pipeline automatically so");
+      console.log("   your memory evolves from conversations. Requires Docker or Podman.");
+      console.log("   No Docker? Set ANTHROPIC_API_KEY or ANTHROPIC_AUTH_TOKEN and use --worker api.");
+    }
     console.log("   Skip if you only want on-demand memory (manual mode).");
     step++;
   }
@@ -200,18 +207,31 @@ function ensureGraphInitialized(customGraphRoot: string | null): string {
 }
 
 function setupDocker(workerOverride: string | null): void {
-  console.log("── Docker Daemon ──");
+  console.log("── Background Pipeline ──");
+
+  const provider = resolveWorkerProvider(workerOverride);
 
   const engine = detectContainerEngine();
   if (!engine) {
+    if (provider === "api" || process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN) {
+      console.log("  No Docker/Podman found — configuring direct API mode.");
+      console.log("  Worker provider: api (routes through your existing credential proxy)");
+      saveRuntimeConfig({
+        mode: "manual",
+        docker: { enabled: false, workerProvider: "api" },
+      });
+      console.log("\n  Start the daemon directly:");
+      console.log("    node \"$(npm root -g)/cogni-code/dist/graph-memory/pipeline/daemon.js\"");
+      console.log("  Or in the background: nohup node ... &");
+      return;
+    }
     console.error("  Docker/Podman not found. Install Docker Desktop or Podman, then run:");
     console.error("    cogni-code install --docker");
-    console.error("  Skipping Docker setup — running in manual mode.");
+    console.error("  Or set ANTHROPIC_API_KEY and use --worker api for direct API mode.");
+    console.error("  Skipping — running in manual mode.");
     return;
   }
   console.log(`  Container engine: ${engine}`);
-
-  const provider = resolveWorkerProvider(workerOverride);
   console.log(`  Worker provider: ${provider}`);
 
   saveRuntimeConfig({
@@ -254,7 +274,7 @@ function detectContainerEngine(): string | null {
 
 function resolveWorkerProvider(override: string | null): WorkerProvider {
   if (override) {
-    const valid: WorkerProvider[] = ["codex", "claude", "pi", "opencode"];
+    const valid: WorkerProvider[] = ["codex", "claude", "pi", "opencode", "api"];
     if (valid.includes(override as WorkerProvider)) return override as WorkerProvider;
     console.error(`  Unknown worker: ${override}, auto-detecting...`);
   }

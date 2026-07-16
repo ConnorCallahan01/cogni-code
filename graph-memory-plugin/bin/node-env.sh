@@ -21,3 +21,10 @@ if ! command -v node &>/dev/null; then
     done
   fi
 fi
+
+# Suppress Node experimental warnings (e.g. UNDICI proxy warning) on stderr.
+if command -v node &>/dev/null; then
+  if node --disable-warning=ExperimentalWarning --version &>/dev/null 2>&1; then
+    export NODE_OPTIONS="${NODE_OPTIONS:+$NODE_OPTIONS }--disable-warning=ExperimentalWarning"
+  fi
+fi

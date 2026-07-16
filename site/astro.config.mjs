@@ -16,6 +16,12 @@ export default defineConfig({
       customCss: ['./src/styles/global.css'],
       sidebar: [
         {
+          label: 'For Agents',
+          items: [
+            { label: 'Agent Install Guide', slug: 'for-agents' },
+          ],
+        },
+        {
           label: 'Getting Started',
           items: [
             { label: 'Introduction', slug: 'getting-started' },

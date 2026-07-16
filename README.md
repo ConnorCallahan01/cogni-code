@@ -81,6 +81,8 @@ cogni-code install
 
 Auto-detects Claude Code, Codex CLI, and OpenCode. Initializes graph memory at `~/.graph-memory/` if needed. For a custom location: `cogni-code install --graph-root /path/to/memory`.
 
+> **Permission denied (EACCES)?** Use `npm install cogni-code && npx cogni-code install` for a local install in locked-down containers.
+
 **With background pipeline (Docker):**
 
 ```bash
@@ -88,7 +90,9 @@ npm install -g cogni-code
 cogni-code install --docker
 ```
 
-Sets up the Docker daemon that runs the scribe/librarian/dreamer pipeline automatically. Requires Docker Desktop or Podman. Auto-detects the worker provider (codex, claude, or opencode) or specify with `--worker codex`.
+Sets up the Docker daemon that runs the scribe/librarian/dreamer pipeline automatically. Requires Docker Desktop or Podman. Auto-detects the worker provider (codex, claude, opencode, or api) or specify with `--worker codex`.
+
+No Docker? Set `ANTHROPIC_API_KEY` or `ANTHROPIC_AUTH_TOKEN` and use `--worker api` for direct API mode — runs the full pipeline via `fetch`, no CLI binary needed.
 
 Updates are automatic — `npm update -g cogni-code` updates all hooks instantly (they call the `cogni-code` CLI, not absolute file paths).
 
@@ -241,7 +245,7 @@ The pipeline runs in the background so your agent does not have to manage its ow
 | **Bootstrap** | Auto-generates project docs (`CLAUDE.md`, `AGENT.md`) from mental model data. |
 | **Working update** | Extracts key files from tool traces to prime the next session with what you actually edited. |
 
-The pipeline runs either in **manual mode** (just the tool, no daemon) for lightweight local testing, or **Docker daemon mode** (recommended) where the host agent stays on your machine and bounded workers run in a container against the mounted graph root.
+The pipeline runs either in **manual mode** (just the tool, no daemon) for lightweight local testing, **Docker daemon mode** (recommended for desktops) where the host agent stays on your machine and bounded workers run in a container, or **API mode** where workers call the Anthropic API directly — ideal for containers and sandboxes without Docker.
 
 ---
 
@@ -279,7 +283,7 @@ Cogni-Code ships with skills that become part of how your agent operates. They a
 | `/recall <query>` | Deep graph lookup with edge traversal (Claude Code skill) |
 | `/memory-morning-kickoff` | Start-of-day briefing built from your memory |
 | `/memory-wire-project` | Inject memory context into your project's `CLAUDE.md` or `AGENT.md` |
-| `/memory-switch-harness` | Switch background pipeline worker (codex, claude, pi, opencode) |
+| `/memory-switch-harness` | Switch background pipeline worker (codex, claude, pi, opencode, api) |
 | `/memory-connect-inputs` | Configure external inputs (Gmail, Calendar, Slack) for briefings |
 | `/memory-input-refresh` | Refresh configured external input sources |
 | `/refresh-skill` | Update a Skillforge-generated skill whose source node has drifted |

@@ -141,11 +141,15 @@ function rememberNode(args: {
   pinned?: boolean;
   project?: string;
 }): { content: Array<{ type: "text"; text: string }>; isError?: boolean } {
-  if (!args.path) {
-    return { content: [{ type: "text", text: "Error: path required for remember" }], isError: true };
-  }
-  if (!args.gist) {
-    return { content: [{ type: "text", text: "Error: gist required for remember" }], isError: true };
+  if (!args.path || !args.gist) {
+    const missing: string[] = [];
+    if (!args.path) missing.push("path");
+    if (!args.gist) missing.push("gist");
+    const fields = missing.map((f) => `"${f}"`).join(" and ");
+    return {
+      content: [{ type: "text", text: `Error: ${fields} required for remember.\n\nExample:\n  graph_memory(action="remember", path="patterns/my-pattern", gist="One-sentence summary", content="Full details...", tags=["tag1"])` }],
+      isError: true,
+    };
   }
 
   const filePath = safePath(CONFIG.paths.nodes, args.path, ".md");
@@ -1363,11 +1367,11 @@ export const graphMemorySchema = {
     .describe("Session ID for access tracking (supplied by plugin, not user)"),
   pinned: z.boolean().optional()
     .describe("Pin node to prevent decay and auto-load at session start for matching projects"),
-  workerProvider: z.enum(["codex", "claude", "pi", "opencode"]).optional()
-    .describe("Worker harness for configure_runtime (codex, claude, pi, opencode)"),
+  workerProvider: z.enum(["codex", "claude", "pi", "opencode", "api"]).optional()
+    .describe("Worker harness for configure_runtime (codex, claude, pi, opencode, api)"),
   workerModel: z.string().optional()
     .describe("Model override for pipeline workers (e.g. 'sonnet', 'o3', 'gpt-4.1'). Harness-specific."),
-  fallbackProvider: z.enum(["codex", "claude", "pi", "opencode"]).optional()
+  fallbackProvider: z.enum(["codex", "claude", "pi", "opencode", "api"]).optional()
     .describe("Fallback worker harness for configure_runtime — used when the primary worker fails or times out (e.g. on a provider usage limit). Omit for no fallback."),
   fallbackModel: z.string().optional()
     .describe("Model for the fallback worker (harness-specific). Optional; defaults to the fallback harness's own default model."),

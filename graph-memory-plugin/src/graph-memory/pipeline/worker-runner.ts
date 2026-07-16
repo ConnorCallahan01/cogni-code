@@ -30,8 +30,13 @@ interface HarnessSpawnPlan {
   spawnOptions: SpawnOptions;
 }
 
+interface HarnessExecuteResult {
+  text: string;
+}
+
 interface HarnessAdapter {
-  buildPlan(prompt: string, opts: WorkerRunOptions, runtime: ReturnType<typeof loadRuntimeConfig>): HarnessSpawnPlan;
+  buildPlan?(prompt: string, opts: WorkerRunOptions, runtime: ReturnType<typeof loadRuntimeConfig>): HarnessSpawnPlan;
+  execute?(prompt: string, opts: WorkerRunOptions, runtime: ReturnType<typeof loadRuntimeConfig>): Promise<HarnessExecuteResult>;
 }
 
 // ── Codex Adapter ───────────────────────────────────────────────────────────
@@ -193,6 +198,80 @@ const opencodeAdapter: HarnessAdapter = {
   },
 };
 
+// ── Direct API Adapter ──────────────────────────────────────────────────────
+// Calls the Anthropic Messages API directly via fetch — no subprocess, no CLI
+// binary, no Docker. Respects the standard Anthropic env-var surface so it
+// works transparently with credential proxies (e.g. OneCLI Agent Vault in
+// NanoClaw containers) that route to a subscription rather than API billing.
+//
+// Auth precedence (mirrors the Anthropic SDK / Claude Code):
+//   1. ANTHROPIC_API_KEY    → x-api-key header      (direct API key)
+//   2. ANTHROPIC_AUTH_TOKEN → Authorization: Bearer  (proxy / subscription token)
+//   3. ~/.claude/.credentials.json                   (Claude CLI OAuth fallback)
+
+function resolveAnthropicAuth(): { value: string; header: string; headerName: string } | null {
+  if (process.env.ANTHROPIC_API_KEY) {
+    return { value: process.env.ANTHROPIC_API_KEY, header: process.env.ANTHROPIC_API_KEY, headerName: "x-api-key" };
+  }
+  if (process.env.ANTHROPIC_AUTH_TOKEN) {
+    return { value: process.env.ANTHROPIC_AUTH_TOKEN, header: `Bearer ${process.env.ANTHROPIC_AUTH_TOKEN}`, headerName: "Authorization" };
+  }
+  try {
+    const credPath = path.join(os.homedir(), ".claude", ".credentials.json");
+    const creds = JSON.parse(fs.readFileSync(credPath, "utf-8"));
+    if (creds.claude_ai_os_api_key) {
+      return { value: creds.claude_ai_os_api_key, header: creds.claude_ai_os_api_key, headerName: "x-api-key" };
+    }
+  } catch { /* credentials file absent or unreadable */ }
+  return null;
+}
+
+const apiAdapter: HarnessAdapter = {
+  async execute(prompt, opts, runtime) {
+    const auth = resolveAnthropicAuth();
+    if (!auth) {
+      throw new Error(
+        "No Anthropic credentials found. Set ANTHROPIC_API_KEY (direct API) " +
+        "or ANTHROPIC_AUTH_TOKEN + ANTHROPIC_BASE_URL (proxy / subscription) " +
+        "to use the 'api' worker provider."
+      );
+    }
+
+    const model = opts.model
+      || runtime.docker.workerModel
+      || "claude-sonnet-4-20250514";
+
+    const baseUrl = process.env.ANTHROPIC_BASE_URL || "https://api.anthropic.com";
+
+    const res = await fetch(`${baseUrl}/v1/messages`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "anthropic-version": "2023-06-01",
+        [auth.headerName]: auth.header,
+      },
+      body: JSON.stringify({
+        model,
+        max_tokens: 16000,
+        messages: [{ role: "user", content: prompt }],
+      }),
+    });
+
+    if (!res.ok) {
+      const body = await res.text();
+      throw new Error(`Anthropic API error ${res.status}: ${body}`);
+    }
+
+    const data = await res.json() as any;
+    const text = (data.content || [])
+      .filter((b: any) => b.type === "text")
+      .map((b: any) => b.text)
+      .join("\n");
+
+    return { text };
+  },
+};
+
 // ── Harness Dispatch ────────────────────────────────────────────────────────
 
 const ADAPTERS: Record<WorkerProvider, HarnessAdapter> = {
@@ -200,6 +279,7 @@ const ADAPTERS: Record<WorkerProvider, HarnessAdapter> = {
   claude: claudeAdapter,
   pi: piAdapter,
   opencode: opencodeAdapter,
+  api: apiAdapter,
 };
 
 function resolveHarness(): WorkerProvider {
@@ -225,16 +305,10 @@ function resolveHarness(): WorkerProvider {
     // Fall through
   }
 
-  // 3. Auto-detect: first match on PATH, then codex
-  const which = (cmd: string) => {
-    const r = spawn("which", [cmd], { stdio: ["ignore", "pipe", "ignore"] });
-    return new Promise<boolean>((resolve) => {
-      r.on("close", (code) => resolve(code === 0));
-      r.on("error", () => resolve(false));
-    });
-  };
-  // We can't easily check sync in the adapter function, so default to codex
-  // and let the spawn itself fail if codex isn't available (that's a clear error)
+  // 3. Auto-detect: CLI binary on PATH, then API credentials, then codex
+  // Containerized agents (e.g. NanoClaw) set ANTHROPIC_AUTH_TOKEN + BASE_URL
+  // routed through a credential proxy; direct setups use ANTHROPIC_API_KEY.
+  if (process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN) return "api";
   return "codex";
 }
 
@@ -304,9 +378,54 @@ async function runWorkerAttempt(
 
   const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
   const logFile = path.join(opts.logDir, `${opts.name}-${attempt.provider}-${timestamp}.log`);
+  const timeoutMs = Math.max(30_000, opts.timeoutMs ?? 300_000);
+
+  // ── In-process path: direct API call, no subprocess ──
+  if (adapter.execute) {
+    const startedAt = new Date().toISOString();
+    activityBus.log("system:info", `Worker (${attempt.provider}): ${opts.name} via API`, { harness: attempt.provider, logFile });
+
+    let timedOut = false;
+    let exitCode: number;
+    try {
+      const timer = new Promise<never>((_, reject) =>
+        setTimeout(() => { timedOut = true; reject(new Error("timeout")); }, timeoutMs)
+      );
+      const result = await Promise.race([
+        adapter.execute(opts.prompt, { ...opts, model: attempt.model }, runtime),
+        timer,
+      ]);
+      fs.writeFileSync(logFile, result.text);
+      exitCode = 0;
+    } catch (err: any) {
+      fs.writeFileSync(logFile, `[${attempt.provider}] ${err?.message || err}`);
+      exitCode = 1;
+      activityBus.log("system:error", `Worker (${attempt.provider}) API error: ${err?.message || err}`, { harness: attempt.provider });
+    }
+
+    const metaPath = logFile + ".meta.json";
+    try {
+      fs.writeFileSync(metaPath, JSON.stringify({
+        name: opts.name,
+        harness: attempt.provider,
+        model: attempt.model ?? null,
+        pid: undefined,
+        startedAt,
+        logFile,
+        exitCode,
+        timedOut,
+        finishedAt: new Date().toISOString(),
+        status: exitCode === 0 && !timedOut ? "completed" : "failed",
+      }, null, 2));
+    } catch { /* ignore */ }
+
+    return { exitCode, logFile, pid: undefined, timedOut };
+  }
+
+  // ── Subprocess path: spawn a CLI harness ──
   const fd = fs.openSync(logFile, "w");
 
-  const plan = adapter.buildPlan(opts.prompt, { ...opts, model: attempt.model }, runtime);
+  const plan = adapter.buildPlan!(opts.prompt, { ...opts, model: attempt.model }, runtime);
 
   // Redirect stdio to log file for detached output
   plan.spawnOptions.stdio = ["ignore", fd, fd];
@@ -319,7 +438,6 @@ async function runWorkerAttempt(
   const pid = child.pid;
   activityBus.log("system:info", `Worker spawned: ${plan.command} ${plan.args.slice(0, 3).join(" ")}... (pid=${pid})`, { harness: attempt.provider, pid, logFile });
 
-  const timeoutMs = Math.max(30_000, opts.timeoutMs ?? 300_000);
   let timedOut = false;
   let forceKillTimer: NodeJS.Timeout | null = null;
   const timeout = setTimeout(() => {

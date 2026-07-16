@@ -1,0 +1,128 @@
+---
+title: Install
+description: Install Cogni-Code globally via npm or from source.
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+## Install
+
+<Tabs>
+  <TabItem label="Auto-detect" default>
+    ```bash
+    npm install -g cogni-code
+    cogni-code install
+    ```
+
+    Detects every installed harness (Claude Code, Codex CLI, OpenCode) and wires them all. Memory is shared across harnesses — install into several and they all see the same graph.
+
+    For a custom storage location: `cogni-code install --graph-root /path/to/memory`
+  </TabItem>
+  <TabItem label="Claude Code">
+    ```bash
+    npm install -g cogni-code
+    cogni-code install --claude
+    ```
+
+    Symlinks the package into `~/.claude/plugins/`. Restart Claude Code or run `/mcp` to reconnect — the `graph_memory` tool and all slash commands come live.
+
+    Does **not** touch `settings.json`.
+  </TabItem>
+  <TabItem label="Codex CLI">
+    ```bash
+    npm install -g cogni-code
+    cogni-code install --codex
+    ```
+
+    Merges hooks into `~/.codex/hooks.json` using CLI commands (not absolute paths, so updates propagate automatically). Run `/hooks` in Codex to review and trust the cogni-code hooks.
+  </TabItem>
+  <TabItem label="OpenCode">
+    ```bash
+    npm install -g cogni-code
+    cogni-code install --opencode
+    ```
+
+    Installs the native plugin extension and slash commands into your OpenCode config directory.
+  </TabItem>
+  <TabItem label="NanoClaw / Container">
+    Locked-down containers may block `npm install -g`. Use a local install:
+
+    ```bash
+    npm install cogni-code
+    npx cogni-code install
+    ```
+
+    The container likely has no Docker. Set up the pipeline with the `api` worker (see [API mode](#background-pipeline) below) — it calls the Anthropic API directly via `fetch` and routes through your existing credential proxy (e.g. OneCLI Agent Vault) for subscription access.
+  </TabItem>
+</Tabs>
+
+<details>
+<summary>Permission denied (EACCES)?</summary>
+
+Use a local install instead of global:
+
+```bash
+npm install cogni-code && npx cogni-code install
+```
+
+All commands work the same — just prefix with `npx`.
+</details>
+
+Updates are automatic — `npm update -g cogni-code` updates all hooks instantly (they call the `cogni-code` CLI, not absolute file paths).
+
+## Background pipeline
+
+### Docker mode (recommended for desktops)
+
+```bash
+cogni-code install --docker
+```
+
+Sets up the Docker daemon that runs the scribe/librarian/dreamer pipeline automatically. Requires Docker Desktop or Podman. Auto-detects the worker provider (codex, claude, opencode, or api) or specify with `--worker codex`.
+
+### API mode (no Docker required)
+
+If your environment has no Docker or Podman — a NanoClaw container, a sandbox, a CI runner — the `api` worker runs the full pipeline via direct HTTP calls. No CLI agent binary, no subprocess:
+
+```bash
+cogni-code install --docker --worker api
+```
+
+The `api` worker respects the standard Anthropic env-var surface, so it routes through whatever credential infrastructure your agent already uses:
+
+| Env var | Auth method | Use case |
+|---|---|---|
+| `ANTHROPIC_API_KEY` | `x-api-key` header | Direct API key (bills per-token) |
+| `ANTHROPIC_AUTH_TOKEN` + `ANTHROPIC_BASE_URL` | `Authorization: Bearer` | **Credential proxy** (e.g. OneCLI Agent Vault in NanoClaw) — routes to your **subscription**, no API billing |
+
+It auto-activates when credentials are present and no CLI harness is detected. You can also start the daemon directly without Docker:
+
+```bash
+node "$(npm root -g)/cogni-code/dist/graph-memory/pipeline/daemon.js"
+```
+
+## From source (git clone)
+
+```bash
+git clone https://github.com/ConnorCallahan01/cogni-code.git
+cd cogni-code/graph-memory-plugin
+npm install && npm run build
+
+./bin/install.sh           # Claude Code
+./bin/install-codex.sh     # Codex CLI
+./bin/install-opencode.sh  # OpenCode
+```
+
+## First run
+
+Then start a session and run:
+
+```text
+/memory-onboard
+```
+
+The onboard wizard walks you through runtime mode and seeds your first memory nodes. If you installed via npm, the graph is already initialized — onboarding is optional.
+
+---
+
+> **Installing as an agent?** See the [agent install guide](/for-agents/) — a flat, executable runbook designed for AI agents given a URL and told to install.

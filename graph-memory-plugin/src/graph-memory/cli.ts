@@ -37,7 +37,7 @@ Usage:
 
 Flags:
   --docker        Also set up the Docker daemon for background pipeline processing
-  --worker <p>    Worker provider for Docker mode (codex, claude, opencode, pi)
+  --worker <p>    Worker provider for pipeline (codex, claude, opencode, pi, or api for direct Anthropic API)
   --graph-root    Custom graph memory storage location (first-time init only)
 
 Hook events:

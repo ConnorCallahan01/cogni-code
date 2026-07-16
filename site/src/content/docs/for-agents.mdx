@@ -1,0 +1,226 @@
+---
+title: For Agents
+description: Executable install and usage guide for AI agents. Structured as a runbook — follow each step in order.
+---
+
+This page is written for AI agents. If a human gave you this URL and asked you to install Cogni-Code, follow the steps below in order. Skip steps that don't apply to your environment.
+
+## What this is
+
+Cogni-Code is a persistent knowledge graph memory system. It gives your agent a `graph_memory` MCP tool for storing and retrieving facts, decisions, and patterns across sessions. Memory is stored as plain markdown files on disk.
+
+## Prerequisites
+
+Check each before proceeding:
+
+- **Node.js 18+**: run `node --version`. If missing, install from nodejs.org or use `nvm install 20`.
+- **npm**: run `npm --version`. Usually bundled with Node.
+- **A supported harness**: Claude Code, Codex CLI, OpenCode, or any MCP-compatible agent.
+
+## Step 1 — Install
+
+### Standard install (global)
+
+```bash
+npm install -g cogni-code
+cogni-code install
+```
+
+This auto-detects your harness and wires everything. If you know your harness, specify it:
+
+```bash
+cogni-code install --claude       # Claude Code only
+cogni-code install --codex        # Codex CLI only
+cogni-code install --opencode     # OpenCode only
+```
+
+### If `npm install -g` fails with EACCES
+
+You are likely in a locked-down container. Use a local install instead:
+
+```bash
+npm install cogni-code
+npx cogni-code install
+```
+
+All subsequent commands use `npx` as a prefix. Example: `npx cogni-code status`.
+
+## Step 2 — Verify
+
+```bash
+cogni-code status
+```
+
+**Expected output**: a summary showing graph memory health, node count, and runtime mode. If you see an error about uninitialized memory, run `cogni-code install` again (it initializes the graph on first run).
+
+## Step 3 — Reconnect the MCP tool
+
+Restart your agent session, or run `/mcp` inside Claude Code to reconnect. The `graph_memory` MCP tool should now be available.
+
+To confirm:
+
+```text
+graph_memory(action="status")
+```
+
+## Step 4 — Test the memory loop
+
+Create a test node:
+
+```text
+graph_memory(
+  action="remember",
+  path="test/installation-check",
+  gist="First memory node — installation verified",
+  content="This node confirms cogni-code is working.",
+  tags=["test"]
+)
+```
+
+Recall it:
+
+```text
+graph_memory(action="recall", query="installation check")
+```
+
+**Expected**: your test node appears in the results with a relevance score.
+
+Delete the test node:
+
+```text
+graph_memory(action="read_node", path="test/installation-check")
+```
+
+Then remove the file at `~/.graph-memory/nodes/test/installation-check.md`.
+
+## Step 5 — Background pipeline (optional but recommended)
+
+The pipeline (scribe, auditor, librarian, dreamer) distills conversations into memory automatically. Without it, you can still use `remember`/`recall` manually.
+
+### Option A: Docker mode
+
+If Docker or Podman is available:
+
+```bash
+cogni-code install --docker
+```
+
+This starts a background daemon that runs the pipeline automatically.
+
+### Option B: API mode (no Docker)
+
+If Docker is not available (containers, sandboxes, CI), use the `api` worker — it calls the Anthropic API directly via `fetch`:
+
+```bash
+cogni-code install --docker --worker api
+```
+
+Or configure from a session:
+
+```text
+graph_memory(action="configure_runtime", runtimeMode="manual", workerProvider="api")
+```
+
+Then start the daemon as a background process:
+
+```bash
+# Global install:
+node "$(npm root -g)/cogni-code/dist/graph-memory/pipeline/daemon.js" &
+
+# Local install:
+node "node_modules/cogni-code/dist/graph-memory/pipeline/daemon.js" &
+```
+
+### Credential requirements for API mode
+
+The `api` worker needs one of these environment variables:
+
+| Variable | Header | When to use |
+|---|---|---|
+| `ANTHROPIC_API_KEY` | `x-api-key` | Direct API key (bills per-token) |
+| `ANTHROPIC_AUTH_TOKEN` | `Authorization: Bearer` | Credential proxy like OneCLI Agent Vault (subscription, no billing) |
+
+Also respects `ANTHROPIC_BASE_URL` for proxy routing. If neither is set, check `~/.claude/.credentials.json` as a fallback.
+
+### Option C: Manual mode (no pipeline)
+
+Skip pipeline setup entirely. You can still use `remember`, `recall`, `search`, and all other actions on-demand. Run `graph_memory(action="consolidate")` manually when you want to process buffered session data.
+
+## Environment variables
+
+| Variable | Purpose | Required |
+|---|---|---|
+| `ANTHROPIC_API_KEY` | Direct Anthropic API auth (api worker) | Only for api worker without proxy |
+| `ANTHROPIC_AUTH_TOKEN` | Proxy/subscription auth (api worker) | Only for api worker with proxy |
+| `ANTHROPIC_BASE_URL` | Override API endpoint (proxy routing) | Only for api worker with proxy |
+| `GRAPH_MEMORY_ROOT` | Override graph storage location | No (defaults to `~/.graph-memory/`) |
+| `GRAPH_MEMORY_WORKER_PROVIDER` | Force a specific worker at runtime | No |
+
+## Common actions
+
+### Remember a fact
+
+```text
+graph_memory(
+  action="remember",
+  path="decisions/my-decision",
+  gist="One-sentence summary (15-25 words)",
+  content="Full details of the decision or pattern...",
+  tags=["decisions", "tag2"],
+  confidence=0.8
+)
+```
+
+**Required fields**: `path` and `gist`. All others are optional.
+
+### Recall memory
+
+```text
+graph_memory(action="recall", query="keyword or topic", depth=1)
+```
+
+### Search (keyword)
+
+```text
+graph_memory(action="search", query="deployment")
+```
+
+### Read a specific node
+
+```text
+graph_memory(action="read_node", path="decisions/my-decision")
+```
+
+### Check memory health
+
+```text
+graph_memory(action="status")
+```
+
+## Troubleshooting
+
+### `npm install -g` fails with EACCES
+
+You are in a locked-down container. Use `npm install cogni-code && npx cogni-code install` instead.
+
+### MCP tool not available after install
+
+Restart your agent session. In Claude Code, run `/mcp`. The tool name is `graph_memory` (with an underscore).
+
+### Pipeline daemon won't start
+
+Check if Docker is running (`docker info`). If no Docker, use `--worker api` mode (see Step 5 Option B).
+
+### `api` worker: "No Anthropic credentials found"
+
+Set one of:
+- `export ANTHROPIC_API_KEY="sk-ant-..."` (direct API key)
+- `export ANTHROPIC_AUTH_TOKEN="..."` + `export ANTHROPIC_BASE_URL="https://your-proxy..."` (proxy/subscription)
+
+### Node experimental warning on stderr
+
+Harmless. Fixed in v3.5.0+ — the warning is now suppressed automatically.
+
+### Remember validation error: "path and gist required"
+
+Both `path` and `gist` are required. The error message includes an example payload showing the correct format.

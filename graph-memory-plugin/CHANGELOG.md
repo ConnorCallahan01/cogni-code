@@ -1,5 +1,28 @@
 # Changelog
 
+## [3.5.0] (2026-07-16) — Direct-API worker + agent UX improvements
+
+### Added
+
+- **`api` worker provider** — a fifth worker harness that calls the Anthropic Messages API directly via `fetch` (zero new dependencies). No subprocess, no CLI binary, no Docker required. Pipeline stages (scribe, auditor, librarian, dreamer) run as in-process HTTP calls.
+  - Respects the full Anthropic env-var surface: `ANTHROPIC_API_KEY` (`x-api-key` header), `ANTHROPIC_AUTH_TOKEN` (`Authorization: Bearer`), and `ANTHROPIC_BASE_URL` for credential proxy routing. Falls back to `~/.claude/.credentials.json`.
+  - **Subscription-compatible**: in containerized agent setups like NanoClaw (OneCLI Agent Vault), the API worker routes through the existing credential proxy — subscription access, no API billing.
+  - Auto-activates when Anthropic credentials are present and no CLI harness binary is on PATH.
+  - Install with `cogni-code install --docker --worker api`. When Docker is absent but credentials are set, the installer configures manual mode with the API worker and prints daemon startup instructions.
+
+### Changed
+
+- **Batch validation for `remember`** — missing `path` and `gist` are now reported together with an example payload, instead of one field at a time. Saves one round trip per missing field for agents calling the tool programmatically.
+
+### Fixed
+
+- **UNDICI experimental proxy warning suppressed** — every CLI invocation no longer prints Node's `ExperimentalWarning: ... is an experimental feature` to stderr. Feature-tested before applying `--disable-warning=ExperimentalWarning` in `NODE_OPTIONS`, so it is safe on Node 18.
+
+### Docs
+
+- **README** — new "No Docker? Direct API Mode" section with auth-env-var table. EACCES workaround (`npm install cogni-code && npx cogni-code install`) in Quick Start.
+- **Site docs** — install, pipeline, and harnesses pages updated for the `api` worker.
+
 ## [3.4.4] (2026-07-15) — Point npm homepage & README at cognicode.app
 
 ### Changed
