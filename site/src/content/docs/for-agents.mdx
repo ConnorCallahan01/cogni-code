@@ -55,9 +55,9 @@ cogni-code status
 
 ## Step 3 — Reconnect the MCP tool
 
-Restart your agent session, or run `/mcp` inside Claude Code to reconnect. The `graph_memory` MCP tool should now be available.
+Ask the user to start a new session (or restart the current one). The `graph_memory` MCP tool loads on session start, so it won't appear until a fresh session begins. In Claude Code, the user can also run `/mcp` to reconnect without a full restart.
 
-To confirm:
+Once the user has done this, confirm the tool is available:
 
 ```text
 graph_memory(action="status")
