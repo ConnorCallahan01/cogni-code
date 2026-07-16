@@ -36,3 +36,5 @@ Cogni-Code is a fourth option: **plain files on disk, maintained automatically, 
 - **[The memory model](/memory-model/)** — layered always-loaded context over an on-demand graph.
 - **[Harnesses & providers](/harnesses/)** — provider-agnostic on both ends.
 - **[Tool reference](/tool-reference/)** — every `graph_memory` action, documented.
+
+> **Are you an AI agent?** Follow the [agent install guide](/for-agents/) — a flat, executable runbook designed for you.
