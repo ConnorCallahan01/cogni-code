@@ -1,68 +1,45 @@
-# Graph Memory Roadmap
+# Cogni-Code Roadmap
 
-## Current State (2026-05-29)
+## Current State (2026-07-16)
 
 | System | Status |
 |--------|--------|
-| Active pipeline | scribe → auditor → librarian → dreamer (battle-tested) |
+| npm package | Published as [`cogni-code`](https://www.npmjs.com/package/cogni-code) v3.5.0 — `npm install -g cogni-code` |
+| Harnesses | Four first-class: Claude Code, Codex CLI, OpenCode, pi — all with full hooks + MCP + injection |
+| Worker providers | Five: codex, claude, opencode, pi (CLI subprocess), api (direct HTTP, no Docker) |
+| Active pipeline | scribe → auditor → librarian → dreamer + observer → compressor (battle-tested) |
 | Mental model | Fully operational — `mind/`, `lenses/`, `sessions/` |
-| Notion sync | Operational — two-way, 5 stewards, chunked sync |
-| Session injection | model.json → MAP → PINNED → WORKING (~11k tokens) |
-| Phase 5 items | All completed (see below) |
-| Phase 10 cleanup | Completed — version labels removed, unified architecture |
+| Notion sync | Operational — two-way, 5 stewards, chunked sync, inbound triage |
+| Session injection | model.json → guardrails → MAP → PINNED → WORKING → DREAMS (~11k tokens / 15k budget) |
+| Docs & landing | [cognicode.app](https://cognicode.app) — Astro + Starlight, branded landing, full docs, agent install guide |
+| CI/CD | Auto-publish to npm via GitHub Actions (Trusted Publishing + provenance) |
+| Container support | NanoClaw, sandboxes, CI runners — `api` worker routes through credential proxies for subscription access |
 
 ---
 
 ## Completed
 
+### Foundation (v1–v3.0)
+
 - **Phase 1 (Stop the Bleeding):** PRIORS truncation, 15k injection budget, pinned node enforcement, orphan cleanup, token accounting.
-- **Phase 2 (Quality Over Quantity):** Decay rate defaults, backfill, archive threshold lowered, dream promotion threshold fixed, PRIORS compression to 574 tokens.
-- **Phase 3 (Operational):** 8-factor health score, auditor threshold, low-confidence ratio tracking, access tracking on all recall paths, project-aware MAP injection, project-first dashboard.
-- **Phase 4 (Intelligence):** Project-aware MAP filtering, cross-session dedup, dreamer prompt with implicit reinforcement, access tracking. (Auditor+librarian merge deferred.)
-- **Phase 5 (Automation & Cleanup):**
-  - Decay runs on every daemon tick (R1 resolved)
-  - Mechanical dream reinforcement on node access (R2 resolved)
-  - Scribe default confidence raised to 0.6 (R3 resolved)
-  - Skillforge threshold lowered to 0.55 (R4 resolved)
-  - MAP rebuilds after decay/archival
-- **Pipeline merge:** Per-project scribe→auditor→librarian→dreamer pipeline, global observer→compressor, project-aware job scheduling, compatibility cruft removed.
-- **Dashboard:** Storage unification wiring, path audit fixes, node edit dual-index updates.
+- **Phase 2 (Quality Over Quantity):** Decay rate defaults, backfill, archive threshold lowered, dream promotion threshold fixed.
+- **Phase 3 (Operational):** 8-factor health score, auditor threshold, access tracking on all recall paths, project-aware MAP injection.
+- **Phase 4 (Intelligence):** Project-aware MAP filtering, cross-session dedup, dreamer implicit reinforcement.
+- **Phase 5 (Automation & Cleanup):** Decay on every tick, mechanical dream reinforcement, scribe confidence tuning, Skillforge threshold.
+- **Pipeline merge:** Per-project scribe→auditor→librarian→dreamer, global observer→compressor, project-aware scheduling.
+- **v2/v3 unification:** Single canonical node store (`nodes/`), version labels removed, unified architecture.
 
----
+### Distribution (v3.1–v3.4)
 
-## Remaining Issues — Resolved
+- **v3.1.0 — Version label cleanup:** All v2/v3/v4 labels removed from source, extensions, tests, and docs. Dead extension injection fixed (renamed exports). `GRAPH_MEMORY_V3` phantom env var removed.
+- **v3.2.0 — Worker fallback & platform expansion:** User-selectable fallback worker (retries on usage limits). Native Windows (Git Bash) support with unprivileged junctions and node-direct hook commands. Podman container-engine fallback. Graph budget raised (300→3000 nodes, 12k→16k MAP tokens). Observer/compressor docs corrected — always active, never gated.
+- **v3.3.0 — Codex CLI first-class:** Full session-start injection, ambient auto-recall, conversation capture, compaction-boundary flush (`PreCompact` hook), `graph_memory` tool. No harness runs in degraded mode.
+- **v3.4.0 — npm package (`cogni-code`):** CLI dispatcher (`install`, `hook`, `mcp`, `status`, `--version`). Auto-detects harnesses. Hook registrations use CLI commands (version-independent, updates propagate without reinstall). Claude Code symlink, Codex hook merge, OpenCode plugin install. `--docker` flag for daemon setup. Graph auto-initialization with pointer detection.
+- **v3.4.1–v3.4.4 — CI & docs:** Auto-publish via Trusted Publishing (OIDC + provenance). Publish-before-tag ordering fix. Docs & landing site at cognicode.app (Astro + Starlight, Cloudflare Pages).
 
-All original remaining issues (R1–R4) were resolved in Phase 5:
+### Agent UX (v3.5)
 
-- **R1 (Decay not automatic):** `runDecay()` now runs on every daemon tick.
-- **R2 (Dream reinforcement prompt-only):** Mechanical reinforcement added — node access bumps referenced dream confidence +0.05.
-- **R3 (Scribe over-extraction):** Default confidence raised to 0.6; noise nodes archive via automatic decay.
-- **R4 (Skillforge barely running):** Threshold lowered to 0.55.
-
----
-
-## Current Focus
-
-### Notion Sync Operational Polish
-
-- Workspace manifests and hash gates active
-- Five steward agents (knowledge, project, tasks, enrichment, workspace) plus inbound triage
-- Chunked sync (100 items per batch)
-- Relational database architecture (Patterns, Dreams, Projects as Notion databases)
-- Project name normalization and error-path lastSyncAt fix shipped
-
-### Pipeline Reliability
-
-- Edges/anti_edges parsing hardened with `Array.isArray()` guards — was crashing auditor on non-array YAML values
-- Daemon steward isolation (try/catch per steward)
-- `execNtn` env var injection for Docker keychain priority
-- Root CHANGELOG.md synced with plugin CHANGELOG.md for release workflow
-
-### Dashboard Enhancements
-
-- Server path audit: all 5 data-source bugs fixed
-- Observation count endpoint reads live from JSONL
-- V3 naming cleanup: all 11 API routes renamed from `/api/v3/*` to neutral names
+- **v3.5.0 — Direct-API worker + agent UX:** Fifth worker provider (`api`) — calls Anthropic Messages API via `fetch`, no subprocess/Docker/CLI binary. Respects `ANTHROPIC_AUTH_TOKEN` + `ANTHROPIC_BASE_URL` for credential proxy routing (subscription-compatible with NanoClaw/OneCLI). Batch validation for `remember` (all missing fields at once). UNDICI warning suppressed. Tabbed install per harness on docs site. Agent install guide (`/for-agents/`) — flat executable runbook for AI agents given a URL.
 
 ---
 
@@ -83,12 +60,46 @@ Session injection uses a **split budget** — global context + project context:
 
 ---
 
+## What's Next
+
+### Near-term
+
+- **Company memory** — shared/team knowledge graph layer. Individual graphs work exactly as today, with one addition: decisions and patterns are shared across an organization with provenance and audience classification. Design spec in `docs/company-memory/DESIGN.md`.
+- **Provider expansion** — OpenRouter, Ollama, and other providers as `api` worker backends or CLI harness options.
+- **Pipeline observability** — per-job token cost tracking, worker success rates, daemon health metrics surfaced in dashboard.
+
+### Under consideration
+
+- **Incremental MAP regeneration** — full regen is ~1s at current scale; incremental would help at 1000+ node graphs.
+- **Combine auditor + librarian** — clean separation works today; merge would reduce one LLM call per pipeline cycle.
+- **Agent self-onboarding** — the `/for-agents/` page is a runbook; making the plugin emit its own install instructions (so an agent discovers them without a URL) is the natural extension.
+
+---
+
 ## Deferred (Indefinitely)
 
 | Item | Why deferred |
 |------|--------------|
 | Per-job token cost tracking | Requires worker-level token instrumentation |
-| Incremental MAP regeneration | Complex refactor; full regen is ~1s |
-| Combine auditor + librarian | Large refactor; clean separation works |
-| PRIORS entry age counter for auto-demotion | Nice-to-have; compression already handles it |
-| Architecture cleanup | Completed in 3.1.0 — version labels removed, single unified architecture |
+| Incremental MAP regeneration | Full regen is fast enough at current scale |
+| Combine auditor + librarian | Clean separation works; merge saves one call but adds complexity |
+| PRIORS entry age counter | Compression already handles staleness |
+
+---
+
+## Harness & Provider Matrix
+
+| Harness | Session injection | Ambient recall | Conversation capture | Compaction flush | MCP tool |
+|---------|:-:|:-:|:-:|:-:|:-:|
+| Claude Code | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Codex CLI | ✅ | ✅ | ✅ | ✅ (PreCompact) | ✅ |
+| OpenCode | ✅ | ✅ | ✅ | ✅ | ✅ (native plugin) |
+| pi | ✅ | ✅ | ✅ | ✅ | ✅ (extension) |
+
+| Worker | Execution | Docker required | Subscription | Use case |
+|--------|-----------|:-:|:-:|----------|
+| codex | CLI subprocess | Yes | ChatGPT | Desktops with Codex |
+| claude | CLI subprocess | Yes | Claude Max | Desktops with Claude Code |
+| opencode | CLI subprocess | Yes | Provider keys | Desktops with OpenCode |
+| pi | CLI subprocess | Yes | Provider keys | Desktops with pi |
+| api | In-process `fetch` | No | Via proxy or API key | Containers, sandboxes, CI |
