@@ -1,5 +1,11 @@
 # Changelog
 
+## [3.5.1] (2026-07-16) — Fix UNDICI warning suppression
+
+### Fixed
+
+- **UNDICI warning now actually suppressed** — the v3.5.0 fix lived in `node-env.sh`, which is only sourced by shell wrapper scripts. The actual entry points (`cli.js`, `mcp-server.js`, `daemon.js`) run as direct Node processes that never source the wrapper. New `suppress-warnings.ts` module overrides `process.emit` to filter `ExperimentalWarning`, imported as the first line in all three entry points. Works regardless of invocation method (shebang, direct `node`, Claude Code subprocess, `npx`).
+
 ## [3.5.0] (2026-07-16) — Direct-API worker + agent UX improvements
 
 ### Added
