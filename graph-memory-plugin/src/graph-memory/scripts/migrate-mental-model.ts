@@ -16,7 +16,7 @@
  */
 import fs from "fs";
 import path from "path";
-import matter from "gray-matter";
+import matter from "../frontmatter.js";
 import { CONFIG, isGraphInitialized, reloadConfig } from "../config.js";
 import { initializeGraph } from "../index.js";
 import { walkNodes, extractFirstParagraph } from "../utils.js";

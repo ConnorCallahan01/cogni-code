@@ -1,6 +1,6 @@
 import fs from "fs";
 import path from "path";
-import matter from "gray-matter";
+import matter from "./frontmatter.js";
 import { z } from "zod";
 import { CONFIG, isGraphInitialized, saveGlobalConfig, reloadConfig } from "./config.js";
 import { initializeGraph } from "./index.js";

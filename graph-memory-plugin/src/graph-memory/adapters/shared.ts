@@ -7,7 +7,7 @@ import { ensureProjectWorkingFile } from "../project-working.js";
 import { getWorkingInjectionPaths } from "../working-files.js";
 import { enqueueJob } from "../pipeline/job-queue.js";
 import { activityBus } from "../events.js";
-import matter from "gray-matter";
+import matter from "../frontmatter.js";
 import fs from "fs";
 import path from "path";
 

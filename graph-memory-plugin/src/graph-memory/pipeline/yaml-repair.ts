@@ -8,7 +8,7 @@
  * 4. Missing opening quote on date values (2026-05-09')
  * 5. Bad indentation (leading space on top-level keys like soma)
  */
-import matter from "gray-matter";
+import matter from "../frontmatter.js";
 
 export interface RepairResult {
   repaired: string;

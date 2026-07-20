@@ -1,6 +1,6 @@
 import fs from "fs";
 import path from "path";
-import matter from "gray-matter";
+import matter from "../frontmatter.js";
 import { CONFIG } from "../config.js";
 import { computeNodeContentHash, computeMultiNodeContentHash } from "./skillforge-score.js";
 
