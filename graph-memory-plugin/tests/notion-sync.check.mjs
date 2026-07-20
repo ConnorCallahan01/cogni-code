@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "path";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import matter from "gray-matter";
+import matter from "../dist/graph-memory/frontmatter.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const pluginDir = path.resolve(__dirname, "..");
