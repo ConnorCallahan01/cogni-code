@@ -2,7 +2,7 @@ import fs from "fs";
 import path from "path";
 import { execSync } from "child_process";
 import crypto from "crypto";
-import matter from "gray-matter";
+import matter from "../frontmatter.js";
 import { CONFIG } from "../config.js";
 import { walkNodes } from "../utils.js";
 import { activityBus } from "../events.js";

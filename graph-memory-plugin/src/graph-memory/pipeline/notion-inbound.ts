@@ -1,7 +1,7 @@
 import fs from "fs";
 import path from "path";
 import crypto from "crypto";
-import matter from "gray-matter";
+import matter from "../frontmatter.js";
 import { CONFIG } from "../config.js";
 import { sanitizeProjectSlug } from "../working-files.js";
 import { activityBus } from "../events.js";

@@ -8,7 +8,7 @@
  */
 import fs from "fs";
 import path from "path";
-import matter from "gray-matter";
+import matter from "../graph-memory/frontmatter.js";
 import { CONFIG, isGraphInitialized } from "../graph-memory/config.js";
 import { writeSessionContextState } from "../graph-memory/context-refresh.js";
 import { isDirty, markDirty } from "../graph-memory/dirty-state.js";

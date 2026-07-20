@@ -1,5 +1,16 @@
 # Changelog
 
+## [3.5.2] (2026-07-20) — Remove gray-matter, eliminate supply-chain alerts
+
+### Changed
+
+- **Replaced gray-matter with internal frontmatter parser** — the 20-line `frontmatter.ts` module uses the already-present `js-yaml` dependency, providing the same `matter()` / `matter.stringify()` API. gray-matter hadn't been updated since 2022 and bundled 5 deprecated transitive dependencies (argparse, sprintf-js, extend-shallow, is-extendable, kind-of) plus a vulnerable `js-yaml@3.14.2`. The published package now has **zero vulnerabilities** and a cleaner Socket supply-chain profile.
+
+### Removed
+
+- **gray-matter** — no longer a dependency. All 5 deprecated transitive deps eliminated.
+- **js-yaml@3.14.2** (transitive via gray-matter) — the duplicate vulnerable copy is gone. Single `js-yaml@4.3.0` remains.
+
 ## [3.5.1] (2026-07-16) — Fix UNDICI warning suppression
 
 ### Fixed

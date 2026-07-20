@@ -7,7 +7,7 @@
  */
 import fs from "fs";
 import path from "path";
-import matter from "gray-matter";
+import matter, { GrayMatterFile } from "../frontmatter.js";
 import { CONFIG } from "../config.js";
 import { walkNodes, getNodeDepth } from "../utils.js";
 import { getProjectPreflightPath, ensureAuditDirectories } from "../working-files.js";
@@ -86,7 +86,7 @@ export function generatePreflightReport(project?: string): PreflightReport {
       continue;
     }
 
-    let parsed: matter.GrayMatterFile<string>;
+    let parsed: GrayMatterFile<string>;
     try {
       parsed = matter(rawFile);
     } catch {

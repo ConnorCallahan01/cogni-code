@@ -7,7 +7,7 @@
  */
 import fs from "fs";
 import path from "path";
-import matter from "gray-matter";
+import matter from "../frontmatter.js";
 import { CONFIG } from "../config.js";
 import { walkNodes, extractFirstParagraph } from "../utils.js";
 import { activityBus } from "../events.js";

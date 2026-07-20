@@ -12,7 +12,7 @@
  */
 import fs from "fs";
 import path from "path";
-import matter from "gray-matter";
+import matter from "../frontmatter.js";
 import { CONFIG } from "../config.js";
 import { activityBus } from "../events.js";
 import { safePath, walkNodes, getNodeDepth } from "../utils.js";
