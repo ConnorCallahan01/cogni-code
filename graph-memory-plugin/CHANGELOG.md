@@ -1,5 +1,23 @@
 # Changelog
 
+## [3.6.0] (2026-08-11) — PATH-independent installs, install verification, Codex slash commands
+
+### Fixed
+
+- **MCP startup failures in Codex and OpenCode for nvm/fnm/volta users** — harnesses spawn MCP servers and hooks with a sanitized `PATH`, so the bare `cogni-code` command the installer registered failed with `No such file or directory` / `Executable not found in $PATH` when node wasn't installed system-wide. The installer now registers absolute `node` + `cli.js` paths resolved at install time. If you hit this, update and re-run: `npm i -g cogni-code && cogni-code install`.
+- Reinstalls and installer switches (npm ↔ repo scripts) now replace stale hook entries instead of duplicating them.
+
+### Added
+
+- **Post-install verification** — `cogni-code install` spawns the exact registered MCP command with a sanitized `PATH` and requires a real MCP initialize handshake before reporting success; failures print the command and remediation steps.
+- **Codex slash commands** — `cogni-code install --codex` copies the plugin's commands into `~/.codex/prompts/`, so `/memory-onboard`, `/memory-status`, etc. work in Codex.
+- `@anthropic-ai/claude-code` in the Docker worker image, so `claude` works as a pipeline worker or fallback in the container.
+
+### Changed
+
+- Docker image consumes prebuilt `dist/` (built on the host) instead of compiling TypeScript in the container; added `.dockerignore`.
+- Dependency updates resolving all `npm audit` findings (0 vulnerabilities): `@modelcontextprotocol/sdk` (hono path-traversal/ReDoS chain), `js-yaml` (quadratic CPU in `!!omap`, CVE-2026-59870), `fast-uri` (host confusion), `ip-address` (SSRF misclassification), `body-parser` (DoS).
+
 ## [3.5.2] (2026-07-20) — Remove gray-matter, eliminate supply-chain alerts
 
 ### Changed
