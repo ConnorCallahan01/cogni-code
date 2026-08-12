@@ -2,31 +2,46 @@ import fs from "fs";
 import path from "path";
 import { resolvePkgRoot } from "./detect.js";
 
-const CLI_BIN = "cogni-code";
+// Codex spawns MCP servers and hooks with a sanitized PATH that may not
+// include the node/npm bin dir (e.g. nvm installs), so a bare "cogni-code"
+// fails with ENOENT. Resolve absolute paths at install time instead.
+export function resolveCliInvocation(): { nodeBin: string; cliJs: string } {
+  return {
+    nodeBin: process.execPath,
+    cliJs: path.join(resolvePkgRoot(), "dist", "graph-memory", "cli.js"),
+  };
+}
 
-const CODEX_HOOKS: Record<string, Array<{ matcher?: string; command: string }>> = {
-  SessionStart: [
-    { matcher: "startup|resume|clear|compact", command: `${CLI_BIN} hook session-start` },
-  ],
-  UserPromptSubmit: [
-    { command: `${CLI_BIN} hook user-prompt-submit` },
-  ],
-  PreToolUse: [
-    {
-      matcher: "mcp__graph-memory__graph_memory",
-      command: `echo '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow"}}'`,
-    },
-  ],
-  PostToolUse: [
-    { command: `${CLI_BIN} hook post-tool-use` },
-  ],
-  PreCompact: [
-    { matcher: "manual|auto", command: `${CLI_BIN} hook pre-compact` },
-  ],
-  Stop: [
-    { command: `${CLI_BIN} hook stop` },
-  ],
-};
+function hookCommand(event: string): string {
+  const { nodeBin, cliJs } = resolveCliInvocation();
+  return `"${nodeBin}" "${cliJs}" hook ${event}`;
+}
+
+function buildCodexHooks(): Record<string, Array<{ matcher?: string; command: string }>> {
+  return {
+    SessionStart: [
+      { matcher: "startup|resume|clear|compact", command: hookCommand("session-start") },
+    ],
+    UserPromptSubmit: [
+      { command: hookCommand("user-prompt-submit") },
+    ],
+    PreToolUse: [
+      {
+        matcher: "mcp__graph-memory__graph_memory",
+        command: `echo '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow"}}'`,
+      },
+    ],
+    PostToolUse: [
+      { command: hookCommand("post-tool-use") },
+    ],
+    PreCompact: [
+      { matcher: "manual|auto", command: hookCommand("pre-compact") },
+    ],
+    Stop: [
+      { command: hookCommand("stop") },
+    ],
+  };
+}
 
 export function installCodex(codexDir: string): string[] {
   const messages: string[] = [];
@@ -37,8 +52,27 @@ export function installCodex(codexDir: string): string[] {
 
   messages.push(...registerMcp(configTomlPath));
   messages.push(...mergeHooks(hooksJsonPath));
+  messages.push(...installPrompts(codexDir));
 
   return messages;
+}
+
+// Codex has no plugin command system; custom prompts in ~/.codex/prompts/
+// are its equivalent of slash commands (/memory-onboard, /memory-status, …).
+function installPrompts(codexDir: string): string[] {
+  const sourceDir = path.join(resolvePkgRoot(), "commands");
+  if (!fs.existsSync(sourceDir)) return [];
+
+  const promptsDir = path.join(codexDir, "prompts");
+  fs.mkdirSync(promptsDir, { recursive: true });
+
+  let count = 0;
+  for (const file of fs.readdirSync(sourceDir)) {
+    if (!file.endsWith(".md")) continue;
+    fs.copyFileSync(path.join(sourceDir, file), path.join(promptsDir, file));
+    count++;
+  }
+  return count > 0 ? [`Installed ${count} slash-command prompts in ${promptsDir}`] : [];
 }
 
 function registerMcp(configTomlPath: string): string[] {
@@ -68,12 +102,13 @@ function registerMcp(configTomlPath: string): string[] {
   }
   let body = out.join("\n").replace(/\s+$/, "");
 
+  const { nodeBin, cliJs } = resolveCliInvocation();
   body += [
     "",
     "",
     "[mcp_servers.graph-memory]",
-    `command = "${CLI_BIN}"`,
-    `args = ["mcp"]`,
+    `command = ${JSON.stringify(nodeBin)}`,
+    `args = [${JSON.stringify(cliJs)}, "mcp"]`,
     "",
   ].join("\n");
 
@@ -99,8 +134,15 @@ function mergeHooks(hooksJsonPath: string): string[] {
       const groupStr = JSON.stringify(group);
       if (JSON.stringify(matcherGroups).includes(groupStr)) return false;
       const hooks = group.hooks || [];
+      // Match our own entries (bare or absolute CLI) plus the shell
+      // installer's wrapper-script entries, so switching install methods
+      // replaces rather than duplicates.
+      const shellWrapper = /(cogni-code|graph-memory)[^\s"']*[\\/](?:bin[\\/](?:session-start|on-user-message|on-post-tool-use|on-pre-compact|on-assistant-response|session-end)\.sh|dist[\\/]hooks[\\/][\w-]+\.js)/;
       return !hooks.some((h: any) =>
-        typeof h.command === "string" && h.command.includes(`${CLI_BIN} hook`)
+        typeof h.command === "string" &&
+        (h.command.includes("cogni-code hook") ||
+          h.command.includes(`cli.js" hook`) ||
+          shellWrapper.test(h.command))
       );
     });
     existing.hooks[event].push(...matcherGroups);
@@ -113,7 +155,7 @@ function mergeHooks(hooksJsonPath: string): string[] {
 
 function buildIncomingHooks(): Record<string, any[]> {
   const result: Record<string, any[]> = {};
-  for (const [event, entries] of Object.entries(CODEX_HOOKS)) {
+  for (const [event, entries] of Object.entries(buildCodexHooks())) {
     result[event] = entries.map((e) => ({
       ...(e.matcher ? { matcher: e.matcher } : {}),
       hooks: [{ type: "command", command: e.command }],

@@ -40,9 +40,14 @@ if [ ! -d "$PLUGIN_DIR/node_modules" ]; then
   (cd "$PLUGIN_DIR" && npm install)
 fi
 
-# 2. Build so dist/ is up to date
-echo "Building..."
-(cd "$PLUGIN_DIR" && npm run build)
+# 2. Build so dist/ is up to date (prebuilt installs ship dist/ without src/)
+if [ -d "$PLUGIN_DIR/src" ]; then
+  echo "Building..."
+  (cd "$PLUGIN_DIR" && npm run build)
+elif [ ! -d "$PLUGIN_DIR/dist" ]; then
+  echo "Error: no dist/ found and no src/ to build from in $PLUGIN_DIR" >&2
+  exit 1
+fi
 
 mkdir -p "$CODEX_DIR"
 
@@ -188,9 +193,14 @@ node -e "
     existing.hooks[event] = existing.hooks[event].filter(group => {
       // Dedup exact matches (handles the echo auto-allow hook).
       if (incomingKeys.includes(JSON.stringify(group))) return false;
-      // Remove plugin-dir-based entries (handles reinstall with a new path).
+      // Remove plugin-dir-based entries (handles reinstall with a new path)
+      // and stale npm-installer entries (bare or absolute cogni-code CLI).
       const hooks = group.hooks || [];
-      return !hooks.some(h => typeof h.command === 'string' && h.command.includes(pluginDir));
+      return !hooks.some(h => typeof h.command === 'string' && (
+        h.command.includes(pluginDir) ||
+        h.command.includes('cogni-code hook') ||
+        h.command.includes('cli.js\" hook')
+      ));
     });
     existing.hooks[event].push(...matcherGroups);
   }

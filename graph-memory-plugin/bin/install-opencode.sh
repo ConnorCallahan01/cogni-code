@@ -36,9 +36,14 @@ if [ ! -d "$PLUGIN_DIR/node_modules" ]; then
   (cd "$PLUGIN_DIR" && npm install)
 fi
 
-# 2. Build so dist/ is up to date
-echo "Building..."
-(cd "$PLUGIN_DIR" && npm run build)
+# 2. Build so dist/ is up to date (prebuilt installs ship dist/ without src/)
+if [ -d "$PLUGIN_DIR/src" ]; then
+  echo "Building..."
+  (cd "$PLUGIN_DIR" && npm run build)
+elif [ ! -d "$PLUGIN_DIR/dist" ]; then
+  echo "Error: no dist/ found and no src/ to build from in $PLUGIN_DIR" >&2
+  exit 1
+fi
 
 # 3. Create directories if needed
 mkdir -p "$PLUGINS_DIR" "$COMMANDS_DIR"

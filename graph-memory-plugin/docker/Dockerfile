@@ -6,9 +6,9 @@ RUN apt-get update \
   && apt-get install -y --no-install-recommends ca-certificates curl \
   && rm -rf /var/lib/apt/lists/*
 
-COPY package.json package-lock.json ./
-RUN npm ci --ignore-scripts
-RUN npm install -g @openai/codex @mariozechner/pi-coding-agent
+COPY package.json ./
+RUN npm install --omit=dev --ignore-scripts
+RUN npm install -g @openai/codex @mariozechner/pi-coding-agent @anthropic-ai/claude-code
 RUN ARCH=$(uname -m) && \
     case "$ARCH" in aarch64) GOARCH="arm64" ;; x86_64) GOARCH="amd64" ;; esac && \
     curl -fsSL "https://github.com/anomalyco/opencode/releases/latest/download/opencode-linux-${GOARCH}.tar.gz" \
@@ -16,8 +16,7 @@ RUN ARCH=$(uname -m) && \
 
 RUN curl -fsSL https://ntn.dev/install.sh | bash
 
-COPY tsconfig.json ./
-COPY src ./src
+COPY dist ./dist
 COPY extensions ./extensions
 COPY bin ./bin
 COPY commands ./commands
@@ -27,8 +26,7 @@ COPY hooks ./hooks
 COPY opencode-commands ./opencode-commands
 COPY docker/healthcheck.sh /usr/local/bin/graph-memory-healthcheck
 
-RUN npm run build \
-  && chmod +x /usr/local/bin/graph-memory-healthcheck /app/bin/*.sh \
+RUN chmod +x /usr/local/bin/graph-memory-healthcheck /app/bin/*.sh \
   && HOME=/graph-memory-auth bash /app/bin/install-opencode.sh
 
 ENV GRAPH_MEMORY_DAEMON=1
