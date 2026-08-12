@@ -9,8 +9,9 @@
  * snapshots to feed the scribe pipeline.
  *
  * Usage (after installing as a pi package):
+ *   cogni-code install --pi            # registers the installed package
  *   pi install ./graph-memory-plugin   # local dev
- *   pi install npm:graph-memory        # from npm
+ *   pi install npm:cogni-code          # from npm
  */
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Type } from "typebox";

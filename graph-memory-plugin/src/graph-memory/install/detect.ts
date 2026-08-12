@@ -38,5 +38,11 @@ export function detectHarnesses(): HarnessInfo[] {
       configDir: path.join(home, ".config", "opencode"),
       detected: fs.existsSync(path.join(home, ".config", "opencode")),
     },
+    {
+      id: "pi",
+      name: "pi",
+      configDir: path.join(home, ".pi", "agent"),
+      detected: fs.existsSync(path.join(home, ".pi", "agent")),
+    },
   ];
 }
