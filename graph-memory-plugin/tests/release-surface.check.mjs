@@ -17,16 +17,51 @@ function readJson(relativePath) {
   return JSON.parse(readText(relativePath));
 }
 
-test("README documents every public slash command in the manifest", () => {
-  const manifest = readJson(".claude-plugin/plugin.json");
+test("README documents every public slash command", () => {
   const readme = readText("README.md");
+  const commandFiles = fs
+    .readdirSync(path.join(pluginDir, "commands"))
+    .filter((file) => file.endsWith(".md"));
 
-  for (const command of manifest.commands) {
-    assert.ok(
-      readme.includes(`/${command.name}`),
-      `README is missing /${command.name}`
+  assert.ok(commandFiles.length > 0, "commands/ directory is empty");
+  for (const file of commandFiles) {
+    const name = file.replace(/\.md$/, "");
+    assert.ok(readme.includes(`/${name}`), `README is missing /${name}`);
+  }
+});
+
+// Claude Code's plugin schema rejects manifests with a string author, the
+// legacy {name, description, file} component arrays, or an explicit hooks
+// field duplicating the auto-discovered hooks/hooks.json — and a plugin that
+// fails to load registers no hooks, which means no memory capture at all.
+test("plugin manifest matches the current Claude Code plugin schema", () => {
+  const manifest = readJson(".claude-plugin/plugin.json");
+  const pkg = readJson("package.json");
+
+  assert.equal(manifest.name, "graph-memory");
+  assert.equal(
+    manifest.version,
+    pkg.version,
+    "plugin.json version must match package.json — `claude plugin update` refreshes its cache by version, so a stale version ships stale code"
+  );
+  assert.equal(typeof manifest.author, "object", "author must be an object, not a string");
+  assert.ok(manifest.mcpServers?.["graph-memory"], "graph-memory MCP server entry is missing");
+  for (const legacyField of ["commands", "agents", "skills", "hooks"]) {
+    assert.equal(
+      manifest[legacyField],
+      undefined,
+      `plugin.json must not declare "${legacyField}" — those load via directory auto-discovery, and explicit entries fail current schema validation`
     );
   }
+});
+
+test("marketplace manifest declares the graph-memory plugin", () => {
+  const marketplace = readJson(".claude-plugin/marketplace.json");
+  assert.equal(marketplace.name, "cogni-code");
+  assert.ok(
+    marketplace.plugins.some((plugin) => plugin.name === "graph-memory" && plugin.source === "./"),
+    "marketplace.json must list the graph-memory plugin rooted at the package"
+  );
 });
 
 test("hooks manifest includes tracing hooks and self-allow rule", () => {
@@ -96,6 +131,7 @@ test("npm pack publishes the required release files", () => {
 
   for (const requiredPath of [
     ".claude-plugin/plugin.json",
+    ".claude-plugin/marketplace.json",
     "README.md",
     "LICENSE",
     "bin/install.sh",

@@ -1,5 +1,6 @@
 {
-  "name": "graph-memory-local",
+  "name": "cogni-code",
+  "description": "Local marketplace for the cogni-code graph-memory plugin, registered by `cogni-code install`.",
   "owner": {
     "name": "graph-memory"
   },

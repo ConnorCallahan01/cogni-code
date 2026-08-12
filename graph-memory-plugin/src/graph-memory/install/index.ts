@@ -1,6 +1,7 @@
 import { detectHarnesses, resolvePkgRoot, HarnessInfo } from "./detect.js";
 import { installCodex, resolveCliInvocation } from "./codex.js";
 import { installClaudeCode } from "./claude-code.js";
+import { installPi } from "./pi.js";
 import { isGraphInitialized, saveGlobalConfig, reloadConfig, CONFIG } from "../config.js";
 import { initializeGraph } from "../index.js";
 import { saveRuntimeConfig, loadRuntimeConfig, WorkerProvider } from "../runtime.js";
@@ -43,7 +44,7 @@ export async function runInstall(args: string[]): Promise<void> {
     const detected = harnesses.filter((h) => h.detected);
     if (detected.length === 0) {
       console.error("No AI harnesses detected.");
-      console.error("Install Claude Code, Codex CLI, or OpenCode first, or specify with --claude, --codex, --opencode.");
+      console.error("Install Claude Code, Codex CLI, OpenCode, or pi first, or specify with --claude, --codex, --opencode, --pi.");
       process.exit(1);
     }
     targets = detected;
@@ -54,6 +55,7 @@ export async function runInstall(args: string[]): Promise<void> {
       if (flags.includes("--claude") && h.id === "claude-code") return true;
       if (flags.includes("--codex") && h.id === "codex") return true;
       if (flags.includes("--opencode") && h.id === "opencode") return true;
+      if (flags.includes("--pi") && h.id === "pi") return true;
       return false;
     });
   }
@@ -75,6 +77,9 @@ export async function runInstall(args: string[]): Promise<void> {
           break;
         case "opencode":
           messages = installOpencode(harness.configDir, pkgRoot);
+          break;
+        case "pi":
+          messages = installPi(harness.configDir);
           break;
         default:
           console.log(`  (not yet supported via CLI — use bin/install-opencode.sh)`);
@@ -124,7 +129,8 @@ export async function runInstall(args: string[]): Promise<void> {
     step++;
   }
   if (targets.some((t) => t.id === "claude-code")) {
-    console.log(`\n${step}. Restart Claude Code or run /mcp to reconnect.`);
+    console.log(`\n${step}. Restart Claude Code to load the plugin (hooks, MCP server, and commands`);
+    console.log("   register at session start). Verify with: claude plugin list");
     step++;
   }
 

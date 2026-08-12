@@ -1,5 +1,22 @@
 # Changelog
 
+## [3.6.1] (2026-08-11) — Fix Claude Code plugin registration, add pi installer
+
+### Fixed
+
+- **Claude Code installs collected no memory** — Claude Code 2.1.x ignores plugins registered the way the installer did it (a `~/.claude/plugins/graph-memory` symlink plus a hand-written `graph-memory@local` registry entry, never enabled, naming a marketplace that doesn't exist), so hooks and the plugin MCP server silently never loaded. Installs only *looked* healthy because command files were copied into `~/.claude/commands/`. The installer now registers the package as a real plugin: `claude plugin marketplace add` → `install` → `update` (the package's own `.claude-plugin/marketplace.json` makes it a directory marketplace named `cogni-code`), with a direct config-file fallback mirroring the same records when the `claude` CLI isn't on PATH. If you hit this, update and re-run: `npm i -g cogni-code && cogni-code install`, then restart Claude Code.
+- **`.claude-plugin/plugin.json` failed current plugin schema validation** — `author` must be an object, the legacy `{name, description, file}` arrays for commands/agents/skills are rejected, and an explicit `hooks` field now collides with the auto-discovered `hooks/hooks.json`. The manifest is reduced to name/version/description/author/mcpServers; commands, agents, skills, and hooks load via directory auto-discovery.
+- **Installer cleans up artifacts from earlier versions** — the legacy symlink, `graph-memory@local` registry/enablement entries, hooks and user-scope MCP servers written directly into `~/.claude/settings.json` / `~/.claude.json`, and duplicate command links (only files verifiably ours: symlinks into the package, or byte-identical copies).
+
+### Added
+
+- **pi installer** — `cogni-code install` now detects pi (`~/.pi/agent`) and registers the extension package via `pi install`, with a direct `settings.json` fallback; stale registrations (dead Node-version paths, legacy `npm:graph-memory` specs) are removed. New `--pi` flag.
+- Release-surface tests now enforce the current plugin schema and that `plugin.json` version matches `package.json` (Claude Code refreshes its plugin cache by version, so a forgotten bump would ship stale code). New installer test suites cover the Claude Code and pi fallback paths, idempotency, and legacy cleanup.
+
+### Changed
+
+- `bin/install.sh` is now a thin wrapper: build, then delegate to the same `cogni-code install --claude` code path (single registration implementation; the old direct hook/MCP settings writes are gone).
+
 ## [3.6.0] (2026-08-11) — PATH-independent installs, install verification, Codex slash commands
 
 ### Fixed

@@ -34,6 +34,7 @@ Or specify a harness:
 cogni-code install --codex
 cogni-code install --claude
 cogni-code install --opencode
+cogni-code install --pi
 ```
 
 Updates are automatic — `npm update -g cogni-code` updates the package in place, and hooks and the MCP server use the new version immediately.
@@ -87,6 +88,7 @@ npm install && npm run build
 ./bin/install.sh           # Claude Code
 ./bin/install-codex.sh     # Codex CLI
 ./bin/install-opencode.sh  # OpenCode
+node dist/graph-memory/cli.js install --pi   # pi
 ```
 
 ## Architecture
