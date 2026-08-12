@@ -36,7 +36,9 @@ cogni-code install --claude
 cogni-code install --opencode
 ```
 
-Updates are automatic — `npm update -g cogni-code` updates the code and all hooks use the new version immediately (hooks call the `cogni-code` CLI, not absolute file paths).
+Updates are automatic — `npm update -g cogni-code` updates the package in place, and hooks and the MCP server use the new version immediately.
+
+No `PATH` setup is needed: registered commands pin absolute paths to your Node binary and the installed package. (Harnesses spawn MCP servers and hooks with a sanitized `PATH`, so a bare `cogni-code` command would fail for nvm/fnm/volta users — the installer sidesteps this entirely and verifies the MCP server launches in a clean environment before finishing.) The one caveat: if you switch or remove the Node version you installed with, re-run `npm i -g cogni-code && cogni-code install` to re-pin the paths.
 
 To also set up the Docker daemon for background pipeline processing:
 
@@ -193,6 +195,8 @@ cd graph-memory-plugin
 ```
 
 Then start Codex CLI and run `/hooks` to review and trust the graph-memory hooks. Codex supports lifecycle hooks (`SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `PreCompact`, `Stop`) with the same stdin/stdout contract as Claude Code.
+
+The npm installer (`cogni-code install --codex`) also copies the slash commands into `~/.codex/prompts/`, so `/memory-onboard`, `/memory-status`, etc. work in Codex as custom prompts.
 
 ### OpenCode
 

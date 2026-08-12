@@ -1,5 +1,5 @@
 import { detectHarnesses, resolvePkgRoot, HarnessInfo } from "./detect.js";
-import { installCodex } from "./codex.js";
+import { installCodex, resolveCliInvocation } from "./codex.js";
 import { installClaudeCode } from "./claude-code.js";
 import { isGraphInitialized, saveGlobalConfig, reloadConfig, CONFIG } from "../config.js";
 import { initializeGraph } from "../index.js";
@@ -90,6 +90,9 @@ export async function runInstall(args: string[]): Promise<void> {
 
   console.log(`Done! Installed for ${installed} harness(es).`);
 
+  console.log();
+  await verifyMcpLaunches();
+
   if (enableDocker) {
     console.log();
     setupDocker(workerOverride);
@@ -125,9 +128,69 @@ export async function runInstall(args: string[]): Promise<void> {
     step++;
   }
 
+  console.log(`\nNote: configs pin absolute paths to this Node install, so no PATH setup`);
+  console.log("is needed — but if you switch Node versions (nvm/fnm/volta), re-run:");
+  console.log("  npm i -g cogni-code && cogni-code install");
+
   console.log(`\n${step}. Add memory instructions to your project's AGENTS.md or CLAUDE.md`);
   console.log("   by copying a template from the templates/ directory.");
   console.log("   Or run /memory-onboard inside your agent for guided setup.");
+}
+
+// Harnesses spawn MCP servers with a sanitized environment, so a config that
+// works in the user's shell can still fail at session start (the original
+// "cogni-code not found" bug). Reproduce those conditions: spawn the exact
+// registered command with a minimal PATH and require an MCP initialize
+// handshake to succeed.
+async function verifyMcpLaunches(): Promise<void> {
+  const { nodeBin, cliJs } = resolveCliInvocation();
+  const env: Record<string, string> = {
+    HOME: process.env.HOME || "",
+    USERPROFILE: process.env.USERPROFILE || "",
+    PATH: process.platform === "win32" ? process.env.PATH || "" : "/usr/bin:/bin",
+  };
+
+  const ok = await new Promise<boolean>((resolve) => {
+    let settled = false;
+    const done = (result: boolean) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      child.kill();
+      resolve(result);
+    };
+
+    const child = spawn(nodeBin, [cliJs, "mcp"], {
+      env,
+      stdio: ["pipe", "pipe", "ignore"],
+    });
+    const timer = setTimeout(() => done(false), 15000);
+
+    child.on("error", () => done(false));
+    child.on("exit", () => done(false));
+
+    let buf = "";
+    child.stdout.on("data", (chunk: Buffer) => {
+      buf += chunk.toString();
+      if (buf.includes('"serverInfo"')) done(true);
+    });
+    child.stdin.write(JSON.stringify({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "initialize",
+      params: { protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: "cogni-code-install", version: "0" } },
+    }) + "\n");
+  });
+
+  if (ok) {
+    console.log("✓ Verified: MCP server launches with a clean environment.");
+  } else {
+    console.error("✗ MCP server failed to launch with a clean environment.");
+    console.error(`  Command: ${nodeBin} ${cliJs} mcp`);
+    console.error("  Check that both paths exist and are readable.");
+    console.error("  If you upgraded or removed the Node version that installed cogni-code");
+    console.error("  (nvm/fnm/volta), reinstall and re-run: npm i -g cogni-code && cogni-code install");
+  }
 }
 
 function installOpencode(opencodeDir: string, pkgRoot: string): string[] {
@@ -175,7 +238,10 @@ function installOpencode(opencodeDir: string, pkgRoot: string): string[] {
     config = JSON.parse(fs.readFileSync(configPath, "utf-8"));
   } catch { /* no config yet */ }
   if (!config.mcp) config.mcp = {};
-  config.mcp["graph-memory"] = { type: "local", command: ["cogni-code", "mcp"], enabled: true };
+  // Absolute paths: OpenCode may spawn MCP servers without the node/npm bin
+  // dir (e.g. nvm installs) on PATH, so a bare "cogni-code" fails to launch.
+  const cliJs = path.join(pkgRoot, "dist", "graph-memory", "cli.js");
+  config.mcp["graph-memory"] = { type: "local", command: [process.execPath, cliJs, "mcp"], enabled: true };
   fs.writeFileSync(configPath, JSON.stringify(config, null, 2) + "\n");
   messages.push(`Registered MCP in ${configPath}`);
 

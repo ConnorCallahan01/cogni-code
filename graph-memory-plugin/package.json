@@ -65,6 +65,7 @@
     "extensions/",
     "opencode-commands/",
     "templates/",
+    ".dockerignore",
     "CHANGELOG.md",
     "LICENSE"
   ],

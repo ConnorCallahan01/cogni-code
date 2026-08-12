@@ -60,8 +60,14 @@ if [ ! -d "$PLUGIN_DIR/node_modules" ]; then
 fi
 
 # 2. Build on every install so dist cannot drift from src after local updates
-echo "Building..."
-(cd "$PLUGIN_DIR" && npm run build)
+#    (prebuilt installs ship dist/ without src/ — nothing to rebuild there)
+if [ -d "$PLUGIN_DIR/src" ]; then
+  echo "Building..."
+  (cd "$PLUGIN_DIR" && npm run build)
+elif [ ! -d "$PLUGIN_DIR/dist" ]; then
+  echo "Error: no dist/ found and no src/ to build from in $PLUGIN_DIR" >&2
+  exit 1
+fi
 
 # 3. Create plugins directory if needed
 mkdir -p "$PLUGINS_DIR"
