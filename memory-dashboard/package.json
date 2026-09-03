@@ -14,7 +14,7 @@
     "cytoscape": "^3.34.0",
     "cytoscape-cise": "^2.0.1",
     "cytoscape-fcose": "^2.2.0",
-    "express": "^4.22.2",
+    "express": "^5.2.1",
     "gray-matter": "^4.0.3",
     "react": "^19.2.7",
     "react-cytoscapejs": "^2.0.0",
