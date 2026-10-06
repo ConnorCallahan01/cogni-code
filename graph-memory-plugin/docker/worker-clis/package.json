@@ -1,0 +1,10 @@
+{
+  "name": "graph-memory-worker-clis",
+  "private": true,
+  "description": "Worker harness CLIs baked into the daemon image. Installed with `npm ci` from the lockfile so transitive dependencies are pinned too; bump deliberately and re-verify.",
+  "dependencies": {
+    "@anthropic-ai/claude-code": "2.1.197",
+    "@mariozechner/pi-coding-agent": "0.73.1",
+    "@openai/codex": "0.160.1"
+  }
+}

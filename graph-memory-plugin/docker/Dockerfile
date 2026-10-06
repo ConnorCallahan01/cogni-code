@@ -1,4 +1,4 @@
-FROM node:20-bookworm-slim
+FROM node:24-bookworm-slim
 
 WORKDIR /app
 
@@ -17,13 +17,23 @@ RUN git config --system user.name "graph-memory" \
 
 COPY package.json ./
 RUN npm install --omit=dev --ignore-scripts
-RUN npm install -g @openai/codex @mariozechner/pi-coding-agent @anthropic-ai/claude-code
+# Worker CLIs are pinned so a rebuild can't silently change how the pipeline
+# runs: codex, pi, and Claude Code install from docker/worker-clis' lockfile
+# (transitive dependencies included), opencode and the Notion CLI by version.
+# These are the versions the 3.7.x pipeline was verified on; bump deliberately
+# and re-verify.
+COPY docker/worker-clis/package.json docker/worker-clis/package-lock.json /opt/worker-clis/
+RUN cd /opt/worker-clis && npm ci --omit=dev --no-audit --no-fund
+ENV PATH=/opt/worker-clis/node_modules/.bin:$PATH
+
+ARG OPENCODE_VERSION=1.18.35
+ARG NTN_VERSION=0.23.19
 RUN ARCH=$(uname -m) && \
     case "$ARCH" in aarch64) GOARCH="arm64" ;; x86_64) GOARCH="amd64" ;; esac && \
-    curl -fsSL "https://github.com/anomalyco/opencode/releases/latest/download/opencode-linux-${GOARCH}.tar.gz" \
+    curl -fsSL "https://github.com/anomalyco/opencode/releases/download/v${OPENCODE_VERSION}/opencode-linux-${GOARCH}.tar.gz" \
     | tar xz -C /usr/local/bin opencode
 
-RUN curl -fsSL https://ntn.dev/install.sh | bash
+RUN curl -fsSL https://ntn.dev/install.sh | NTN_VERSION=${NTN_VERSION} bash
 
 COPY dist ./dist
 COPY extensions ./extensions
