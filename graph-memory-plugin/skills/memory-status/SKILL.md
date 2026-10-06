@@ -50,7 +50,7 @@ Check the health and status of the graph memory system.
 
 3. If `firstRun` is true, suggest running `/memory-onboard` to set up memory.
 4. If Docker runtime is configured but `runtime.docker.state.present` is false or container status is not `running`, call that out explicitly and suggest `bin/docker-bootstrap.sh`.
-5. If `codexAuth.ready` or `opencodeAuth.ready` is false, note which provider needs auth and suggest `bin/docker-codex-import-host-auth.sh` or `bin/docker-auth-check.sh`.
+5. If `codexAuth.ready` or `opencodeAuth.ready` is false, note which provider needs auth and suggest `bin/docker-auth-check.sh`. For codex, the fix is giving the container its own login with `bin/docker-codex-login.sh` (or `bin/docker-codex-login-api-key.sh`) — not importing a host ChatGPT login, which shares a rotating refresh token. If `codexAuth.rejected` is set, codex still claims to be logged in but a worker run proved its credentials are revoked; say so plainly.
 6. If there are warnings, briefly explain what they mean and recommend actions:
    - MAP near budget → next consolidation should archive nodes
    - Node count near limit → librarian pass needed

@@ -94,15 +94,14 @@ Available: codex | claude | pi | opencode | api
     ```
     codex auth is not ready in the container. Choose a setup path:
 
-    A) If you're already logged in on the host:
-       <plugin_dir>/bin/docker-codex-import-host-auth.sh
-
-    B) If you want to log in interactively inside the container:
+    A) Log the container in with its own ChatGPT session (device code):
        <plugin_dir>/bin/docker-codex-login.sh
 
-    C) If you have an OpenAI API key:
+    B) If you have an OpenAI API key:
        OPENAI_API_KEY=sk-... <plugin_dir>/bin/docker-codex-login-api-key.sh
     ```
+
+    Do not offer `docker-codex-import-host-auth.sh` for a host ChatGPT login: the host and container would share one rotating refresh token, and the first side to refresh signs the other out. The script refuses that case; it only copies API-key logins.
 
     **For claude:**
     ```

@@ -26,14 +26,13 @@ case "$HARNESS" in
       exit 0
     fi
     echo
-    echo "If Codex is already authenticated on the host, you can import it with:"
-    echo "  $DIR/bin/docker-codex-import-host-auth.sh"
-    echo
     echo "Codex auth is not ready inside the container."
-    echo "Run one of:"
-    echo "  $DIR/bin/docker-codex-import-host-auth.sh"
+    echo "Give the container its own login with one of:"
     echo "  $DIR/bin/docker-codex-login.sh"
     echo "  OPENAI_API_KEY=... $DIR/bin/docker-codex-login-api-key.sh"
+    echo
+    echo "Don't import a host ChatGPT login: the host and container would share one"
+    echo "rotating refresh token, and the first side to refresh signs the other out."
     exit 1
     ;;
 esac

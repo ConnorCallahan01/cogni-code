@@ -3,6 +3,15 @@ import os from "os";
 import path from "path";
 import { spawn, SpawnOptions } from "child_process";
 import { loadRuntimeConfig, WorkerProvider } from "../runtime.js";
+import {
+  authRemediation,
+  clearAuthRejection,
+  detectAuthRejection,
+  isAuthRejectionFresh,
+  readAuthRejection,
+  readLogTail,
+  recordAuthRejection,
+} from "./worker-auth.js";
 import { activityBus } from "../events.js";
 
 export interface WorkerRunOptions {
@@ -505,28 +514,72 @@ export async function runPipelineWorker(opts: WorkerRunOptions): Promise<WorkerR
   }
 
   let last: AttemptResult | null = null;
+  let lastAttempt: WorkerAttempt | null = null;
   for (let i = 0; i < attempts.length; i++) {
     const attempt = attempts[i];
-    if (i > 0) {
-      const prev = attempts[i - 1];
+    const rejection = readAuthRejection(opts.graphRoot, attempt.provider);
+
+    // A harness whose credentials were just rejected would fail again within
+    // seconds, so skip it. The final attempt still runs when nothing else has:
+    // a job is never failed untried, and that run re-checks the credentials.
+    if (rejection && isAuthRejectionFresh(rejection) && (last || i < attempts.length - 1)) {
+      activityBus.log(
+        "system:error",
+        `Worker (${attempt.provider}) skipped: credentials rejected at ${rejection.detectedAt} — ${authRemediation(attempt.provider)}`,
+        { harness: attempt.provider, logFile: rejection.logFile }
+      );
+      continue;
+    }
+
+    if (lastAttempt) {
       activityBus.log(
         "system:info",
-        `Worker (${prev.provider}) failed — falling back to ${attempt.provider}${attempt.model ? ` (${attempt.model})` : ""}`,
-        { harness: attempt.provider, fallbackFrom: prev.provider }
+        `Worker (${lastAttempt.provider}) failed — falling back to ${attempt.provider}${attempt.model ? ` (${attempt.model})` : ""}`,
+        { harness: attempt.provider, fallbackFrom: lastAttempt.provider }
       );
     }
     last = await runWorkerAttempt(attempt, opts, runtime);
+    lastAttempt = attempt;
     if (last.exitCode === 0 && !last.timedOut) {
+      if (rejection) clearAuthRejection(opts.graphRoot, attempt.provider);
       return { exitCode: last.exitCode, logFile: last.logFile, pid: last.pid };
+    }
+    if (!last.timedOut) {
+      noteAuthRejection(attempt.provider, last.logFile, opts.graphRoot);
     }
   }
 
   // Every attempt failed — preserve the original contract: throw on timeout so
   // the daemon records a timeout, otherwise return the non-zero exit result.
-  const lastAttempt = attempts[attempts.length - 1];
-  if (last?.timedOut) {
+  if (last?.timedOut && lastAttempt) {
     const timeoutMs = Math.max(30_000, opts.timeoutMs ?? 300_000);
     throw new Error(`Worker (${lastAttempt.provider}) timed out after ${timeoutMs}ms. See ${last.logFile}`);
   }
   return { exitCode: last?.exitCode ?? 1, logFile: last?.logFile ?? "", pid: last?.pid };
+}
+
+/**
+ * If a failed attempt's log shows the harness's credentials were rejected,
+ * record it (so fallbacks skip the harness and status reports it) and append
+ * the remediation to the log the daemon's error message points at.
+ */
+function noteAuthRejection(provider: WorkerProvider, logFile: string, graphRoot: string): void {
+  const evidence = detectAuthRejection(provider, readLogTail(logFile));
+  if (!evidence) return;
+
+  const remediation = authRemediation(provider);
+  try {
+    recordAuthRejection(graphRoot, provider, { detectedAt: new Date().toISOString(), logFile, evidence });
+  } catch { /* the log trailer and activity event still surface it */ }
+  try {
+    fs.appendFileSync(
+      logFile,
+      `\n[graph-memory] ${provider} credentials were rejected; every ${provider} job will fail this way until the worker is re-authenticated: ${remediation}\n`
+    );
+  } catch { /* ignore */ }
+  activityBus.log("system:error", `Worker (${provider}) credentials rejected — ${remediation}`, {
+    harness: provider,
+    logFile,
+    evidence,
+  });
 }

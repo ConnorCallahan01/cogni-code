@@ -263,7 +263,7 @@ Useful helpers (harness-agnostic):
 
 Worker-specific helpers:
 
-- `bin/docker-codex-import-host-auth.sh` / `bin/docker-codex-login.sh` / `bin/docker-codex-login-api-key.sh`
+- `bin/docker-codex-login.sh` / `bin/docker-codex-login-api-key.sh` (the container needs its own codex login; `bin/docker-codex-import-host-auth.sh` only copies API-key logins, since a host ChatGPT login's rotating refresh token can't be shared)
 - `bin/docker-pi-import-host-auth.sh` / `bin/docker-pi-auth-status.sh`
 - `bin/docker-opencode-import-host-auth.sh` / `bin/docker-opencode-auth-status.sh`
 

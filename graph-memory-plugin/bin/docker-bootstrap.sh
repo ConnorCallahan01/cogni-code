@@ -107,7 +107,12 @@ fi
 if [ "$PROVIDER" = "codex" ] || [ "$PROVIDER" = "auto" ] || [ -z "$PROVIDER" ]; then
   if command -v codex >/dev/null 2>&1 && codex login status >/dev/null 2>&1; then
     echo "  codex: importing host auth..."
-    "$DIR/bin/docker-codex-import-host-auth.sh" >/dev/null 2>&1 && AUTH_IMPORTED=true || echo "  codex: import failed"
+    if CODEX_IMPORT_OUTPUT=$("$DIR/bin/docker-codex-import-host-auth.sh" 2>&1); then
+      AUTH_IMPORTED=true
+    else
+      echo "  codex: host auth not imported:"
+      printf '%s\n' "$CODEX_IMPORT_OUTPUT" | sed 's/^/    /'
+    fi
   else
     echo "  codex: no host auth"
   fi
