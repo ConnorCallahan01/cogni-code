@@ -122,12 +122,11 @@ Tell the user the helper scripts now exist:
 
 Ask the user to authenticate the chosen harness for the worker runtime. Auth steps depend on the harness:
 
-**For codex:**
-- `codex login` on the host
-- `bin/docker-codex-import-host-auth.sh` to copy host Codex auth into the container
-- `bin/docker-codex-login.sh` for interactive `codex login` inside the container
+**For codex:** the container needs its own login.
+- `bin/docker-codex-login.sh` for a ChatGPT login inside the container (device code)
 - `bin/docker-codex-login-api-key.sh` for API-key login via `OPENAI_API_KEY`
-- `bin/docker-codex-auth-status.sh` to inspect current auth state
+- `bin/docker-codex-auth-status.sh` to verify it with a live request
+- Do not suggest `bin/docker-codex-import-host-auth.sh` for a host ChatGPT login: the host and container would share one rotating refresh token, and the first side to refresh signs the other out. The script refuses that case; it only copies API-key logins.
 
 **For claude:**
 - `claude` CLI on the host already uses OAuth or `ANTHROPIC_API_KEY`
@@ -141,7 +140,7 @@ Ask the user to authenticate the chosen harness for the worker runtime. Auth ste
 
 Recommend this sequence:
 
-1. Authenticate the harness on the host if needed
+1. Authenticate the harness on the host if needed (not for codex, which logs in inside the container)
 2. `bin/docker-bootstrap.sh`
 3. `bin/docker-auth-check.sh`
 4. Follow auth prompts for the chosen harness

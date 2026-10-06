@@ -101,6 +101,7 @@ export interface PipelineStatus {
         ready?: boolean
         status?: string
         error?: string
+        rejected?: { detectedAt: string; logFile: string; evidence: string }
       }
     }
     daemonState?: Record<string, unknown> | null
