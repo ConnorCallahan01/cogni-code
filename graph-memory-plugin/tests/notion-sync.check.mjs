@@ -310,6 +310,10 @@ test("diff: synced state detects only changes", async () => {
     const nodePath = path.join(graphRoot, "nodes", "patterns", "atomic-commits.md");
     const original = fs.readFileSync(nodePath, "utf-8");
     fs.writeFileSync(nodePath, original + "\n\nUpdated content for testing.");
+    // Place the edit after lastSyncAt explicitly: Linux stamps mtimes from a
+    // coarse clock, so a write in the same tick can land at or before it.
+    const editedAt = new Date(Date.parse(state.lastSyncAt) + 1000);
+    fs.utimesSync(nodePath, editedAt, editedAt);
 
     const thirdDiff = mod.buildNotionDiff(state);
     assert.ok(thirdDiff.stats.updated >= 1, "At least 1 updated item after change: " + thirdDiff.stats.updated);
