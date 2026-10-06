@@ -38,9 +38,9 @@
     "dev": "tsc --watch",
     "mcp": "node dist/graph-memory/mcp-server.js",
     "prepare": "npm run build",
-    "prepublishOnly": "node --test tests/*.check.mjs",
+    "prepublishOnly": "node --test --test-concurrency=1 tests/*.check.mjs",
     "status": "node -e \"import('./dist/graph-memory/tools.js').then(m => m.handleGraphMemory({action:'status'}).then(r => console.log(r.content[0].text)))\"",
-    "test": "npm run build && node --test tests/*.check.mjs"
+    "test": "npm run build && node --test --test-concurrency=1 tests/*.check.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
