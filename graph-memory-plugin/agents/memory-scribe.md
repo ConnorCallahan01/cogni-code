@@ -68,7 +68,11 @@ Read `MAP.md` from the graph root directory to understand the current knowledge 
 
 ### 3. Read Relevant Existing Nodes
 
-From the MAP, identify which existing nodes are **directly relevant** to this conversation (mentioned by name, or clearly about the same topic). Read only those node files — typically 2-5 nodes. You need their full content to:
+From the MAP, identify which existing nodes are **directly relevant** to this conversation (mentioned by name, or clearly about the same topic). Read only those node files — typically 2-5 nodes.
+
+MAP paths are node ids, not file paths. Node `category/name` is the file `nodes/category/name.md` under the graph root — e.g. MAP entry `preferences/decision_style` → `{graphRoot}/nodes/preferences/decision_style.md`, and `projects/acme/launch_plan` → `{graphRoot}/nodes/projects/acme/launch_plan.md`. There is no `{graphRoot}/preferences/` directory.
+
+You need their full content to:
 - Understand what's already captured (avoid duplicates)
 - Detect stance changes (what the user believed before vs now)
 - Detect contradictions (node says X, user now says Y)

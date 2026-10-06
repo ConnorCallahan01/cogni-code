@@ -235,7 +235,7 @@ export function fullRegenerateMAP(currentProject?: string) {
     );
   }
 
-  const header = `# MAP — Knowledge Graph Index\n\n> Auto-generated. Purely declarative. Soma in SOMA.md, dreams in DREAMS.md.\n> Each entry: path | gist | edges. ~50-80 tokens per entry.\n`;
+  const header = `# MAP — Knowledge Graph Index\n\n> Auto-generated. Purely declarative. Soma in SOMA.md, dreams in DREAMS.md.\n> Each entry: path | gist | edges. ~50-80 tokens per entry.\n> A path is a node id: node \`category/name\` lives in the file \`nodes/category/name.md\`.\n`;
   const headerTokens = estimateTokens(header);
 
   // Resolve current project for ordering: explicit param > active project
