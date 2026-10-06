@@ -1,5 +1,22 @@
 # Changelog
 
+## [3.7.0] (2026-10-06) — Detect revoked Docker worker logins, fix scribe node paths, resolve all Dependabot alerts
+
+### Fixed
+
+- **Docker codex workers failed every job while reporting "Logged in"** — `docker-bootstrap.sh` / `docker-codex-import-host-auth.sh` copied the host's ChatGPT `auth.json` into the container. OpenAI rotates that refresh token, so the host's first refresh revoked the container's copy: every codex worker then exited within seconds on a 401, while `codex login status` (which only checks that the file exists) kept every health surface green. The daemon now recognizes the harness's own credential-rejection errors at the end of a failed run, records them in `.jobs/worker-auth.json`, appends the remedy to the job log, and skips that harness for an hour wherever another attempt can run (a job is never failed untried). The next success clears the record. If you hit this, give the container its own login: `bin/docker-codex-login.sh` (device code) or `OPENAI_API_KEY=... bin/docker-codex-login-api-key.sh`.
+- **Scribe read node files at the wrong path on some worker models** — MAP.md lists node ids (`preferences/decision_style`), but nothing stated that the file is `nodes/<id>.md`. glm-5.3-flash read `<root>/<id>.md` and skipped existing-node context in 4 of 6 runs. The MAP header and scribe prompt now state the mapping (0 of 6 in an A/B on the same model).
+
+### Changed
+
+- **`docker-codex-import-host-auth.sh` refuses to copy a ChatGPT login**, since its rotating refresh token can't be shared; API-key logins still copy. Override with `GRAPH_MEMORY_ALLOW_SHARED_CODEX_AUTH=1`. Bootstrap now prints why the import was skipped, and `docker-auth-check.sh`, `/memory-status`, `/memory-switch-harness`, and the README recommend the container's own login.
+- **`docker-codex-auth-status.sh` proves credentials with one minimal live request** instead of trusting `codex login status`; the login and import scripts finish by running it. `codexAuth` in status reports `ready: false` with the evidence while a rejection is recorded.
+
+### Security
+
+- **All 46 open Dependabot alerts resolved** — `npm audit` reports 0 vulnerabilities across the plugin, dashboard, site, and root. For the published package: `simple-git` 3 → 4 (command-execution advisories; v4 also strips ambient `GIT_*` environment variables from git child processes, which nothing in the plugin relies on), plus `hono`, `fast-uri`, `ip-address`, `js-yaml`, and `qs` through `@modelcontextprotocol/sdk`.
+- The memory dashboard drops `gray-matter` (and its js-yaml 3 / sprintf-js chain) for the same js-yaml 4 frontmatter helper the plugin uses.
+
 ## [3.6.1] (2026-08-11) — Fix Claude Code plugin registration, add pi installer
 
 ### Fixed
