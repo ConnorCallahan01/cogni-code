@@ -28,6 +28,14 @@ updates:
       - dependency-name: "chokidar"
         update-types:
           - "version-update:semver-major"
+      # express 5 and js-yaml 5 are migrations, not bumps (js-yaml 5 loads
+      # YAML 1.2: unquoted dates become strings, empty input throws).
+      - dependency-name: "express"
+        update-types:
+          - "version-update:semver-major"
+      - dependency-name: "js-yaml"
+        update-types:
+          - "version-update:semver-major"
       - dependency-name: "typescript"
         update-types:
           - "version-update:semver-major"
@@ -49,6 +57,11 @@ updates:
           - "patch"
     ignore:
       - dependency-name: "@types/node"
+        update-types:
+          - "version-update:semver-major"
+      # js-yaml 5 loads YAML 1.2 by default: node frontmatter dates would load
+      # as strings and empty frontmatter would throw. Migrate deliberately.
+      - dependency-name: "js-yaml"
         update-types:
           - "version-update:semver-major"
       - dependency-name: "typescript"

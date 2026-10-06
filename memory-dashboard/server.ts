@@ -76,7 +76,7 @@ interface ProjectWorkingFileSummary {
 }
 
 interface PipelineCutoffStatus {
-  stage: 'scribe' | 'working_update' | 'auditor' | 'librarian' | 'dreamer' | 'memory_analysis' | 'notion_sync'
+  stage: 'scribe' | 'working_update' | 'auditor' | 'librarian' | 'dreamer' | 'observer' | 'compressor' | 'skillforge' | 'memory_analysis' | 'notion_sync'
   current: number
   threshold: number | null
   remaining: number | null
@@ -644,6 +644,8 @@ function readAllJobs(graphRoot = getGraphRoot()) {
     compressor: { queued: 0, running: 0, done: 0, failed: 0 },
     bootstrap_project_doc: { queued: 0, running: 0, done: 0, failed: 0 },
     notion_sync: { queued: 0, running: 0, done: 0, failed: 0 },
+    notion_inbound_triage: { queued: 0, running: 0, done: 0, failed: 0 },
+    notion_inbound_enrich: { queued: 0, running: 0, done: 0, failed: 0 },
   }
 
   for (const state of Object.keys(jobs) as JobState[]) {
@@ -895,6 +897,7 @@ function buildPipelineCutoffs(graphRoot = getGraphRoot(), jobs = readAllJobs(gra
             : 'No skills generated yet. Skillforge scores nodes by access patterns and generates installable agent skills.',
     },
     {
+      stage: 'memory_analysis',
       current: todaysBriefExists ? 1 : 0,
       threshold: 1,
       remaining: todaysBriefExists ? 0 : 1,
@@ -1218,13 +1221,22 @@ function inferDockerStateFromDaemon(daemonState: any) {
 }
 
 function inferCodexAuthFromJobs(graphRoot: string) {
-  const jobs = readAllJobs(graphRoot)
-  const hasSuccessfulWorker = jobs.running.length > 0 || jobs.done.length > 0
-  if (!hasSuccessfulWorker) return null
+  // Only a completed codex run says anything about codex's login; jobs run on
+  // other harnesses don't.
+  const logDir = join(graphRoot, '.pipeline-logs')
+  if (!existsSync(logDir)) return null
+  const lastCompletedAt = readdirSync(logDir)
+    .filter((file) => file.includes('-codex-') && file.endsWith('.log.meta.json'))
+    .map((file) => safeJsonParse(join(logDir, file)))
+    .filter((meta) => meta?.status === 'completed' && typeof meta.finishedAt === 'string')
+    .map((meta) => meta.finishedAt as string)
+    .sort()
+    .pop()
+  if (!lastCompletedAt) return null
   return {
     ready: true,
     inferred: true,
-    status: 'Inferred from successful Codex worker activity',
+    status: `Inferred from a completed codex worker run at ${lastCompletedAt}`,
   }
 }
 

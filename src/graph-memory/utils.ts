@@ -1,6 +1,6 @@
 import fs from "fs";
 import path from "path";
-import matter from "gray-matter";
+import matter from "./frontmatter.js";
 
 /**
  * Resolve a user/LLM-controlled path safely within a base directory.

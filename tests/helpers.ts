@@ -1,7 +1,7 @@
 import fs from "fs";
 import path from "path";
 import os from "os";
-import matter from "gray-matter";
+import matter from "../src/graph-memory/frontmatter.js";
 import { CONFIG } from "../src/graph-memory/config.js";
 
 /**
