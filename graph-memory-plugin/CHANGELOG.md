@@ -1,5 +1,18 @@
 # Changelog
 
+## [3.7.1] (2026-10-06) — Graph commits restored in Docker, runtime state out of history, compress action fixed
+
+### Fixed
+
+- **Docker workers couldn't commit the graph** — the auditor, compressor, dreamer, and librarian prompts end with `git add -A && git commit`, but the daemon image never installed git, so a graph could go weeks without a commit. Codex workers reported the missing binary and finished; opencode workers burned their whole timeout trying to install a substitute, and the daemon then reran the job on the fallback harness. The image now ships git with the `graph-memory` identity and marks `/graph-memory` a safe directory (required on Linux hosts, where the bind mount keeps the host uid). Prompts now report a failed commit and move on instead of improvising.
+- **The graph repo tracked runtime state** — the old `.gitignore` only covered `.buffer/` and `.deltas/`, so job files, pipeline and activity logs, and raw conversation captures (`.sessions/`) ended up in history, and Notion tokens or a graph-root `.env` would have too. graph-memory now maintains a full ignore list, keeping your own lines. **On upgrade, the daemon makes one commit, "stop tracking runtime state (N files)", at startup.** It untracks those files, leaves them on disk, and doesn't rewrite history.
+- **`graph_memory(action="compress")` failed with "require is not defined"** and never queued the compressor.
+- **Heavy jobs timed out on slower worker models** — compressor 10 → 20 min, auditor 20 → 30 min. On opencode with glm-5.3-flash the compressor timed out on every run, and each timeout reran the whole job on the fallback.
+
+### Changed
+
+- Setup docs and the onboarding flow give the Docker container its own codex login instead of importing a host ChatGPT login (follow-up to 3.7.0).
+
 ## [3.7.0] (2026-10-06) — Detect revoked Docker worker logins, fix scribe node paths, resolve all Dependabot alerts
 
 ### Fixed
