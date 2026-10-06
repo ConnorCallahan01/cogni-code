@@ -173,6 +173,23 @@ const piAdapter: HarnessAdapter = {
 
 // ── OpenCode Adapter ───────────────────────────────────────────────────────
 
+// Workers run opencode in the graph root, a git repo the daemon and other workers
+// write to constantly. opencode's snapshot tracking diffed it and re-stored the
+// diffs with every message update (up to 16 MB each), growing its session
+// database to 64 GB. Pipeline runs never undo, and the graph keeps its own git
+// history, so snapshots are off unless OPENCODE_CONFIG_CONTENT sets them.
+export function opencodeWorkerConfig(existing: string | undefined): string {
+  let config: Record<string, unknown> = {};
+  if (existing) {
+    try {
+      config = JSON.parse(existing);
+    } catch {
+      return existing;
+    }
+  }
+  return JSON.stringify({ snapshot: false, ...config });
+}
+
 const opencodeAdapter: HarnessAdapter = {
   buildPlan(prompt, opts, runtime) {
     const inDocker = runtime.mode === "docker" &&
@@ -201,6 +218,7 @@ const opencodeAdapter: HarnessAdapter = {
           ...process.env,
           ...(authHome ? { HOME: authHome } : {}),
           GRAPH_MEMORY_PIPELINE_CHILD: "1",
+          OPENCODE_CONFIG_CONTENT: opencodeWorkerConfig(process.env.OPENCODE_CONFIG_CONTENT),
         },
       },
     };
