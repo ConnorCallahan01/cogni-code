@@ -132,24 +132,26 @@ Run the harness-agnostic helpers from [`graph-memory-plugin/bin/`](../graph-memo
 ./bin/docker-auth-check.sh
 ```
 
-The auth-check script detects which worker harness (codex, claude, or pi) is active and validates the correct auth.
+The auth-check script detects which worker harness (codex, claude, pi, or opencode) is active and validates the correct auth. For codex it makes one small live request, because `codex login status` reports "Logged in" even after a login has been revoked.
 
 If worker auth is missing:
 
 ```bash
-# For codex:
-codex login
-./bin/docker-codex-import-host-auth.sh
+# For codex: give the container its own login
+./bin/docker-codex-login.sh                          # ChatGPT, device code
+OPENAI_API_KEY=... ./bin/docker-codex-login-api-key.sh
 
 # For pi:
 ./bin/docker-pi-import-host-auth.sh
 ```
 
+Don't copy a host ChatGPT login into the container. Its refresh token rotates, so whichever side refreshes first signs the other out, and every codex worker then fails. `./bin/docker-codex-import-host-auth.sh` refuses that case and only copies API-key logins.
+
 Worker-specific auth:
 
-- `./bin/docker-codex-login.sh`
-- `./bin/docker-codex-login-api-key.sh`
+- `./bin/docker-codex-auth-status.sh`
 - `./bin/docker-pi-auth-status.sh`
+- `./bin/docker-opencode-auth-status.sh`
 
 Useful Docker helper scripts:
 

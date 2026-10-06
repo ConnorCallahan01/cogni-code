@@ -13,7 +13,7 @@ Launch the `memory-onboarder` agent to handle the guided onboarding flow. This a
    - Selecting runtime mode, with Docker daemon mode as the recommended default
    - Choosing the **worker harness** (codex, claude, pi, opencode, api), an optional **worker model** override, and an optional **fallback** harness/model used when the primary provider fails or hits a usage limit. The `api` worker is recommended for containers and sandboxes without Docker — it calls the Anthropic API directly via `fetch` and respects credential proxies (`ANTHROPIC_AUTH_TOKEN` + `ANTHROPIC_BASE_URL`) for subscription access.
    - Creating or connecting the bind-mounted memory storage
-   - Configuring worker auth for the container runtime, preferably by importing existing host Codex auth
+   - Configuring worker auth for the container runtime; for codex, the container gets its own login (`bin/docker-codex-login.sh`), since a host ChatGPT login can't be shared
    - Running healthchecks to verify queue, storage, and worker connectivity
    - Running a short interview to seed initial memory nodes and priors
    - Wiring memory awareness into the project's `CLAUDE.md` from the plugin template (idempotent — safe to re-run)

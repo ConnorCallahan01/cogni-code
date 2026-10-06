@@ -1237,9 +1237,18 @@ function readRuntimeStatus(graphRoot = getGraphRoot()) {
     : (inferDockerStateFromDaemon(daemonState) ?? inspectedDockerState)
   const inspectedCodexAuth = getCodexAuthState(runtime, dockerState)
   const inferredCodexAuth = inferCodexAuthFromJobs(graphRoot)
-  const codexAuth = inspectedCodexAuth?.ready
-    ? inspectedCodexAuth
-    : (inferredCodexAuth ?? inspectedCodexAuth)
+  // `codex login status` and past job activity both still read "ready" after
+  // OpenAI revokes the login; a rejection recorded by a failed worker run wins.
+  const codexRejection = safeJsonParse(join(getPaths(graphRoot).jobs.root, 'worker-auth.json'))?.codex
+  const codexAuth = codexRejection
+    ? {
+        ready: false,
+        rejected: codexRejection,
+        error: `codex credentials were rejected by a worker run at ${codexRejection.detectedAt}; re-login with bin/docker-codex-login.sh`,
+      }
+    : inspectedCodexAuth?.ready
+      ? inspectedCodexAuth
+      : (inferredCodexAuth ?? inspectedCodexAuth)
 
   return {
     mode: runtime.mode ?? 'manual',
