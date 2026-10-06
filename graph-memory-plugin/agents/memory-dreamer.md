@@ -127,6 +127,8 @@ cd {graphRoot} && node -e "import('./node_modules/graph-memory/dist/graph-memory
 cd {graphRoot} && git add -A && git commit -m "memory: dreamer - creative recombination"
 ```
 
+If the commit fails (for example, git is unavailable or reports an error), say so in your final message and continue with the next step. Do not install git or a substitute, and do not retry the commit another way.
+
 After the commit, log completion and release the lock. **You MUST use the Bash tool for this** (not Write/Edit) so the `$(date)` evaluates to a real timestamp:
 ```bash
 echo '{"type":"dreamer:complete","message":"Dreamer creative recombination complete","timestamp":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'"}' >> {graphRoot}/.logs/activity.jsonl
