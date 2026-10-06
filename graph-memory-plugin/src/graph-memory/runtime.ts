@@ -2,6 +2,7 @@ import fs from "fs";
 import path from "path";
 import { spawnSync } from "child_process";
 import { CONFIG } from "./config.js";
+import { authRemediation, readAuthRejection } from "./pipeline/worker-auth.js";
 
 export type GraphMemoryRuntimeMode = "manual" | "docker";
 
@@ -265,6 +266,20 @@ function getCodexAuthState(runtime: GraphMemoryRuntimeConfig, dockerState: Recor
   }
 
   const output = auth.stdout || auth.stderr || "";
+
+  // `codex login status` only checks that auth.json exists — it still says
+  // "Logged in" after OpenAI revokes the refresh token. A rejection recorded by
+  // a failed worker run is the stronger signal until a run or re-login clears it.
+  const rejected = readAuthRejection(CONFIG.paths.graphRoot, "codex");
+  if (rejected) {
+    return {
+      ready: false,
+      status: output,
+      rejected,
+      error: `codex credentials were rejected by a worker run at ${rejected.detectedAt} (see ${rejected.logFile}); ${authRemediation("codex")}`,
+    };
+  }
+
   return {
     ready: /Logged in/i.test(output),
     status: output,
