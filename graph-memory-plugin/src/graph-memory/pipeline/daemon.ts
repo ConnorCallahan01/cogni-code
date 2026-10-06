@@ -9,6 +9,7 @@ import { generatePreflightReport } from "./preflight.js";
 import { claimNextJob, completeRunningJob, countJobs, enqueueJob, ensureJobDirectories, failRunningJob, hasActiveJob, hasActiveJobForProject, hasActiveProjectChainJob, getActiveProjectChainProjects, countDeltasForProject, listJobs, requeueRunningJob, requeueStaleRunningJobs, updateRunningJob, PROJECT_CHAIN_TYPES, GLOBAL_CHAIN_TYPES, PRIORITY } from "./job-queue.js";
 import { GraphMemoryJob, GraphMemoryJobState, NotionInboundTriagePayload, NotionInboundEnrichPayload } from "./job-schema.js";
 import { runPipelineWorker, WorkerRunOptions } from "./worker-runner.js";
+import { ensureGraphGitHygiene } from "../git.js";
 import { loadRuntimeConfig } from "../runtime.js";
 import { regenerateCoreContextFiles, regenerateDreamContext } from "./graph-ops.js";
 import { runDecay } from "./decay.js";
@@ -2518,6 +2519,13 @@ export async function runDaemon({ once = false }: { once?: boolean } = {}): Prom
   ensureJobDirectories();
   acquireDaemonLock();
   requeueStaleRunningJobs(60_000);
+
+  // Before any worker runs `git add -A`, make sure runtime state is ignored.
+  try {
+    await ensureGraphGitHygiene();
+  } catch (err: any) {
+    activityBus.log("git:error", `Graph repo hygiene skipped: ${err?.message || err}`);
+  }
 
   process.on("exit", releaseDaemonLock);
   process.on("SIGINT", () => { releaseDaemonLock(); process.exit(0); });

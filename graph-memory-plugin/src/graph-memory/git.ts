@@ -5,6 +5,49 @@ import { activityBus } from "./events.js";
 
 let git: SimpleGit | null = null;
 
+// Runtime state the pipeline writes under the graph root. It churns on every run,
+// can hold raw conversation captures, external inputs, and credentials, and is not
+// knowledge, so it stays out of the graph's history.
+export const GRAPH_GITIGNORE_ENTRIES = [
+  "/.buffer/",
+  "/.deltas/",
+  "/.jobs/",
+  "/.pipeline/",
+  "/.pipeline-logs/",
+  "/.logs/",
+  "/.sessions/",
+  "/.session-context/",
+  "/.active-projects/",
+  "/.skillforge/",
+  "/.inputs/",
+  "/.env",
+  "/.notion-*",
+  "/.runtime-config.json",
+  "/.preflight-report.json",
+  "/*-debug.jsonl",
+  "/.dirty-session",
+  "/.plugin-loaded",
+  "/.consolidation.lock",
+  "/.scribe-pending",
+  "/.dreamer-pending",
+];
+
+const GITIGNORE_HEADER = "# Runtime state, not knowledge (maintained by graph-memory)";
+
+/** Append any missing GRAPH_GITIGNORE_ENTRIES to the graph's .gitignore, keeping existing lines. */
+export function mergeGraphGitignore(graphRoot = CONFIG.paths.graphRoot): boolean {
+  const gitignorePath = `${graphRoot}/.gitignore`;
+  const existing = fs.existsSync(gitignorePath) ? fs.readFileSync(gitignorePath, "utf-8") : "";
+  const lines = new Set(existing.split("\n").map((l) => l.trim()));
+  const missing = GRAPH_GITIGNORE_ENTRIES.filter((entry) => !lines.has(entry));
+  if (missing.length === 0) return false;
+
+  const prefix = existing && !existing.endsWith("\n") ? "\n" : "";
+  const header = lines.has(GITIGNORE_HEADER) ? "" : `${existing ? "\n" : ""}${GITIGNORE_HEADER}\n`;
+  fs.writeFileSync(gitignorePath, existing + prefix + header + missing.join("\n") + "\n");
+  return true;
+}
+
 /**
  * Initialize git repo in graph/ if not already one.
  * Returns the SimpleGit instance or null if git is disabled.
@@ -21,9 +64,7 @@ async function getGit(): Promise<SimpleGit | null> {
       await freshGit.init();
       activityBus.log("git:commit", "Initialized git repo in graph/");
 
-      // Create .gitignore for buffer/temp files
-      const gitignore = `.buffer/\n.deltas/\n`;
-      fs.writeFileSync(`${graphRoot}/.gitignore`, gitignore);
+      mergeGraphGitignore(graphRoot);
       await freshGit.add(".gitignore");
       await freshGit.commit("memory: init graph repository");
     }
@@ -32,6 +73,41 @@ async function getGit(): Promise<SimpleGit | null> {
   }
 
   return git;
+}
+
+/**
+ * Keep runtime state out of an existing graph repo: merge the ignore list into
+ * .gitignore and untrack any tracked files it now matches, in one commit that
+ * leaves every other pending change unstaged. Files stay on disk. Returns how
+ * many files were untracked. Does nothing when git is disabled or the graph is
+ * not a repo yet (getGit() creates the repo with the full ignore list).
+ */
+export async function ensureGraphGitHygiene(): Promise<number> {
+  if (!CONFIG.git.enabled || !fs.existsSync(`${CONFIG.paths.graphRoot}/.git`)) return 0;
+  const g = await getGit();
+  if (!g) return 0;
+
+  const listTrackedIgnored = async () =>
+    (await g.raw(["ls-files", "--cached", "--ignored", "--exclude-standard"])).split("\n").filter(Boolean);
+
+  const gitignoreChanged = mergeGraphGitignore();
+  if (!gitignoreChanged && (await listTrackedIgnored()).length === 0) return 0;
+
+  // Unstage whatever is left in the index (e.g. a worker's interrupted
+  // `git add -A`) so this commit holds only the ignore list and the untracking.
+  // The working tree is untouched; the next worker commit restages real changes.
+  await g.raw(["reset", "-q"]);
+  const tracked = await listTrackedIgnored();
+
+  for (let i = 0; i < tracked.length; i += 200) {
+    await g.raw(["rm", "--cached", "--quiet", "--", ...tracked.slice(i, i + 200)]);
+  }
+  await g.add(".gitignore");
+  await g.commit(`${CONFIG.git.commitPrefix} stop tracking runtime state (${tracked.length} files)`);
+  activityBus.log("git:commit", `Untracked ${tracked.length} runtime files from the graph repo`, {
+    filesUntracked: tracked.length,
+  });
+  return tracked.length;
 }
 
 /**
