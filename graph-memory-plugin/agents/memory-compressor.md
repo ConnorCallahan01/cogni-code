@@ -123,6 +123,8 @@ cd {graphRoot} && node -e "import('./node_modules/graph-memory/dist/graph-memory
 cd {graphRoot} && git add -A && git commit -m "memory: compressor — model update, graph maintenance"
 ```
 
+If the commit fails (for example, git is unavailable or reports an error), say so in your final message and continue with the next step. Do not install git or a substitute, and do not retry the commit another way.
+
 ## Rules
 
 1. **Guardrails are king** — anti-patterns always go first, always get highest confidence, never decay

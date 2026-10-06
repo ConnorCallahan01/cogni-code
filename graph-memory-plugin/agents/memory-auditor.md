@@ -165,6 +165,8 @@ echo '{"timestamp":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'"}' > {graphRoot}/.librarian
 cd {graphRoot} && git add -A && git commit -m "memory: auditor — mechanical fixes, gist compression, triage"
 ```
 
+If the commit fails (for example, git is unavailable or reports an error), say so in your final message and continue with the next step. Do not install git or a substitute, and do not retry the commit another way.
+
 ```bash
 echo '{"type":"auditor:complete","message":"Auditor triage complete","timestamp":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'"}' >> {graphRoot}/.logs/activity.jsonl
 rm -f {graphRoot}/.consolidation.lock

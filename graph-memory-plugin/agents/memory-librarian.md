@@ -171,6 +171,8 @@ Verify PRIORS.md is under 2,500 tokens.
 cd {graphRoot} && git add -A && git commit -m "memory: librarian consolidation"
 ```
 
+If the commit fails (for example, git is unavailable or reports an error), say so in your final message and continue with the next step. Do not install git or a substitute, and do not retry the commit another way.
+
 Write the dreamer marker:
 ```bash
 echo '{"timestamp":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'"}' > {graphRoot}/.dreamer-pending

@@ -3,8 +3,17 @@ FROM node:20-bookworm-slim
 WORKDIR /app
 
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends ca-certificates curl \
+  && apt-get install -y --no-install-recommends ca-certificates curl git \
   && rm -rf /var/lib/apt/lists/*
+
+# Workers commit the graph (`git add -A && git commit` in the auditor, compressor,
+# dreamer, and librarian prompts). On Linux hosts the bind-mounted graph keeps the
+# host user's uid, and git (running as root here) refuses it as "dubious
+# ownership" unless the path is marked safe; Docker Desktop presents it as
+# root-owned. The identity matches the graph's existing history.
+RUN git config --system user.name "graph-memory" \
+  && git config --system user.email "graph-memory@localhost" \
+  && git config --system --add safe.directory /graph-memory
 
 COPY package.json ./
 RUN npm install --omit=dev --ignore-scripts
