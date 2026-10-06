@@ -10,6 +10,7 @@ import { claimNextJob, completeRunningJob, countJobs, enqueueJob, ensureJobDirec
 import { GraphMemoryJob, GraphMemoryJobState, NotionInboundTriagePayload, NotionInboundEnrichPayload } from "./job-schema.js";
 import { runPipelineWorker, WorkerRunOptions } from "./worker-runner.js";
 import { ensureGraphGitHygiene } from "../git.js";
+import { pruneOpencodeSessions } from "./opencode-housekeeping.js";
 import { loadRuntimeConfig } from "../runtime.js";
 import { regenerateCoreContextFiles, regenerateDreamContext } from "./graph-ops.js";
 import { runDecay } from "./decay.js";
@@ -2563,6 +2564,16 @@ export async function runDaemon({ once = false }: { once?: boolean } = {}): Prom
         requeueStaleRunningJobs(30 * 60_000);
       } catch (err: any) {
         activityBus.log("system:error", `Tick housekeeping error: ${err.message}`);
+      }
+
+      // Only while no worker is running, so pruning never contends with a live
+      // opencode session; jobs aren't claimed until it finishes.
+      if (inFlight.size === 0) {
+        try {
+          await pruneOpencodeSessions();
+        } catch (err: any) {
+          activityBus.log("system:error", `opencode session prune failed: ${err?.message || err}`);
+        }
       }
 
       try {
