@@ -605,7 +605,6 @@ async function runConsolidation(): Promise<{ content: Array<{ type: "text"; text
 // --- compress action ---
 
 function runCompressAction(args: { project?: string }) {
-  const { enqueueJob } = require("./pipeline/job-queue.js") as typeof import("./pipeline/job-queue.js");
   const layers: Array<"global" | "project"> = args.project ? ["project"] : ["global", "project"];
 
   const { job, created } = enqueueJob({

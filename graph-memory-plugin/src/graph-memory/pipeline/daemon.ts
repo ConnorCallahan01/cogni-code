@@ -1027,7 +1027,8 @@ async function runCompressor(job: GraphMemoryJob): Promise<void> {
     graphRoot: CONFIG.paths.graphRoot,
     logDir: CONFIG.paths.pipelineLogs,
     addDirs: [AGENTS_DIR],
-    timeoutMs: 10 * 60_000,
+    // glm-5.3-flash (opencode) timed out 2/2 compressor runs at 10 min; codex needs ~2.
+    timeoutMs: 20 * 60_000,
   });
 
   job.logFile = result.logFile;
@@ -1201,7 +1202,8 @@ async function runAuditor(job: GraphMemoryJob): Promise<void> {
     graphRoot: CONFIG.paths.graphRoot,
     logDir: CONFIG.paths.pipelineLogs,
     addDirs: [AGENTS_DIR],
-    timeoutMs: 20 * 60_000,
+    // glm-5.3-flash (opencode) auditors ran 14-21 min against the old 20-min limit.
+    timeoutMs: 30 * 60_000,
   });
 
   job.logFile = result.logFile;
