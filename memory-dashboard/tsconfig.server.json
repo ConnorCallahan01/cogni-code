@@ -9,5 +9,5 @@
     "outDir": "./dist-server",
     "noEmit": true
   },
-  "include": ["server.ts"]
+  "include": ["server.ts", "frontmatter.ts"]
 }

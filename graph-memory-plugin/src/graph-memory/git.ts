@@ -1,4 +1,4 @@
-import simpleGit, { SimpleGit } from "simple-git";
+import { simpleGit, type SimpleGit } from "simple-git";
 import fs from "fs";
 import { CONFIG } from "./config.js";
 import { activityBus } from "./events.js";
