@@ -4,7 +4,7 @@ import { existsSync, readFileSync, readdirSync, statSync, writeFileSync, mkdirSy
 import { join, resolve, relative } from 'path'
 import { homedir } from 'os'
 import { watch } from 'chokidar'
-import matter from 'gray-matter'
+import matter from './frontmatter.js'
 import { spawnSync } from 'child_process'
 
 const app = express()
