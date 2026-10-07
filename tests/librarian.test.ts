@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import fs from "fs";
 import path from "path";
-import matter from "gray-matter";
+import matter from "../src/graph-memory/frontmatter.js";
 import { createTestGraph, createTestNode } from "./helpers.js";
 import { CONFIG } from "../src/graph-memory/config.js";
 

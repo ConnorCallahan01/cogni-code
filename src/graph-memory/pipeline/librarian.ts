@@ -1,7 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import fs from "fs";
 import path from "path";
-import matter from "gray-matter";
+import matter from "../frontmatter.js";
 import yaml from "js-yaml";
 import { CONFIG } from "../config.js";
 import { activityBus } from "../events.js";
