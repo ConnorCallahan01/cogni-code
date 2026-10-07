@@ -2,6 +2,7 @@ import { detectHarnesses, resolvePkgRoot, HarnessInfo } from "./detect.js";
 import { installCodex, resolveCliInvocation } from "./codex.js";
 import { installClaudeCode } from "./claude-code.js";
 import { installPi } from "./pi.js";
+import { installOpencode } from "./opencode.js";
 import { isGraphInitialized, saveGlobalConfig, reloadConfig, CONFIG } from "../config.js";
 import { initializeGraph } from "../index.js";
 import { saveRuntimeConfig, loadRuntimeConfig, WorkerProvider } from "../runtime.js";
@@ -197,61 +198,6 @@ async function verifyMcpLaunches(): Promise<void> {
     console.error("  If you upgraded or removed the Node version that installed cogni-code");
     console.error("  (nvm/fnm/volta), reinstall and re-run: npm i -g cogni-code && cogni-code install");
   }
-}
-
-function installOpencode(opencodeDir: string, pkgRoot: string): string[] {
-  const pluginsDir = path.join(opencodeDir, "plugins");
-  const commandsDir = path.join(opencodeDir, "commands");
-  fs.mkdirSync(pluginsDir, { recursive: true });
-  fs.mkdirSync(commandsDir, { recursive: true });
-
-  const messages: string[] = [];
-  const extSource = path.join(pkgRoot, "extensions", "graph-memory-opencode.ts");
-  const extTarget = path.join(pluginsDir, "graph-memory.ts");
-
-  if (fs.existsSync(extSource)) {
-    try {
-      if (fs.lstatSync(extTarget).isSymbolicLink()) fs.unlinkSync(extTarget);
-    } catch { /* doesn't exist, fine */ }
-    if (fs.existsSync(extTarget)) fs.unlinkSync(extTarget);
-    fs.copyFileSync(extSource, extTarget);
-    messages.push(`Installed extension: ${extTarget}`);
-  }
-
-  const sourceCommandsDir = path.join(pkgRoot, "opencode-commands");
-  if (fs.existsSync(sourceCommandsDir)) {
-    let count = 0;
-    for (const file of fs.readdirSync(sourceCommandsDir)) {
-      if (!file.endsWith(".md")) continue;
-      const source = path.join(sourceCommandsDir, file);
-      const target = path.join(commandsDir, file);
-      try {
-        if (fs.existsSync(target) && fs.lstatSync(target).isSymbolicLink()) {
-          fs.unlinkSync(target);
-        }
-        if (!fs.existsSync(target)) {
-          fs.symlinkSync(source, target);
-        }
-      } catch { /* best effort */ }
-      count++;
-    }
-    if (count > 0) messages.push(`Linked ${count} commands`);
-  }
-
-  const configPath = path.join(opencodeDir, "opencode.json");
-  let config: any = {};
-  try {
-    config = JSON.parse(fs.readFileSync(configPath, "utf-8"));
-  } catch { /* no config yet */ }
-  if (!config.mcp) config.mcp = {};
-  // Absolute paths: OpenCode may spawn MCP servers without the node/npm bin
-  // dir (e.g. nvm installs) on PATH, so a bare "cogni-code" fails to launch.
-  const cliJs = path.join(pkgRoot, "dist", "graph-memory", "cli.js");
-  config.mcp["graph-memory"] = { type: "local", command: [process.execPath, cliJs, "mcp"], enabled: true };
-  fs.writeFileSync(configPath, JSON.stringify(config, null, 2) + "\n");
-  messages.push(`Registered MCP in ${configPath}`);
-
-  return messages;
 }
 
 function ensureGraphInitialized(customGraphRoot: string | null): string {

@@ -1,5 +1,13 @@
 # Changelog
 
+## [3.7.3] (2026-10-07) — Installer never replaces a config it can't parse
+
+### Fixed
+
+- **`cogni-code install` could wipe a harness config** — every installer read its target config with `JSON.parse`, treated any parse failure as "no config yet", and wrote a fresh file containing only the cogni-code entry. opencode accepts comments and trailing commas, so a hand-edited `~/.config/opencode/opencode.json` lost every other MCP server (this happened on upgrade to 3.7.2). Codex `hooks.json`, pi `settings.json`, and Claude Code's `settings.json` (in the no-`claude`-CLI fallback) had the same hazard. Configs are now read with a parser that tells "missing" from "unreadable" and accepts comments and trailing commas. A file that exists but can't be parsed, or whose comments a rewrite would drop, is left unchanged, and the installer prints the exact entry to add by hand. opencode's config isn't rewritten at all when the `graph-memory` entry is already correct, and `opencode.jsonc` is recognized.
+
+If an earlier `cogni-code install` replaced your `~/.config/opencode/opencode.json`, restore your other `mcp` entries from a backup or your shell history.
+
 ## [3.7.2] (2026-10-06) — Pinned worker CLIs, Node 24, chain-lock fixes
 
 ### Fixed
