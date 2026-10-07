@@ -10,6 +10,12 @@ on:
         type: boolean
         default: false
 
+# One release run at a time: back-to-back merges otherwise race to publish the
+# same untagged version before the first run creates the tag.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 jobs:
   release:
     runs-on: ubuntu-latest
@@ -24,7 +30,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
           registry-url: 'https://registry.npmjs.org'
 
       - name: Read version from package.json

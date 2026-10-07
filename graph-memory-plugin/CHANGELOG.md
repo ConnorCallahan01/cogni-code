@@ -1,5 +1,19 @@
 # Changelog
 
+## [3.7.2] (2026-10-06) — Pinned worker CLIs, Node 24, chain-lock fixes
+
+### Fixed
+
+- **A daemon restart could drop the job that was running** — chain locks record the daemon's pid, which is always 1 in Docker, so a lock left by a daemon stopped mid-chain looked current to its replacement, and the requeued job was skipped. The daemon now clears every chain lock at startup; it is the only lock holder, and nothing is running yet.
+- **A blocked chain-lock attempt freed the lock it was blocked by** — when a chain lock was held, the acquire path deleted the lock file before reporting it as held, so the next job could start a second chain alongside the first. Held locks are now left in place.
+- **The container healthcheck only checked for `codex`** — it now checks that the configured primary and fallback worker CLIs are installed.
+
+### Changed
+
+- **Worker CLIs in the Docker image are pinned, dependencies included** — codex 0.160.1, pi 0.73.1, and Claude Code 2.1.197 install with `npm ci` from `docker/worker-clis/package-lock.json`, so their transitive dependencies are fixed too. opencode 1.18.35 and the Notion CLI 0.23.19 are pinned by version (`--build-arg` to override). These are the versions the 3.7.x pipeline was verified on. Before, every rebuild pulled the newest release of everything: today one rebuild failed outright because a minutes-old AWS SDK release (`@aws-sdk/client-bedrock-runtime@3.1147.0`, pulled in through pi) wasn't downloadable yet.
+- **Node 24** for the Docker image and the release workflow (Node 20 reached end of life in April 2026).
+- The release workflow runs one release at a time, so back-to-back merges no longer race to publish the same version.
+
 ## [3.7.1] (2026-10-06) — Graph commits restored in Docker, runtime state out of history, compress action fixed
 
 ### Fixed

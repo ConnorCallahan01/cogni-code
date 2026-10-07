@@ -10,6 +10,7 @@ import { claimNextJob, completeRunningJob, countJobs, enqueueJob, ensureJobDirec
 import { GraphMemoryJob, GraphMemoryJobState, NotionInboundTriagePayload, NotionInboundEnrichPayload } from "./job-schema.js";
 import { runPipelineWorker, WorkerRunOptions } from "./worker-runner.js";
 import { ensureGraphGitHygiene } from "../git.js";
+import { acquireProjectChainLock, clearChainLocks, releaseProjectChainLock } from "./chain-locks.js";
 import { pruneOpencodeSessions } from "./opencode-housekeeping.js";
 import { loadRuntimeConfig } from "../runtime.js";
 import { regenerateCoreContextFiles, regenerateDreamContext } from "./graph-ops.js";
@@ -19,7 +20,7 @@ import { scoreCandidates, computeNodeContentHash, computeMultiNodeContentHash } 
 import { listManifests, findDriftedManifests, manifestKeyForNodes } from "./skillforge-manifest.js";import { getAssistantTracePath, getToolTracePath } from "../session-trace.js";
 import { getDailyBriefPaths } from "../briefs.js";
 import { loadExternalInputsConfig, readRecentClassifiedInputs } from "../external-inputs.js";
-import { getProjectWorkingPath, getProjectWorkingStatePath, getProjectWorkingUpdatePath, getFileInteractionPath, getProjectAuditDir, getProjectPreflightPath, getProjectAuditReportPath, getProjectAuditBriefPath, getProjectDreamsDir, getProjectDreamSummaryPath, getProjectLockPath, getGlobalLockPath, ensureAuditDirectories, ensureDreamDirectories, ensureLockDirectories, sanitizeProjectSlug } from "../working-files.js";
+import { getProjectWorkingPath, getProjectWorkingStatePath, getProjectWorkingUpdatePath, getFileInteractionPath, getProjectAuditDir, getProjectPreflightPath, getProjectAuditReportPath, getProjectAuditBriefPath, getProjectDreamsDir, getProjectDreamSummaryPath, ensureAuditDirectories, ensureDreamDirectories, sanitizeProjectSlug } from "../working-files.js";
 import { processObserverOutputs } from "./observer-tools.js";
 import { processCompressorOutputs, runAutoPrune } from "./compressor-tools.js";
 import { rebuildIndex as rebuildGraphIndex } from "./graph-index.js";
@@ -86,75 +87,6 @@ function releaseDaemonLock(): void {
     if (fs.existsSync(CONFIG.paths.daemonLock)) {
       fs.unlinkSync(CONFIG.paths.daemonLock);
     }
-  } catch { /* ignore */ }
-}
-
-function acquireProjectChainLock(project: string): void {
-  ensureLockDirectories();
-  const lockPath = getProjectLockPath(project);
-  if (fs.existsSync(lockPath)) {
-    try {
-      const lock = JSON.parse(fs.readFileSync(lockPath, "utf-8"));
-      const ageMs = Date.now() - (lock.startedAtMs || 0);
-      if (ageMs < 30 * 60 * 1000) {
-        throw new Error(`Project chain lock held for ${project}`);
-      }
-      fs.unlinkSync(lockPath);
-    } catch (err) {
-      if (fs.existsSync(lockPath)) {
-        fs.unlinkSync(lockPath);
-      }
-      if (err instanceof Error && err.message.startsWith("Project chain lock held")) {
-        throw err;
-      }
-    }
-  }
-  fs.writeFileSync(lockPath, JSON.stringify({
-    project,
-    pid: process.pid,
-    startedAtMs: Date.now(),
-    startedAt: new Date().toISOString(),
-  }, null, 2));
-}
-
-function releaseProjectChainLock(project: string): void {
-  try {
-    const lockPath = getProjectLockPath(project);
-    if (fs.existsSync(lockPath)) fs.unlinkSync(lockPath);
-  } catch { /* ignore */ }
-}
-
-function acquireGlobalChainLock(): void {
-  ensureLockDirectories();
-  const lockPath = getGlobalLockPath();
-  if (fs.existsSync(lockPath)) {
-    try {
-      const lock = JSON.parse(fs.readFileSync(lockPath, "utf-8"));
-      const ageMs = Date.now() - (lock.startedAtMs || 0);
-      if (ageMs < 30 * 60 * 1000) {
-        throw new Error("Global chain lock held");
-      }
-      fs.unlinkSync(lockPath);
-    } catch (err) {
-      if (fs.existsSync(lockPath)) {
-        fs.unlinkSync(lockPath);
-      }
-      if (err instanceof Error && err.message === "Global chain lock held") {
-        throw err;
-      }
-    }
-  }
-  fs.writeFileSync(lockPath, JSON.stringify({
-    pid: process.pid,
-    startedAtMs: Date.now(),
-    startedAt: new Date().toISOString(),
-  }, null, 2));
-}
-
-function releaseGlobalChainLock(): void {
-  try {
-    const lockPath = getGlobalLockPath();
-    if (fs.existsSync(lockPath)) fs.unlinkSync(lockPath);
   } catch { /* ignore */ }
 }
 
@@ -2521,6 +2453,10 @@ export async function runDaemon({ once = false }: { once?: boolean } = {}): Prom
   }
   ensureJobDirectories();
   acquireDaemonLock();
+  const staleLocks = clearChainLocks();
+  if (staleLocks > 0) {
+    activityBus.log("system:info", `Cleared ${staleLocks} chain lock(s) left by a previous daemon`);
+  }
   requeueStaleRunningJobs(60_000);
 
   // Before any worker runs `git add -A`, make sure runtime state is ignored.
