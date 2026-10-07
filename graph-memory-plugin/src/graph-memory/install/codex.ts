@@ -1,6 +1,7 @@
 import fs from "fs";
 import path from "path";
 import { resolvePkgRoot } from "./detect.js";
+import { loadJsonConfigForUpdate } from "./json-config.js";
 
 // Codex spawns MCP servers and hooks with a sanitized PATH that may not
 // include the node/npm bin dir (e.g. nvm installs), so a bare "cogni-code"
@@ -119,14 +120,16 @@ function registerMcp(configTomlPath: string): string[] {
 function mergeHooks(hooksJsonPath: string): string[] {
   const incoming = buildIncomingHooks();
 
-  let existing: any = { hooks: {} };
+  let existing: any;
   try {
-    const raw = fs.readFileSync(hooksJsonPath, "utf-8");
-    existing = JSON.parse(raw);
-    if (!existing.hooks) existing.hooks = {};
-  } catch {
-    // No existing hooks file
+    existing = loadJsonConfigForUpdate(
+      hooksJsonPath,
+      "Merge the cogni-code hooks into it by hand, or fix the file and re-run `cogni-code install --codex`."
+    );
+  } catch (err: any) {
+    return [`Warning: ${err.message}`];
   }
+  if (!existing.hooks) existing.hooks = {};
 
   for (const [event, matcherGroups] of Object.entries(incoming)) {
     if (!existing.hooks[event]) existing.hooks[event] = [];

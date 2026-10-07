@@ -3,6 +3,7 @@ import os from "os";
 import path from "path";
 import { spawnSync } from "child_process";
 import { resolvePkgRoot } from "./detect.js";
+import { loadJsonConfigForUpdate } from "./json-config.js";
 
 const PLUGIN_NAME = "graph-memory";
 const MARKETPLACE_NAME = "cogni-code";
@@ -125,47 +126,57 @@ function registerDirect(claudeDir: string, pkgRoot: string): string[] {
   const manifest = readJson(path.join(pkgRoot, ".claude-plugin", "plugin.json"));
   const version = typeof manifest?.version === "string" ? manifest.version : "0.0.0";
 
-  const marketplacesPath = path.join(claudeDir, "plugins", "known_marketplaces.json");
-  const marketplaces = readJson(marketplacesPath) || {};
-  marketplaces[MARKETPLACE_NAME] = {
-    source: { source: "directory", path: pkgRoot },
-    installLocation: pkgRoot,
-    lastUpdated: now,
+  // Each file is skipped, with a warning, rather than rewritten from scratch if
+  // it exists but can't be parsed safely.
+  const update = (filePath: string, apply: (config: Record<string, any>) => void): void => {
+    try {
+      const config = loadJsonConfigForUpdate(filePath, "Fix it and re-run `cogni-code install --claude`, or use `claude plugin install`.");
+      apply(config);
+      writeJson(filePath, config);
+    } catch (err: any) {
+      messages.push(`Warning: ${err.message}`);
+    }
   };
-  writeJson(marketplacesPath, marketplaces);
 
-  const registryPath = path.join(claudeDir, "plugins", "installed_plugins.json");
-  const registry = readJson(registryPath) || { version: 2, plugins: {} };
-  if (!registry.plugins) registry.plugins = {};
-  const current = Array.isArray(registry.plugins[PLUGIN_KEY]) ? registry.plugins[PLUGIN_KEY][0] : null;
-  registry.plugins[PLUGIN_KEY] = [
-    {
-      scope: "user",
-      installPath: pkgRoot,
-      version,
-      installedAt: current?.installedAt || now,
+  update(path.join(claudeDir, "plugins", "known_marketplaces.json"), (marketplaces) => {
+    marketplaces[MARKETPLACE_NAME] = {
+      source: { source: "directory", path: pkgRoot },
+      installLocation: pkgRoot,
       lastUpdated: now,
-    },
-  ];
-  writeJson(registryPath, registry);
+    };
+  });
 
-  const settingsPath = path.join(claudeDir, "settings.json");
-  const settings = readJson(settingsPath) || {};
-  if (typeof settings.extraKnownMarketplaces !== "object" || settings.extraKnownMarketplaces === null) {
-    settings.extraKnownMarketplaces = {};
-  }
-  settings.extraKnownMarketplaces[MARKETPLACE_NAME] = {
-    source: { source: "directory", path: pkgRoot },
-  };
-  if (typeof settings.enabledPlugins !== "object" || settings.enabledPlugins === null) {
-    settings.enabledPlugins = {};
-  }
-  if (settings.enabledPlugins[PLUGIN_KEY] === false) {
-    messages.push(`Plugin left disabled (settings.json has ${PLUGIN_KEY}: false). Enable it with: claude plugin enable ${PLUGIN_KEY}`);
-  } else {
-    settings.enabledPlugins[PLUGIN_KEY] = true;
-  }
-  writeJson(settingsPath, settings);
+  update(path.join(claudeDir, "plugins", "installed_plugins.json"), (registry) => {
+    if (registry.version === undefined) registry.version = 2;
+    if (!registry.plugins) registry.plugins = {};
+    const current = Array.isArray(registry.plugins[PLUGIN_KEY]) ? registry.plugins[PLUGIN_KEY][0] : null;
+    registry.plugins[PLUGIN_KEY] = [
+      {
+        scope: "user",
+        installPath: pkgRoot,
+        version,
+        installedAt: current?.installedAt || now,
+        lastUpdated: now,
+      },
+    ];
+  });
+
+  update(path.join(claudeDir, "settings.json"), (settings) => {
+    if (typeof settings.extraKnownMarketplaces !== "object" || settings.extraKnownMarketplaces === null) {
+      settings.extraKnownMarketplaces = {};
+    }
+    settings.extraKnownMarketplaces[MARKETPLACE_NAME] = {
+      source: { source: "directory", path: pkgRoot },
+    };
+    if (typeof settings.enabledPlugins !== "object" || settings.enabledPlugins === null) {
+      settings.enabledPlugins = {};
+    }
+    if (settings.enabledPlugins[PLUGIN_KEY] === false) {
+      messages.push(`Plugin left disabled (settings.json has ${PLUGIN_KEY}: false). Enable it with: claude plugin enable ${PLUGIN_KEY}`);
+    } else {
+      settings.enabledPlugins[PLUGIN_KEY] = true;
+    }
+  });
 
   messages.push(`Registered plugin ${PLUGIN_KEY} in Claude Code config files.`);
   return messages;

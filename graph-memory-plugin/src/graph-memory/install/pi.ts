@@ -2,6 +2,7 @@ import fs from "fs";
 import path from "path";
 import { spawnSync } from "child_process";
 import { resolvePkgRoot } from "./detect.js";
+import { loadJsonConfigForUpdate } from "./json-config.js";
 
 // pi loads extension packages listed in ~/.pi/agent/settings.json under
 // "packages" — path entries relative to that directory, or npm:/git: specs.
@@ -40,13 +41,7 @@ function runPi(args: string[]): { ok: boolean; output: string } {
   }
 }
 
-function readSettings(settingsPath: string): Record<string, any> {
-  try {
-    return JSON.parse(fs.readFileSync(settingsPath, "utf-8"));
-  } catch {
-    return {};
-  }
-}
+const SETTINGS_HINT = "Fix the file and re-run `cogni-code install --pi`, or register the package with `pi install`.";
 
 function isOurPackageEntry(entry: string): boolean {
   return (
@@ -63,7 +58,12 @@ function isOurPackageEntry(entry: string): boolean {
 // recognizably ours but does not resolve to the currently installed package.
 function cleanupStalePackageEntries(piAgentDir: string, pkgRoot: string): string[] {
   const settingsPath = path.join(piAgentDir, "settings.json");
-  const settings = readSettings(settingsPath);
+  let settings: Record<string, any>;
+  try {
+    settings = loadJsonConfigForUpdate(settingsPath, SETTINGS_HINT);
+  } catch (err: any) {
+    return [`Warning: ${err.message}`];
+  }
   if (!Array.isArray(settings.packages)) return [];
 
   const kept = settings.packages.filter((entry: unknown) => {
@@ -84,7 +84,12 @@ function cleanupStalePackageEntries(piAgentDir: string, pkgRoot: string): string
 function registerDirect(piAgentDir: string, pkgRoot: string): string[] {
   fs.mkdirSync(piAgentDir, { recursive: true });
   const settingsPath = path.join(piAgentDir, "settings.json");
-  const settings = readSettings(settingsPath);
+  let settings: Record<string, any>;
+  try {
+    settings = loadJsonConfigForUpdate(settingsPath, SETTINGS_HINT);
+  } catch (err: any) {
+    return [`Warning: ${err.message}`];
+  }
   if (!Array.isArray(settings.packages)) settings.packages = [];
 
   const alreadyRegistered = settings.packages.some(
