@@ -3,6 +3,7 @@ import os from "os";
 import path from "path";
 import { spawn, SpawnOptions } from "child_process";
 import { loadRuntimeConfig, WorkerProvider } from "../runtime.js";
+import { detectTransientFailure, TransientFailure } from "./worker-transient.js";
 import {
   authRemediation,
   clearAuthRejection,
@@ -29,6 +30,8 @@ export interface WorkerRunResult {
   exitCode: number;
   logFile: string;
   pid: number | undefined;
+  /** Set on failure when the last attempt that ran failed for a transient reason. */
+  transient?: TransientFailure & { provider: WorkerProvider };
 }
 
 // ── Harness Adapter Interface ──────────────────────────────────────────────
@@ -573,7 +576,14 @@ export async function runPipelineWorker(opts: WorkerRunOptions): Promise<WorkerR
     const timeoutMs = Math.max(30_000, opts.timeoutMs ?? 300_000);
     throw new Error(`Worker (${lastAttempt.provider}) timed out after ${timeoutMs}ms. See ${last.logFile}`);
   }
-  return { exitCode: last?.exitCode ?? 1, logFile: last?.logFile ?? "", pid: last?.pid };
+  const result: WorkerRunResult = { exitCode: last?.exitCode ?? 1, logFile: last?.logFile ?? "", pid: last?.pid };
+  // The last attempt is the job's last chance; if it couldn't reach its
+  // provider, the job itself is fine and can run again later.
+  const transient = last && lastAttempt ? detectTransientFailure(lastAttempt.provider, readLogTail(last.logFile)) : null;
+  if (transient && lastAttempt) {
+    result.transient = { ...transient, provider: lastAttempt.provider };
+  }
+  return result;
 }
 
 /**

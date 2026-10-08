@@ -141,6 +141,10 @@ export interface GraphMemoryJob<TPayload = GraphMemoryJobPayload> {
   logFile?: string;
   lastError?: string;
   workerPid?: number;
+  /** A deferred job is not claimed before this time. */
+  notBefore?: string;
+  /** Times this job was deferred because its worker could not run (transient). */
+  deferrals?: number;
 }
 
 export interface CreateJobOptions<TPayload = GraphMemoryJobPayload> {

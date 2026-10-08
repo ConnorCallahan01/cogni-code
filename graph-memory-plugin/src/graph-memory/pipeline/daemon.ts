@@ -6,9 +6,10 @@ import { CONFIG, isGraphInitialized } from "../config.js";
 import { initializeGraph } from "../index.js";
 import { activityBus } from "../events.js";
 import { generatePreflightReport } from "./preflight.js";
-import { claimNextJob, completeRunningJob, countJobs, enqueueJob, ensureJobDirectories, failRunningJob, hasActiveJob, hasActiveJobForProject, hasActiveProjectChainJob, getActiveProjectChainProjects, countDeltasForProject, listJobs, requeueRunningJob, requeueStaleRunningJobs, updateRunningJob, PROJECT_CHAIN_TYPES, GLOBAL_CHAIN_TYPES, PRIORITY } from "./job-queue.js";
+import { claimNextJob, completeRunningJob, countJobs, deferRunningJob, enqueueJob, ensureJobDirectories, failRunningJob, isJobDue, hasActiveJob, hasActiveJobForProject, hasActiveProjectChainJob, getActiveProjectChainProjects, countDeltasForProject, listJobs, requeueRunningJob, requeueStaleRunningJobs, updateRunningJob, PROJECT_CHAIN_TYPES, GLOBAL_CHAIN_TYPES, PRIORITY } from "./job-queue.js";
 import { GraphMemoryJob, GraphMemoryJobState, NotionInboundTriagePayload, NotionInboundEnrichPayload } from "./job-schema.js";
 import { runPipelineWorker, WorkerRunOptions } from "./worker-runner.js";
+import { TRANSIENT_DEFER_LIMIT, transientRetryDelayMs, WorkerUnavailableError } from "./worker-transient.js";
 import { ensureGraphGitHygiene } from "../git.js";
 import { acquireProjectChainLock, clearChainLocks, releaseProjectChainLock } from "./chain-locks.js";
 import { pruneOpencodeSessions } from "./opencode-housekeeping.js";
@@ -50,7 +51,38 @@ function resolveWorkerModel(): string | undefined {
 }
 
 async function runWorker(opts: WorkerRunOptions): Promise<{ exitCode: number; logFile: string; pid: number | undefined }> {
-  return runPipelineWorker({ ...opts, model: opts.model || resolveWorkerModel() });
+  const result = await runPipelineWorker({ ...opts, model: opts.model || resolveWorkerModel() });
+  if (result.exitCode !== 0 && result.transient) {
+    throw new WorkerUnavailableError(result.transient.provider, result.transient, result.logFile);
+  }
+  return result;
+}
+
+/**
+ * A job whose worker couldn't run for a transient reason (offline, provider
+ * unreachable) goes back in the queue with a backoff; anything else fails it.
+ */
+function settleFailedJob(job: GraphMemoryJob, err: any): void {
+  const message = err?.message || String(err);
+  if (err instanceof WorkerUnavailableError && (job.deferrals ?? 0) < TRANSIENT_DEFER_LIMIT) {
+    deferRunningJob(job, message, transientRetryDelayMs(job.deferrals ?? 0));
+    return;
+  }
+  failRunningJob(job, message);
+}
+
+/**
+ * Run a project-chain worker (auditor, librarian, dreamer). The chain lock is
+ * released when the worker throws (timeout, worker unavailable) as it is when
+ * the worker exits non-zero, so the project's chain isn't stuck until the TTL.
+ */
+async function runChainWorker(project: string | undefined, opts: WorkerRunOptions): Promise<{ exitCode: number; logFile: string; pid: number | undefined }> {
+  try {
+    return await runWorker(opts);
+  } catch (err) {
+    if (project && project !== "global") releaseProjectChainLock(project);
+    throw err;
+  }
 }
 
 function acquireDaemonLock(): void {
@@ -1129,7 +1161,7 @@ async function runAuditor(job: GraphMemoryJob): Promise<void> {
   const auditBriefPathForWorker = toWorkerPath(auditBriefPath);
 
   const prompt = `Read the auditor instructions at ${auditorPath}, then follow them. Graph root: ${CONFIG.paths.graphRoot}.${projectCtx} Read the preflight report at ${preflightReportPath} first — it contains the full node manifest and flagged issues with their file contents included. Write the audit report to ${auditReportPathForWorker} and the audit brief to ${auditBriefPathForWorker}. IMPORTANT: when rebuilding context files, use this absolute path for graph-ops: ${graphOpsPath}`;
-  const result = await runWorker({
+  const result = await runChainWorker(project, {
     name: `auditor-${job.id}`,
     prompt,
     graphRoot: CONFIG.paths.graphRoot,
@@ -1187,7 +1219,7 @@ async function runLibrarian(job: GraphMemoryJob): Promise<void> {
   const librarianPath = path.join(AGENTS_DIR, "memory-librarian.md");
   const graphOpsPath = path.resolve(__dirname, "graph-ops.js");
   const prompt = `Read the librarian instructions at ${librarianPath}, then follow them. Graph root: ${CONFIG.paths.graphRoot}.${projectCtx} Read the audit brief at ${auditBriefPathForWorker} and audit report at ${auditReportPathForWorker} first — the auditor has already triaged mechanical fixes and prepared recommendations for you. IMPORTANT: when rebuilding context files, use this absolute path for graph-ops: ${graphOpsPath}`;
-  const result = await runWorker({
+  const result = await runChainWorker(project, {
     name: `librarian-${job.id}`,
     prompt,
     graphRoot: CONFIG.paths.graphRoot,
@@ -1232,7 +1264,7 @@ async function runDreamer(job: GraphMemoryJob): Promise<void> {
   const dreamerPath = path.join(AGENTS_DIR, "memory-dreamer.md");
   const graphOpsPath = path.resolve(__dirname, "graph-ops.js");
   const prompt = `Read the dreamer instructions at ${dreamerPath}, then follow them. Graph root: ${CONFIG.paths.graphRoot}.${projectCtx} IMPORTANT: when rebuilding DREAMS.md, use this absolute path for graph-ops: ${graphOpsPath}`;
-  const result = await runWorker({
+  const result = await runChainWorker(project, {
     name: `dreamer-${job.id}`,
     prompt,
     graphRoot: CONFIG.paths.graphRoot,
@@ -2543,7 +2575,7 @@ export async function runDaemon({ once = false }: { once?: boolean } = {}): Prom
 
         const jobPromise = processJob(job)
           .then(() => { completeRunningJob(job); })
-          .catch((err: any) => { failRunningJob(job, err?.message || String(err)); })
+          .catch((err: any) => { settleFailedJob(job, err); })
           .finally(() => { inFlight.delete(job.id); });
 
         inFlight.set(job.id, jobPromise);
@@ -2617,6 +2649,8 @@ function canClaimJob(
   activeProjectChains: Set<string>,
   globalChainRunning: boolean,
 ): boolean {
+  if (!isJobDue(job)) return false;
+
   if (PROJECT_CHAIN_TYPES.has(job.type)) {
     const project = (job.payload as unknown as Record<string, unknown>)?.project;
     if (typeof project === "string" && project !== "global") {
