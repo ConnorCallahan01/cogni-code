@@ -1,5 +1,19 @@
 # Changelog
 
+## [3.7.4] (2026-10-08) — Offline jobs wait instead of failing, pi worker fixed
+
+### Fixed
+
+- **Jobs failed for good when the machine was offline** — a worker that couldn't reach its provider (Mac asleep, Wi-Fi off) failed its job permanently, and a failed scribe job's session snapshot is swept four hours later, so that session never made it into memory. When the last worker attempt fails because it couldn't connect (opencode `Cannot connect to API` or `Connection reset by server`; codex `workspace routing discovery failed`, `stream disconnected before completion: error sending request`, or a token refresh that couldn't reach the server) or because opencode's database was locked, the job goes back in the queue instead: it retries after 2, 4, 8, and 16 minutes, then every 30 minutes, up to 24 times, without spending one of its attempts. A queued job keeps its snapshot. Rejected credentials still fail at once.
+- **A chain job that threw kept its project's chain lock** — when an auditor, librarian, or dreamer worker timed out, the job failed without releasing the project's chain lock, so that project's next chain waited for the lock to expire (30 minutes). The lock is now released whenever the worker throws, as it already was on a non-zero exit.
+- **The pi worker never ran** — the pi adapter passed `--color never`, which pi doesn't accept, so every pi job exited with `Error: Unknown option: --color` before reaching a model. It sets `NO_COLOR=1` instead.
+- **`npm test` wrote to the real activity log** — the opencode session-pruner test imported the plugin without a temporary graph root, so each run appended its fake "Pruned N opencode pipeline session(s)" results to `~/.graph-memory/.logs/activity.jsonl`. Every test process now gets a throwaway graph root unless the test sets its own.
+
+### Changed
+
+- **pi in the Docker image is `@earendil-works/pi-coding-agent` 1.0.4** — `@mariozechner/pi-coding-agent` is deprecated and was the source of all six open Dependabot alerts on the image's worker-CLI lockfile (`extract-zip`, `basic-ftp`, and pi itself; only `basic-ftp` had a patched release). The worker lockfile drops from 214 to 162 packages and `npm audit` reports none. The plugin's optional pi peer dependency and the pi extension's type import use the new package name.
+- Dependabot no longer opens major-version PRs for the dashboard's `js-yaml` (same YAML 1.2 frontmatter migration as the plugin) or `vite` (it has to move with `@vitejs/plugin-react`, whose 4.x line peers on vite 7 and below).
+
 ## [3.7.3] (2026-10-07) — Installer never replaces a config it can't parse
 
 ### Fixed
