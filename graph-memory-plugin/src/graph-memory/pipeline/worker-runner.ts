@@ -151,7 +151,6 @@ const piAdapter: HarnessAdapter = {
       "--no-skills",
       "--no-context-files",
       "--no-session",
-      "--color", "never",
     ];
 
     if (opts.model) {
@@ -167,6 +166,8 @@ const piAdapter: HarnessAdapter = {
         stdio: ["ignore", "pipe", "pipe"] as const,
         env: {
           ...process.env,
+          // pi has no --color flag (it exits on unknown options); it honors NO_COLOR.
+          NO_COLOR: "1",
           GRAPH_MEMORY_PIPELINE_CHILD: "1",
         },
       },

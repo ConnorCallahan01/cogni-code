@@ -107,6 +107,7 @@ esac
 `, { mode: 0o755 });
   fs.writeFileSync(path.join(binDir, "pi"), `#!/bin/sh
 echo pi >> "$FAKE_CALLS"
+[ -n "$FAKE_PI_ARGS" ] && printf '%s\\n' "NO_COLOR=$NO_COLOR" "$@" > "$FAKE_PI_ARGS"
 echo "pi exit $FAKE_PI_EXIT"
 exit "\${FAKE_PI_EXIT:-0}"
 `, { mode: 0o755 });
@@ -189,6 +190,7 @@ test("runPipelineWorker: a rejected codex login is recorded, skipped as a fallba
     run = runWorker(tmp, graphRoot, binDir, { GRAPH_MEMORY_WORKER_PROVIDER: "codex", FAKE_CODEX: "revoked" });
     assert.deepEqual(run.calls, ["codex"]);
     assert.equal(run.result.exitCode, 1);
+    assert.equal(run.result.transient, undefined, "rejected credentials are not retried later");
 
     // 5. After re-login, the next codex success clears the rejection.
     run = runWorker(tmp, graphRoot, binDir, { GRAPH_MEMORY_WORKER_PROVIDER: "codex", FAKE_CODEX: "ok" });
@@ -203,6 +205,30 @@ test("runPipelineWorker: a rejected codex login is recorded, skipped as a fallba
     assert.deepEqual(run.calls, ["pi", "codex"]);
     assert.equal(run.result.exitCode, 1);
     assert.equal(readAuthRejection(graphRoot, "codex"), null);
+    assert.equal(run.result.transient?.provider, "codex", "the last attempt was offline, so the job can run later");
+    assert.equal(run.result.transient?.kind, "network");
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+// pi exits on any flag it doesn't know ("Error: Unknown option: --color"), so
+// a stray flag fails every pi job before it reaches a model.
+test("runPipelineWorker: pi is invoked only with flags pi accepts", () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "worker-pi-args-"));
+  const graphRoot = path.join(tmp, ".graph-memory");
+  fs.mkdirSync(path.join(graphRoot, ".jobs"), { recursive: true });
+  const binDir = makeFakeHarnesses(tmp);
+  const argsFile = path.join(tmp, "pi-args.txt");
+  try {
+    const run = runWorker(tmp, graphRoot, binDir, { GRAPH_MEMORY_WORKER_PROVIDER: "pi", FAKE_PI_ARGS: argsFile });
+    assert.equal(run.result.exitCode, 0);
+    const [noColor, ...args] = fs.readFileSync(argsFile, "utf-8").trim().split("\n");
+    assert.equal(noColor, "NO_COLOR=1");
+    const known = new Set(["--print", "--tools", "--no-extensions", "--no-skills", "--no-context-files", "--no-session", "--model"]);
+    const flags = args.filter((arg) => arg.startsWith("--"));
+    assert.deepEqual(flags.filter((flag) => !known.has(flag)), []);
+    assert.ok(flags.includes("--print") && flags.includes("--no-session"));
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
   }
