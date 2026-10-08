@@ -262,7 +262,8 @@ export function claimNextJob(skipTypes?: Set<string>): GraphMemoryJob | null {
       return a.createdAt.localeCompare(b.createdAt);
     });
 
-  const next = skipTypes ? sorted.find(j => !skipTypes.has(j.type)) : sorted[0];
+  const now = Date.now();
+  const next = sorted.find(j => isJobDue(j, now) && !skipTypes?.has(j.type));
 
   if (!next) return null;
 
@@ -337,6 +338,44 @@ export function requeueRunningJob(job: GraphMemoryJob, error: string): GraphMemo
   removeJob(job, "running");
   writeJob(requeued, "queued");
   return requeued;
+}
+
+/** False while a deferred job is still waiting out its retry delay. */
+export function isJobDue(job: GraphMemoryJob, now = Date.now()): boolean {
+  if (!job.notBefore) return true;
+  const notBefore = Date.parse(job.notBefore);
+  return Number.isNaN(notBefore) || notBefore <= now;
+}
+
+/**
+ * Put a running job back in the queue to retry after `delayMs`, without
+ * spending one of its attempts: its worker never got to do the job. The job
+ * stays queued, so anything it references (a scribe snapshot) is kept.
+ */
+export function deferRunningJob(job: GraphMemoryJob, error: string, delayMs: number): GraphMemoryJob {
+  const now = Date.now();
+  const deferred: GraphMemoryJob = {
+    ...job,
+    state: "queued",
+    updatedAt: new Date(now).toISOString(),
+    attempt: Math.max(0, job.attempt - 1),
+    lastError: error,
+    notBefore: new Date(now + delayMs).toISOString(),
+    deferrals: (job.deferrals ?? 0) + 1,
+  };
+  delete deferred.startedAt;
+  delete deferred.completedAt;
+  delete deferred.workerPid;
+  delete deferred.logFile;
+
+  removeJob(job, "running");
+  writeJob(deferred, "queued");
+  activityBus.log("system:info", `Deferred ${job.type} job: worker unavailable, retrying at ${deferred.notBefore}`, {
+    jobId: job.id,
+    deferrals: deferred.deferrals,
+    error,
+  });
+  return deferred;
 }
 
 export function requeueStaleRunningJobs(maxAgeMs: number): number {

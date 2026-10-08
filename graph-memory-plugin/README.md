@@ -131,7 +131,7 @@ Session-start uses a single injection path:
 
 ### Pipeline Stages
 
-The scribe → auditor → librarian → dreamer pipeline is the proven core. Observer and compressor also run by default (observer produces observations/session logs/node upserts on scribe and buffer thresholds; compressor folds observations into mental models afterward). The separate dreamer-v3 / dreamer-models variant is present in code but not wired. All stages read and write the same durable node files in `nodes/`, while `mind/`, `lenses/`, and `sessions/` hold compressed context layers. LLM-backed stages retry on the configured fallback worker if the primary provider fails or hits a usage limit.
+The scribe → auditor → librarian → dreamer pipeline is the proven core. Observer and compressor also run by default (observer produces observations/session logs/node upserts on scribe and buffer thresholds; compressor folds observations into mental models afterward). The separate dreamer-v3 / dreamer-models variant is present in code but not wired. All stages read and write the same durable node files in `nodes/`, while `mind/`, `lenses/`, and `sessions/` hold compressed context layers. LLM-backed stages retry on the configured fallback worker if the primary provider fails or hits a usage limit. A job whose worker couldn't reach its provider at all (machine asleep or offline) waits in the queue and retries with a backoff instead of failing.
 
 ### Notion Sync
 

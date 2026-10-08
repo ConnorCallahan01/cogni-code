@@ -1,6 +1,6 @@
 {
   "name": "cogni-code",
-  "version": "3.7.3",
+  "version": "3.7.4",
   "type": "module",
   "description": "Persistent, self-evolving memory for AI agents. Gives Claude Code, Codex CLI, OpenCode, and pi a knowledge graph that grows from conversations.",
   "license": "MIT",
@@ -38,9 +38,9 @@
     "dev": "tsc --watch",
     "mcp": "node dist/graph-memory/mcp-server.js",
     "prepare": "npm run build",
-    "prepublishOnly": "node --test --test-concurrency=1 tests/*.check.mjs",
+    "prepublishOnly": "node --import ./tests/isolate-graph-root.mjs --test --test-concurrency=1 tests/*.check.mjs",
     "status": "node -e \"import('./dist/graph-memory/tools.js').then(m => m.handleGraphMemory({action:'status'}).then(r => console.log(r.content[0].text)))\"",
-    "test": "npm run build && node --test --test-concurrency=1 tests/*.check.mjs"
+    "test": "npm run build && node --import ./tests/isolate-graph-root.mjs --test --test-concurrency=1 tests/*.check.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
@@ -81,11 +81,11 @@
     ]
   },
   "peerDependencies": {
-    "@mariozechner/pi-coding-agent": "*",
+    "@earendil-works/pi-coding-agent": "*",
     "typebox": "*"
   },
   "peerDependenciesMeta": {
-    "@mariozechner/pi-coding-agent": {
+    "@earendil-works/pi-coding-agent": {
       "optional": true
     },
     "typebox": {

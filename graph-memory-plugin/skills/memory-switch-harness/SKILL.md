@@ -61,7 +61,7 @@ Available: codex | claude | pi | opencode | api
     - First, check the Dockerfile at `<plugin_dir>/docker/Dockerfile` to confirm the harness CLI is included in the install steps. If it's missing from the Dockerfile, add the appropriate install command:
       - **codex**: `@openai/codex` via `npm install -g`
       - **claude**: already bundled in the base node image (no Dockerfile change needed)
-      - **pi**: `@mariozechner/pi-coding-agent` via `npm install -g`
+      - **pi**: `@earendil-works/pi-coding-agent` via `npm install -g` (formerly `@mariozechner/pi-coding-agent`)
       - **opencode**: via `curl -fsSL https://opencode.ai/install | bash`
     - Then rebuild:
       ```bash
