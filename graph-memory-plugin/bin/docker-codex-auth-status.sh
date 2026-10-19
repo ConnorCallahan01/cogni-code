@@ -8,7 +8,7 @@ container_codex() {
   docker exec \
     -e HOME="$GRAPH_MEMORY_CONTAINER_AUTH_PATH" \
     "$GRAPH_MEMORY_DOCKER_CONTAINER" \
-    bash -lc "$1"
+    bash -c "$1"
 }
 
 container_codex 'codex login status'

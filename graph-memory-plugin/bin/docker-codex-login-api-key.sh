@@ -12,6 +12,6 @@ fi
 printf '%s' "$OPENAI_API_KEY" | docker exec -i \
   -e HOME="$GRAPH_MEMORY_CONTAINER_AUTH_PATH" \
   "$GRAPH_MEMORY_DOCKER_CONTAINER" \
-  bash -lc 'codex login --with-api-key'
+  bash -c 'codex login --with-api-key'
 
 "$DIR/bin/docker-codex-auth-status.sh"

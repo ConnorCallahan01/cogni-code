@@ -26,14 +26,6 @@ function buildContextRefreshBlock(changedArtifacts: RefreshArtifact[], projectNa
   if (changedArtifacts.length === 0) return null;
 
   const sections: string[] = [];
-  if (changedArtifacts.includes("priors")) {
-    const priors = readArtifactContent("priors");
-    if (priors) sections.push(priors);
-  }
-  if (changedArtifacts.includes("soma")) {
-    const soma = readArtifactContent("soma");
-    if (soma) sections.push(soma);
-  }
   if (changedArtifacts.includes("working")) {
     const working = readArtifactContent("working", projectName);
     if (working && !working.includes("No session handoff captured yet")) sections.push(working);
@@ -95,7 +87,10 @@ async function main() {
 
   // --- Mid-session reinjection when librarian-owned artifacts changed ---
   try {
-    const changedArtifacts = diffSessionContextState(sessionId, project.name, ["priors", "soma", "map", "working"]);
+    // Only what session start injects gets refreshed: PRIORS and SOMA are
+    // legacy files it no longer loads, and re-sending SOMA cost ~8k characters
+    // per librarian run.
+    const changedArtifacts = diffSessionContextState(sessionId, project.name, ["map", "working"]);
     if (changedArtifacts.length > 0) {
       writeSessionContextState(sessionId, project.name);
       const refreshBlock = buildContextRefreshBlock(changedArtifacts, project.name);

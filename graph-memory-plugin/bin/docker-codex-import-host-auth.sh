@@ -53,7 +53,7 @@ fi
 docker exec \
   -e HOME="$GRAPH_MEMORY_CONTAINER_AUTH_PATH" \
   "$GRAPH_MEMORY_DOCKER_CONTAINER" \
-  bash -lc 'mkdir -p "$HOME/.codex" && chmod 700 "$HOME" "$HOME/.codex"'
+  bash -c 'mkdir -p "$HOME/.codex" && chmod 700 "$HOME" "$HOME/.codex"'
 
 docker cp "$HOST_AUTH_JSON" \
   "$GRAPH_MEMORY_DOCKER_CONTAINER:$CONTAINER_CODEX_HOME/auth.json"
@@ -66,6 +66,6 @@ fi
 docker exec \
   -e HOME="$GRAPH_MEMORY_CONTAINER_AUTH_PATH" \
   "$GRAPH_MEMORY_DOCKER_CONTAINER" \
-  bash -lc 'chmod 700 "$HOME" "$HOME/.codex" && chmod 600 "$HOME/.codex/auth.json" && if [ -f "$HOME/.codex/config.toml" ]; then chmod 600 "$HOME/.codex/config.toml"; fi'
+  bash -c 'chmod 700 "$HOME" "$HOME/.codex" && chmod 600 "$HOME/.codex/auth.json" && if [ -f "$HOME/.codex/config.toml" ]; then chmod 600 "$HOME/.codex/config.toml"; fi'
 
 "$DIR/bin/docker-codex-auth-status.sh"

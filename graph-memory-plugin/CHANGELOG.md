@@ -1,5 +1,19 @@
 # Changelog
 
+## [3.7.5] (2026-10-19) — Session start fits Claude Code's hook limit, pinned nodes scoped to their project
+
+### Fixed
+
+- **Claude Code sessions saw only the first 2,000 characters of memory** — Claude Code caps a hook's output at 10,000 characters and replaces anything longer with a 2,000-character preview the agent isn't told to read. On a mature graph session start emitted over 30,000 characters, so sessions got the guardrails and WORKING and nothing else: pinned procedures, the MAP, the mental model, and dreams never arrived. Session start now adds sections in priority order and stops under the cap: guardrails, WORKING, pinned nodes, the mental model's style and preferences, the project model, the MAP (which fills what's left, keeping fewer entries per category and listing this project's nodes first), then dreams. "Pick Up" is skipped when WORKING already lists those items.
+- **`status` reported installed worker CLIs as missing** — the Docker auth probes ran `bash -lc`, and a login shell resets `PATH`, dropping `/opt/worker-clis/node_modules/.bin`, where codex, claude, and pi have lived since 3.7.2. `status` showed `codex: command not found` for a working codex fallback, and `bin/docker-codex-login.sh` and `bin/docker-codex-auth-status.sh` couldn't find codex either. The probes and every `bin/docker-*` helper now use `bash -c`.
+- **Background refreshes re-sent SOMA mid-session** — when the librarian rewrote `SOMA.md` or `PRIORS.md`, the next prompt carried the whole file (about 8,000 characters), though session start no longer loads either. Mid-session refreshes now cover only what session start injects: WORKING and a MAP notice.
+
+### Changed
+
+- **Pinned nodes are project-scoped** — a pinned node auto-loads only in sessions of its own `project`; one without a project loads nowhere (it used to load in every project). A rule that holds everywhere belongs in the mental model's guardrails. `remember` refuses `pinned=true` without a `project` and can now set the project on an existing node that has none, and `status` lists pinned nodes with no project. Pinned nodes take at most about a third of session-start context, each is cut to its first 1,500 characters (the rule, ahead of its dated updates), and any that don't fit are named so the agent reads them.
+
+Before upgrading, give every pinned node a `project` (add it to the node's frontmatter), or it stops auto-loading.
+
 ## [3.7.4] (2026-10-08) — Offline jobs wait instead of failing, pi worker fixed
 
 ### Fixed

@@ -197,7 +197,14 @@ function rememberNode(args: {
         parsed.data.soma = args.soma;
       }
 
+      if (args.project && !parsed.data.project) {
+        parsed.data.project = args.project;
+      }
+
       // Update pinned if provided
+      if (args.pinned === true && !parsed.data.project) {
+        return { content: [{ type: "text", text: `Error: pinned nodes are project-scoped — they auto-load only in sessions of their project. Pass project="owner/repo" with pinned=true. A rule that applies in every project belongs in the mental model's guardrails instead.` }], isError: true };
+      }
       if (args.pinned !== undefined) {
         parsed.data.pinned = args.pinned;
       }
@@ -226,6 +233,10 @@ function rememberNode(args: {
   }
 
   // Create new node
+  if (args.pinned === true && !args.project) {
+    return { content: [{ type: "text", text: `Error: pinned nodes are project-scoped — they auto-load only in sessions of their project. Pass project="owner/repo" with pinned=true. A rule that applies in every project belongs in the mental model's guardrails instead.` }], isError: true };
+  }
+
   const dir = path.dirname(filePath);
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 
@@ -1112,6 +1123,11 @@ function getStatus() {
     warnings.push(`${lowConfNodes.length} node(s) below 0.3 confidence`);
   }
 
+  const unscopedPinned = index.filter((e: any) => e.pinned && !e.project).map((e: any) => e.path);
+  if (unscopedPinned.length > 0) {
+    warnings.push(`${unscopedPinned.length} pinned node(s) have no project, so they auto-load in no session: ${unscopedPinned.join(", ")} (set one with remember, project="owner/repo")`);
+  }
+
   // Check for pending operations
   const queuedJobs = countJobs("queued");
   const runningJobs = countJobs("running");
@@ -1365,7 +1381,7 @@ export const graphMemorySchema = {
   sessionId: z.string().optional()
     .describe("Session ID for access tracking (supplied by plugin, not user)"),
   pinned: z.boolean().optional()
-    .describe("Pin node to prevent decay and auto-load at session start for matching projects"),
+    .describe("Pin node to prevent decay and auto-load it at session start in its project. Requires project."),
   workerProvider: z.enum(["codex", "claude", "pi", "opencode", "api"]).optional()
     .describe("Worker harness for configure_runtime (codex, claude, pi, opencode, api)"),
   workerModel: z.string().optional()
