@@ -3,7 +3,7 @@ import { installCodex, resolveCliInvocation } from "./codex.js";
 import { installClaudeCode } from "./claude-code.js";
 import { installPi } from "./pi.js";
 import { installOpencode } from "./opencode.js";
-import { isGraphInitialized, saveGlobalConfig, reloadConfig, CONFIG } from "../config.js";
+import { isGraphInitialized, readGlobalConfigRoot, saveGlobalConfig, reloadConfig, CONFIG } from "../config.js";
 import { initializeGraph } from "../index.js";
 import { saveRuntimeConfig, loadRuntimeConfig, WorkerProvider } from "../runtime.js";
 import { spawn, spawnSync } from "child_process";
@@ -201,7 +201,10 @@ async function verifyMcpLaunches(): Promise<void> {
 }
 
 function ensureGraphInitialized(customGraphRoot: string | null): string {
-  if (isGraphInitialized()) {
+  // An existing graph counts only when the pointer file names it, so a first
+  // install always writes the pointer and --graph-root is honored.
+  const pointedRoot = readGlobalConfigRoot();
+  if (pointedRoot && isGraphInitialized(pointedRoot)) {
     reloadConfig();
     return `Using existing graph at ${CONFIG.paths.graphRoot}`;
   }

@@ -1,5 +1,11 @@
 # Changelog
 
+## [3.7.6] (2026-10-19) — The initialized check honors `GRAPH_MEMORY_ROOT`
+
+### Fixed
+
+- **A graph set with `GRAPH_MEMORY_ROOT` counted as not initialized** — everything else finds the graph root from `GRAPH_MEMORY_ROOT` first, then `~/.graph-memory-config.yml`, then `~/.graph-memory`, but the initialized check read only the pointer file. A hook run with `GRAPH_MEMORY_ROOT` and no pointer file exited with "Memory not initialized", and the daemon container, which has no pointer file, re-ran graph setup on every start (harmless, since setup only creates what's missing). The check now uses the same root. `cogni-code install` still treats a graph as existing only when the pointer file names it, so a first install writes the pointer and `--graph-root` is honored.
+
 ## [3.7.5] (2026-10-19) — Session start fits Claude Code's hook limit, pinned nodes scoped to their project
 
 ### Fixed
