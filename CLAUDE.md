@@ -200,6 +200,7 @@ graph_memory(action="remember", path="patterns/new-pattern", gist="One-sentence 
 - **Notion API v2026-03-11** — properties are managed via data sources, not databases
 - **Shared ambient recall** — `scoring.ts` holds STOPWORDS, patterns, category gates, full `ambientRecall()` — extensions use thin wrappers
 - **Webhook secret via env var** — `${NOTION_WEBHOOK_SECRET}` in config.yml, resolved at runtime
+- **Session start fits Claude Code's hook cap** — hook output over 10,000 characters becomes a 2,000-character preview, so session start packs sections by priority under it; pinned nodes load only in their own project
 - **Daemon crash resilience** — tick housekeeping wrapped in try/catch, per-file I/O guarded, unknown job types throw explicit errors
 
 <!-- BEGIN graph-memory plugin section -->

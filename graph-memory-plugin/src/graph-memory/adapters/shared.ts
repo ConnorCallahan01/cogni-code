@@ -7,64 +7,9 @@ import { ensureProjectWorkingFile } from "../project-working.js";
 import { getWorkingInjectionPaths } from "../working-files.js";
 import { enqueueJob } from "../pipeline/job-queue.js";
 import { activityBus } from "../events.js";
-import matter from "../frontmatter.js";
+import { buildProjectMap, loadPinnedNodes, mapHeader, renderPinnedSection } from "../context-sections.js";
 import fs from "fs";
 import path from "path";
-
-function buildProjectMAPShared(projectName: string, budget: number): string | null {
-  const indexPath = CONFIG.paths.index;
-  if (!fs.existsSync(indexPath)) return null;
-
-  let index: any[];
-  try {
-    index = JSON.parse(fs.readFileSync(indexPath, "utf-8"));
-  } catch { return null; }
-
-  const categories = new Map<string, Array<{ path: string; line: string; confidence: number; projectRelevant: boolean }>>();
-
-  for (const entry of index) {
-    if (!entry.gist) continue;
-    const cat = (entry.path || "").split("/")[0] || "uncategorized";
-    const isProjectNode = !entry.project || entry.project === projectName;
-    if (!categories.has(cat)) categories.set(cat, []);
-    categories.get(cat)!.push({
-      path: entry.path,
-      line: `- **${entry.path}**${entry.pinned ? " [pinned]" : ""} — ${entry.gist}`,
-      confidence: entry.confidence || 0.5,
-      projectRelevant: isProjectNode,
-    });
-  }
-
-  const output: string[] = [];
-  const sortedCats = [...categories.entries()].sort(([a], [b]) => a.localeCompare(b));
-  let tokensUsed = 0;
-
-  for (const [cat, entries] of sortedCats) {
-    const projectEntries = entries.filter(e => e.projectRelevant);
-    const otherEntries = entries.filter(e => !e.projectRelevant);
-
-    const selected = [
-      ...projectEntries.sort((a, b) => b.confidence - a.confidence).slice(0, 8),
-      ...otherEntries.sort((a, b) => b.confidence - a.confidence).slice(0, 2),
-    ];
-
-    if (selected.length === 0) continue;
-
-    const catBlock: string[] = [`## ${cat}`, ""];
-    for (const e of selected) catBlock.push(e.line);
-    const skipped = entries.length - selected.length;
-    if (skipped > 0) catBlock.push(`  ... and ${skipped} more (use recall to explore)`);
-    catBlock.push("");
-
-    const catTokens = Math.ceil(catBlock.join("\n").length / 4);
-    if (tokensUsed + catTokens > budget) break;
-
-    output.push(...catBlock);
-    tokensUsed += catTokens;
-  }
-
-  return output.join("\n");
-}
 
 export interface SessionStartContext {
   project: ProjectInfo;
@@ -163,7 +108,7 @@ export function buildFallbackInjection(project: ProjectInfo): string {
 
   if (fs.existsSync(CONFIG.paths.index)) {
     try {
-      const projectMAP = buildProjectMAPShared(project.name, 5000);
+      const projectMAP = buildProjectMap(project.name, 5000 * 4);
       if (projectMAP) parts.push("## MAP\n\n" + projectMAP);
     } catch { /* skip */ }
   }
@@ -212,11 +157,11 @@ export function buildFullInjection(project: ProjectInfo): string {
   }
 
   const mapBudget = Math.min(CONFIG.graph.maxMapInjectionTokens || 5000, maxSessionTokens - totalTokens);
-  const projectMAP = buildProjectMAPShared(project.name, mapBudget);
+  const projectMAP = buildProjectMap(project.name, mapBudget * 4);
   if (projectMAP) {
     const tokens = Math.ceil(projectMAP.length / 4);
     if (totalTokens + tokens <= maxSessionTokens) {
-      parts.push("# MAP — Knowledge Graph Index\n\n> Project: " + project.name + ". Shows project-relevant + global nodes. Use recall for details.\n\n" + projectMAP);
+      parts.push(mapHeader(project.name) + "\n\n" + projectMAP);
       totalTokens += tokens;
     }
   }
@@ -246,10 +191,11 @@ export function buildFullInjection(project: ProjectInfo): string {
   }
 
   try {
-    const pinned = loadPinnedNodes(project.name, CONFIG.graph.maxPinnedTokens, maxSessionTokens - totalTokens);
-    if (pinned.nodes.length > 0) {
-      totalTokens += pinned.tokensUsed;
-      parts.push("# PINNED — Durable Procedural Memory\n\n> Auto-loaded pinned nodes for this project. Follow these procedures exactly.\n\n" + pinned.nodes.join("\n\n---\n\n"));
+    const pinnedBudget = Math.min(CONFIG.graph.maxPinnedTokens, maxSessionTokens - totalTokens) * 4;
+    const pinnedBlock = renderPinnedSection(loadPinnedNodes(project.name), pinnedBudget);
+    if (pinnedBlock) {
+      totalTokens += Math.ceil(pinnedBlock.length / 4);
+      parts.push(pinnedBlock);
     }
   } catch { /* non-critical */ }
 
@@ -300,37 +246,6 @@ function renderModelBlock(model: Record<string, unknown>): string {
   }
 
   return lines.join("\n");
-}
-
-function loadPinnedNodes(projectName: string, maxPinned: number, remainingBudget: number): { nodes: string[]; tokensUsed: number } {
-  const sections: string[] = [];
-  let pinnedTokens = 0;
-  const indexPath = CONFIG.paths.index;
-
-  if (!fs.existsSync(indexPath)) return { nodes: [], tokensUsed: 0 };
-
-  try {
-    const index = JSON.parse(fs.readFileSync(indexPath, "utf-8"));
-    for (const entry of index) {
-      if (!entry?.pinned) continue;
-      if (entry.project && entry.project !== projectName) continue;
-
-      const nodePath = path.join(CONFIG.paths.nodes, entry.path + ".md");
-      if (!fs.existsSync(nodePath)) continue;
-
-      const raw = fs.readFileSync(nodePath, "utf-8");
-      const parsed = matter(raw);
-      const content = parsed.content.trim();
-      const nodeTokens = Math.ceil(raw.length / 4);
-      if (pinnedTokens + nodeTokens > maxPinned) continue;
-      if (pinnedTokens + nodeTokens > remainingBudget) continue;
-
-      pinnedTokens += nodeTokens;
-      sections.push("### " + (parsed.data.title || entry.path) + "\n\n" + content);
-    }
-  } catch { /* skip */ }
-
-  return { nodes: sections, tokensUsed: pinnedTokens };
 }
 
 export function flushAndQueueJobs(sessionId: string, project: string): void {

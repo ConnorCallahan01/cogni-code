@@ -244,6 +244,9 @@ function getDockerState(runtime: GraphMemoryRuntimeConfig): Record<string, unkno
   }
 }
 
+// Auth probes run `bash -c`, never a login shell: /etc/profile resets PATH and
+// drops the image's /opt/worker-clis/node_modules/.bin, where codex, claude,
+// and pi live, so a login-shell probe reports an installed CLI as missing.
 function getCodexAuthState(runtime: GraphMemoryRuntimeConfig, dockerState: Record<string, unknown> | null): Record<string, unknown> | null {
   if (!dockerState || dockerState.available !== true || dockerState.present !== true || dockerState.Running !== true) {
     return null;
@@ -254,7 +257,7 @@ function getCodexAuthState(runtime: GraphMemoryRuntimeConfig, dockerState: Recor
     "-e", `HOME=${runtime.docker.authPathInContainer}`,
     runtime.docker.containerName,
     "bash",
-    "-lc",
+    "-c",
     "codex login status",
   ]);
 
@@ -296,7 +299,7 @@ function getOpenCodeAuthState(runtime: GraphMemoryRuntimeConfig, dockerState: Re
     "-e", `HOME=${runtime.docker.authPathInContainer}`,
     runtime.docker.containerName,
     "bash",
-    "-lc",
+    "-c",
     'cat "$HOME/.local/share/opencode/auth.json" 2>/dev/null || for f in "$HOME/.config/opencode/config.json" "$HOME/.config/opencode/opencode.json" "$HOME/.config/opencode/opencode.jsonc"; do [ -f "$f" ] && cat "$f" && break; done',
   ]);
 
@@ -324,7 +327,7 @@ function getClaudeAuthState(runtime: GraphMemoryRuntimeConfig, dockerState: Reco
     "-e", `HOME=${runtime.docker.authPathInContainer}`,
     runtime.docker.containerName,
     "bash",
-    "-lc",
+    "-c",
     "claude auth status",
   ]);
 

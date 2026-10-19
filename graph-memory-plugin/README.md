@@ -127,7 +127,9 @@ All four pipeline prompts were improved to capture "true memory" — evolving op
 
 Session-start uses a single injection path:
 
-**mental-model (model.json direct, unconditional) → MAP (per-project) → PINNED (project-gated) → WORKING**
+**guardrails → WORKING → PINNED (this project's pins) → mental-model reference → project model → MAP → DREAMS**
+
+In Claude Code the injection stops under the 10,000-character hook output cap (longer output is replaced by a 2,000-character preview), so sections are added in that priority order and the MAP fills what's left. A pinned node loads only in sessions of its own `project`.
 
 ### Pipeline Stages
 
