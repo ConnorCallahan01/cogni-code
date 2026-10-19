@@ -47,24 +47,25 @@ function resolveGraphRoot(): string {
     return path.resolve(process.env.GRAPH_MEMORY_ROOT);
   }
 
-  // 2. Global config pointer file
-  if (fs.existsSync(GLOBAL_CONFIG_PATH)) {
-    try {
-      const raw = fs.readFileSync(GLOBAL_CONFIG_PATH, "utf-8");
-      const config = yaml.load(raw) as GraphMemoryGlobalConfig;
-      if (config?.graphRoot) {
-        return path.resolve(config.graphRoot);
-      }
-    } catch {
-      // Fall through to default
-    }
-  }
-
-  // 3. Default
-  return path.join(
+  // 2. Global config pointer file, else 3. default
+  return readGlobalConfigRoot() ?? path.join(
     process.env.HOME || process.env.USERPROFILE || "~",
     ".graph-memory"
   );
+}
+
+/**
+ * The graph root named by the ~/.graph-memory-config.yml pointer file, or null
+ * when there is no readable pointer.
+ */
+export function readGlobalConfigRoot(): string | null {
+  if (!fs.existsSync(GLOBAL_CONFIG_PATH)) return null;
+  try {
+    const config = yaml.load(fs.readFileSync(GLOBAL_CONFIG_PATH, "utf-8")) as GraphMemoryGlobalConfig;
+    return config?.graphRoot ? path.resolve(config.graphRoot) : null;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -286,16 +287,11 @@ export function saveGlobalConfig(graphRoot: string): void {
 }
 
 /**
- * Check if the graph has been initialized (global config exists and points to a valid graph).
+ * Check if a graph has been initialized (has a MAP.md). Defaults to the root
+ * CONFIG resolves — GRAPH_MEMORY_ROOT, then the pointer file, then
+ * ~/.graph-memory — so a hook with GRAPH_MEMORY_ROOT set (the daemon
+ * container, tests) checks the graph it will actually use.
  */
-export function isGraphInitialized(): boolean {
-  if (!fs.existsSync(GLOBAL_CONFIG_PATH)) return false;
-  try {
-    const raw = fs.readFileSync(GLOBAL_CONFIG_PATH, "utf-8");
-    const config = yaml.load(raw) as GraphMemoryGlobalConfig;
-    if (!config?.graphRoot) return false;
-    return fs.existsSync(path.join(config.graphRoot, "MAP.md"));
-  } catch {
-    return false;
-  }
+export function isGraphInitialized(graphRoot: string = resolveGraphRoot()): boolean {
+  return fs.existsSync(path.join(graphRoot, "MAP.md"));
 }
