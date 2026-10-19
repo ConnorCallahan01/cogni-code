@@ -45,15 +45,25 @@ function projectRepo(dir, ownerRepo) {
   return dir;
 }
 
+// The hooks exit early unless ~/.graph-memory-config.yml points at an
+// initialized graph (isGraphInitialized ignores GRAPH_MEMORY_ROOT). CI has no
+// such file and a developer's points at their real graph, so each hook run gets
+// a HOME of its own that points at the test graph.
 function runHook(script, graphRoot, input) {
-  const env = { ...process.env, GRAPH_MEMORY_ROOT: graphRoot };
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "hook-home-"));
+  fs.writeFileSync(path.join(home, ".graph-memory-config.yml"), `graphRoot: ${JSON.stringify(graphRoot)}\n`);
+  const env = { ...process.env, HOME: home, USERPROFILE: home, GRAPH_MEMORY_ROOT: graphRoot };
   delete env.GRAPH_MEMORY_PIPELINE_CHILD;
   delete env.GRAPH_MEMORY_WORKER;
-  return execFileSync(process.execPath, [path.join(pluginDir, "dist/hooks", script)], {
-    input: JSON.stringify(input),
-    encoding: "utf-8",
-    env,
-  });
+  try {
+    return execFileSync(process.execPath, [path.join(pluginDir, "dist/hooks", script)], {
+      input: JSON.stringify(input),
+      encoding: "utf-8",
+      env,
+    });
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
 }
 
 // An unscoped pin used to load into every project's sessions — Oliver's
