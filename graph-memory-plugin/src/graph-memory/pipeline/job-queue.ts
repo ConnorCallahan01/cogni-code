@@ -99,30 +99,37 @@ export function hasActiveJob(type: GraphMemoryJobType): boolean {
   return countJobs("queued", type) > 0 || countJobs("running", type) > 0;
 }
 
+// No project, an empty one, and "global" are the same scope (null). Every
+// project comparison goes through here: callers pass "global" for a global job
+// while getJobProject reads one as null, so comparing the raw values never
+// matched and the daemon queued a fresh global dreamer after every librarian.
+function normalizeProject(project: unknown): string | null {
+  if (typeof project !== "string") return null;
+  const trimmed = project.trim();
+  return trimmed && trimmed !== "global" ? trimmed : null;
+}
+
 export function getJobProject(job: GraphMemoryJob): string | null {
-  const payload = (job.payload as unknown) as Record<string, unknown>;
-  const project = payload?.project;
-  if (typeof project === "string" && project.trim() && project !== "global") {
-    return project.trim();
-  }
-  return null;
+  return normalizeProject(((job.payload as unknown) as Record<string, unknown>)?.project);
 }
 
 export function hasActiveJobForProject(type: GraphMemoryJobType, project: string): boolean {
+  const target = normalizeProject(project);
   for (const state of ["queued", "running"] as const) {
     for (const job of listJobs(state)) {
       if (job.type !== type) continue;
-      if (getJobProject(job) === project) return true;
+      if (getJobProject(job) === target) return true;
     }
   }
   return false;
 }
 
 export function hasActiveProjectChainJob(project: string): boolean {
+  const target = normalizeProject(project);
   for (const state of ["queued", "running"] as const) {
     for (const job of listJobs(state)) {
       if (!PROJECT_CHAIN_TYPES.has(job.type)) continue;
-      if (getJobProject(job) === project) return true;
+      if (getJobProject(job) === target) return true;
     }
   }
   return false;
@@ -139,7 +146,8 @@ export function hasActiveGlobalChainJob(): boolean {
 }
 
 export function listJobsForProject(state: GraphMemoryJobState, project: string): GraphMemoryJob[] {
-  return listJobs(state).filter((job) => getJobProject(job) === project);
+  const target = normalizeProject(project);
+  return listJobs(state).filter((job) => getJobProject(job) === target);
 }
 
 export function countDeltasForProject(project: string): number {

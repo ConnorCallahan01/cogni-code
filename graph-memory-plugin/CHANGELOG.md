@@ -1,5 +1,11 @@
 # Changelog
 
+## [3.7.7] (2026-10-20) — Global dreamers and librarians no longer pile up
+
+### Fixed
+
+- **Every global librarian queued another dreamer** — after a librarian finishes, the daemon queues a dreamer only if none is already queued or running for that scope, and an auditor does the same for the librarian. For global work the check asked for a job whose project is `"global"`, but a global job's project reads back as no project, so the check never matched. Each global librarian added a dreamer regardless: eleven global dreamers were active at once, holding all six worker slots, recombining the same input into duplicate dreams, and keeping the lower-priority daily brief waiting for eight hours. Global librarians were duplicated the same way. Project comparisons in the job queue now treat no project, an empty one, and `"global"` as the same scope.
+
 ## [3.7.6] (2026-10-19) — The initialized check honors `GRAPH_MEMORY_ROOT`
 
 ### Fixed
