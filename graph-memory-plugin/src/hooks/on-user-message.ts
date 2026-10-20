@@ -12,9 +12,10 @@
  */
 import fs from "fs";
 import { CONFIG, isGraphInitialized } from "../graph-memory/config.js";
-import { diffSessionContextState, readArtifactContent, RefreshArtifact, writeSessionContextState } from "../graph-memory/context-refresh.js";
+import { diffSessionContextState, RefreshArtifact, writeSessionContextState } from "../graph-memory/context-refresh.js";
 import { markDirty } from "../graph-memory/dirty-state.js";
-import { detectProject } from "../graph-memory/project.js";
+import { detectProject, touchActiveProject } from "../graph-memory/project.js";
+import { renderOpenSessionsForSession, renderWorkingForSession } from "../graph-memory/project-working.js";
 import { buildUserPromptAdditionalContext, clearMemoryGateState, writeMemoryGateState } from "../graph-memory/memory-gate.js";
 import { getConversationLogPath } from "../graph-memory/session-trace.js";
 import { overlap, recencyBoost, projectBoost, ambientRecall, STOPWORDS, EXPLICIT_MEMORY_PATTERNS, CONTINUITY_PATTERNS, PREFERENCE_PATTERNS, REPO_OPERATING_CONTEXT_PATTERNS, pathCategory, categoryGateWeight, countMatches, AmbientRecallResult } from "../graph-memory/scoring.js";
@@ -22,13 +23,16 @@ import { somaBoost } from "../graph-memory/soma.js";
 
 
 
-function buildContextRefreshBlock(changedArtifacts: RefreshArtifact[], projectName?: string): string | null {
+function buildContextRefreshBlock(changedArtifacts: RefreshArtifact[], projectName: string, sessionId: string): string | null {
   if (changedArtifacts.length === 0) return null;
 
   const sections: string[] = [];
-  if (changedArtifacts.includes("working")) {
-    const working = readArtifactContent("working", projectName);
-    if (working && !working.includes("No session handoff captured yet")) sections.push(working);
+  // This session's own WORKING already lists the other open sessions.
+  const working = changedArtifacts.includes("working") ? renderWorkingForSession(projectName, sessionId) : null;
+  if (working) {
+    sections.push(working);
+  } else if (changedArtifacts.includes("sessions")) {
+    sections.push(renderOpenSessionsForSession(projectName, sessionId));
   }
   if (changedArtifacts.includes("map")) {
     sections.push("## MAP Refresh\n\nBackground memory consolidation updated the graph map. Use `graph_memory(action=\"search\")`, `recall`, or `read_node` for the newest graph state in this session.");
@@ -85,15 +89,20 @@ async function main() {
     additionalContextBlocks.push(recallResult.context);
   }
 
+  // Other sessions in this project see this one as open while it stays active.
+  try {
+    touchActiveProject(sessionId, { name: project.name, gitRoot: project.gitRoot, cwd });
+  } catch { /* non-critical */ }
+
   // --- Mid-session reinjection when librarian-owned artifacts changed ---
   try {
     // Only what session start injects gets refreshed: PRIORS and SOMA are
     // legacy files it no longer loads, and re-sending SOMA cost ~8k characters
     // per librarian run.
-    const changedArtifacts = diffSessionContextState(sessionId, project.name, ["map", "working"]);
+    const changedArtifacts = diffSessionContextState(sessionId, project.name, ["map", "working", "sessions"]);
     if (changedArtifacts.length > 0) {
       writeSessionContextState(sessionId, project.name);
-      const refreshBlock = buildContextRefreshBlock(changedArtifacts, project.name);
+      const refreshBlock = buildContextRefreshBlock(changedArtifacts, project.name, sessionId);
       if (refreshBlock) {
         additionalContextBlocks.push(refreshBlock);
       }

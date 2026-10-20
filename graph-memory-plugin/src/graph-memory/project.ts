@@ -9,6 +9,7 @@ import path from "path";
 import { execSync } from "child_process";
 import { CONFIG } from "./config.js";
 import { sanitizeProjectSlug } from "./working-files.js";
+import { getConversationLogPath, getToolTracePath } from "./session-trace.js";
 
 export interface ProjectInfo {
   name: string;
@@ -16,11 +17,23 @@ export interface ProjectInfo {
 }
 
 interface ActiveProjectEntry {
+  sessionId?: string;
   name: string;
   gitRoot?: string;
   cwd: string;
   startedAt: string;
 }
+
+export interface OpenSession {
+  sessionId: string;
+  startedAt: string;
+  lastActiveAt: string;
+}
+
+// A session counts as open while its active-project file exists and it was
+// active within this window. Session end removes the file, but a session whose
+// terminal was closed never runs session end, so the window ages it out.
+export const OPEN_SESSION_WINDOW_MS = 2 * 60 * 60 * 1000;
 
 // Cache: cwd → ProjectInfo (fast, avoids repeated git calls)
 const projectCache = new Map<string, ProjectInfo>();
@@ -120,6 +133,7 @@ export function writeActiveProject(
 
   const safeId = sanitizeSessionId(sessionId);
   const entry: ActiveProjectEntry = {
+    sessionId,
     name: project.name && project.name.trim() ? project.name : "global",
     gitRoot: project.gitRoot,
     cwd: project.cwd,
@@ -181,6 +195,69 @@ export function removeActiveProject(sessionId: string): void {
   try {
     if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
   } catch { /* ignore */ }
+}
+
+/**
+ * Mark a session active now (its file's mtime is the heartbeat other sessions
+ * read), registering it if session start never did or the project changed.
+ */
+export function touchActiveProject(
+  sessionId: string,
+  project: { name: string; gitRoot?: string; cwd: string }
+): void {
+  const filePath = path.join(CONFIG.paths.activeProjects, `${sanitizeSessionId(sessionId)}.json`);
+  try {
+    const entry: ActiveProjectEntry = JSON.parse(fs.readFileSync(filePath, "utf-8"));
+    if (entry.name === (project.name || "global")) {
+      const now = new Date();
+      fs.utimesSync(filePath, now, now);
+      return;
+    }
+  } catch { /* missing or unreadable: register it below */ }
+  writeActiveProject(sessionId, project);
+}
+
+function lastModifiedMs(filePath: string): number {
+  try {
+    return fs.statSync(filePath).mtimeMs;
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * Sessions open in a project right now, most recently active first. Activity
+ * is the latest of the session's heartbeat, conversation buffer, and tool trace.
+ */
+export function listOpenSessions(
+  projectName: string,
+  opts: { excludeSessionId?: string; now?: number } = {}
+): OpenSession[] {
+  const dir = CONFIG.paths.activeProjects;
+  if (!projectName || projectName === "global" || !fs.existsSync(dir)) return [];
+
+  const now = opts.now ?? Date.now();
+  const open: OpenSession[] = [];
+  for (const f of fs.readdirSync(dir)) {
+    if (!f.endsWith(".json")) continue;
+    const filePath = path.join(dir, f);
+    try {
+      const entry: ActiveProjectEntry = JSON.parse(fs.readFileSync(filePath, "utf-8"));
+      if (entry.name !== projectName) continue;
+      const sessionId = entry.sessionId || f.slice(0, -".json".length);
+      if (opts.excludeSessionId && sanitizeSessionId(sessionId) === sanitizeSessionId(opts.excludeSessionId)) continue;
+
+      const lastActive = Math.max(
+        lastModifiedMs(filePath),
+        lastModifiedMs(getConversationLogPath(sessionId)),
+        lastModifiedMs(getToolTracePath(sessionId)),
+      );
+      if (now - lastActive > OPEN_SESSION_WINDOW_MS) continue;
+      open.push({ sessionId, startedAt: entry.startedAt, lastActiveAt: new Date(lastActive).toISOString() });
+    } catch { /* skip unreadable */ }
+  }
+
+  return open.sort((a, b) => Date.parse(b.lastActiveAt) - Date.parse(a.lastActiveAt));
 }
 
 /**

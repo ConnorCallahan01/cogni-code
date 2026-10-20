@@ -8,10 +8,10 @@ export class ClaudeCodeAdapter implements HarnessAdapter {
     const ctx = buildSessionStartContext(cwd, sessionId);
 
     if (ctx.mentalModelUsed) {
-      return buildFullInjection(ctx.project);
+      return buildFullInjection(ctx.project, ctx.sessionId);
     }
 
-    return buildFallbackInjection(ctx.project);
+    return buildFallbackInjection(ctx.project, ctx.sessionId);
   }
 
   async onSessionEnd(sessionId: string): Promise<void> {

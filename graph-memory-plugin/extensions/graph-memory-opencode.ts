@@ -42,6 +42,7 @@ let _removeActiveProject: any;
 let _ambientRecall: any;
 let _hasMentalModelData: any;
 let _buildMentalModelContext: any;
+let _renderWorkingForSession: any;
 let _appendToolTrace: any;
 
 function resolveDistDir(): string {
@@ -96,6 +97,10 @@ async function loadCore() {
   _removeActiveProject = project.removeActiveProject;
   _hasMentalModelData = sessionStart.hasMentalModelData;
   _buildMentalModelContext = sessionStart.buildSessionStartContext;
+  try {
+    const projectWorking = await import(path.join(distDir, "project-working.js"));
+    _renderWorkingForSession = projectWorking.renderWorkingForSession;
+  } catch { /* older dist: read the WORKING file instead */ }
 }
 
 export const GraphMemoryPlugin: Plugin = async ({ project, client, directory, worktree }) => {
@@ -253,7 +258,7 @@ export const GraphMemoryPlugin: Plugin = async ({ project, client, directory, wo
   function buildMentalModelContext(): { context: string; tokensUsed: number; sources: { globalModel: boolean; projectModel: boolean; sessionLog: boolean; guardrails: boolean; pickup: boolean; notionTasks: boolean; fallback: boolean } } {
     try {
       const currentProject = detectCurrentProject();
-      const result = _buildMentalModelContext(currentProject || "global");
+      const result = _buildMentalModelContext(currentProject || "global", captureSessionId || undefined);
       return {
         context: result.context,
         tokensUsed: result.tokensUsed,
@@ -376,6 +381,7 @@ export const GraphMemoryPlugin: Plugin = async ({ project, client, directory, wo
 
   function loadProjectWorking(projectName?: string): string | null {
     try {
+      if (_renderWorkingForSession) return _renderWorkingForSession(projectName || "global", captureSessionId || undefined);
       const workingDir = _CONFIG.paths.workingProjects;
       const slug = (projectName || "global").replace(/[^a-zA-Z0-9._-]+/g, "__");
       const workingPath = projectName && projectName !== "global"

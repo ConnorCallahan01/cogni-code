@@ -10,9 +10,9 @@ export class PiAdapter implements HarnessAdapter {
 
     let context: string;
     if (ctx.mentalModelUsed) {
-      context = buildFullInjection(ctx.project);
+      context = buildFullInjection(ctx.project, ctx.sessionId);
     } else {
-      context = buildFallbackInjection(ctx.project);
+      context = buildFallbackInjection(ctx.project, ctx.sessionId);
     }
 
     this.pendingContext = context;

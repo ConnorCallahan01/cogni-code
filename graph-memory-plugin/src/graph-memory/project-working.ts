@@ -8,6 +8,7 @@ import {
   getProjectWorkingUpdatePath,
   sanitizeProjectSlug,
 } from "./working-files.js";
+import { listOpenSessions, OpenSession } from "./project.js";
 
 type DeltaKind =
   | "create_node"
@@ -79,6 +80,15 @@ interface ProjectWorkingState {
   sessions: WorkingSessionEntry[];
 }
 
+// Who is reading WORKING. A session's own entry leads its handoff; a new
+// session picks up from the latest session that is no longer open. Other open
+// sessions are listed by task, never handed off, so two sessions in one
+// project don't take each other's "Now" as their own.
+interface WorkingView {
+  sessionId?: string;
+  openSessions: OpenSession[];
+}
+
 interface UpdateProjectWorkingOptions {
   project: string;
   sessionId: string;
@@ -119,6 +129,7 @@ const FILE_INTERACTION_EXCLUDE = /node_modules|\.graph-memory[/\\]|\.deltas[/\\]
 const FILE_INTERACTION_JUNK = /^\/(tmp|dev|proc|sys|etc|var|usr|bin|sbin|opt|lib|home)\b|^\/dev\/null|\/tmp\/|\)$|^\.$|^\.\.$/;
 
 const EMPTY_MARKER = "_No session handoff captured yet for this repository._";
+const OPEN_SESSIONS_LISTED = 4;
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -619,16 +630,73 @@ function buildMemoryItems(latest: WorkingSessionEntry): string[] {
   return relevantNodes;
 }
 
-function renderProjectWorkingMarkdown(state: ProjectWorkingState): string {
-  const latest = state.sessions[0];
+function shortSessionId(sessionId: string): string {
+  return (sessionId.split("_").pop() || sessionId).slice(0, 8);
+}
+
+function formatActivityTime(iso: string | undefined): string {
+  const ms = Date.parse(iso || "");
+  if (Number.isNaN(ms)) return "unknown";
+  const stamp = new Date(ms).toISOString();
+  const sameDay = stamp.slice(0, 10) === new Date().toISOString().slice(0, 10);
+  return sameDay ? `${stamp.slice(11, 16)}Z` : `${stamp.slice(0, 10)} ${stamp.slice(11, 16)}Z`;
+}
+
+function clipText(text: string, limit: number): string {
+  const normalized = normalizeBullet(text);
+  return normalized.length > limit ? `${normalized.slice(0, limit - 1)}…` : normalized;
+}
+
+function selectHandoffSession(state: ProjectWorkingState, view: WorkingView): { entry?: WorkingSessionEntry; own: boolean } {
+  const own = view.sessionId ? state.sessions.find((session) => session.sessionId === view.sessionId) : undefined;
+  if (own) return { entry: own, own: true };
+  const open = new Set(view.openSessions.map((session) => session.sessionId));
+  return { entry: state.sessions.find((session) => !open.has(session.sessionId) && session.sessionId !== view.sessionId), own: false };
+}
+
+function describeOpenSession(open: OpenSession, entry: WorkingSessionEntry | undefined): string {
+  const task = entry ? clipText(entry.tasksWorkedOn[0] || entry.summaries[0] || "", 160) : "";
+  let line = `\`${shortSessionId(open.sessionId)}\` (since ${formatActivityTime(open.startedAt)}, active ${formatActivityTime(open.lastActiveAt)}): ${task || "nothing captured yet"}`;
+  const editing = (entry?.keyFiles || [])
+    .filter((kf) => kf.role === "edited" || kf.role === "created")
+    .slice(0, 4)
+    .map((kf) => `\`${kf.path}\``);
+  if (editing.length > 0) line += ` — editing ${editing.join(", ")}`;
+  return line;
+}
+
+function renderOpenSessionsSection(state: ProjectWorkingState, openSessions: OpenSession[]): string {
+  if (openSessions.length === 0) return "";
+  let content = `## Also open in this project\n\n`;
+  content += `> Other sessions are working here right now. Their tasks aren't this session's to pick up, and they may be editing the files named.\n\n`;
+  for (const open of openSessions.slice(0, OPEN_SESSIONS_LISTED)) {
+    content += `- ${describeOpenSession(open, state.sessions.find((session) => session.sessionId === open.sessionId))}\n`;
+  }
+  if (openSessions.length > OPEN_SESSIONS_LISTED) {
+    content += `- …and ${openSessions.length - OPEN_SESSIONS_LISTED} more\n`;
+  }
+  return content;
+}
+
+function renderProjectWorkingMarkdown(state: ProjectWorkingState, view: WorkingView): string {
+  const { entry: latest, own } = selectHandoffSession(state, view);
+  const openSection = renderOpenSessionsSection(state, view.openSessions);
   let content = `# WORKING — ${state.project}\n\n`;
   content += `> Lean handoff. Updated after each scribe. Say "pick up where we left off."\n\n`;
   content += `**Updated:** ${state.updatedAt}\n`;
 
   if (!latest) {
-    content += `\n## Now\n\n${EMPTY_MARKER}\n`;
-    return content;
+    if (!openSection) {
+      content += `\n## Now\n\n${EMPTY_MARKER}\n`;
+      return content;
+    }
+    content += `\n## Now\n\n_No closed session to pick up from; every recent one is still open._\n\n${openSection}`;
+    return `${content.trimEnd()}\n`;
   }
+
+  content += own
+    ? `**From:** this session\n`
+    : `**From:** session \`${shortSessionId(latest.sessionId)}\`, last active ${formatActivityTime(latest.activityAt)}\n`;
 
   const resumeItems = buildResumeNowItems(latest);
   const evidenceItems = buildEvidenceItems(latest);
@@ -678,14 +746,67 @@ function renderProjectWorkingMarkdown(state: ProjectWorkingState): string {
     for (const n of relevantNodes) content += `- ${n}\n`;
   }
 
+  if (openSection) content += `\n${openSection}`;
+
   return `${content.trimEnd()}\n`;
+}
+
+// The file on disk is the project-level view (no reader), for harnesses and
+// tools that read it directly. Hooks render per session instead.
+function writeProjectWorkingFile(project: string, state: ProjectWorkingState): void {
+  fs.writeFileSync(getProjectWorkingPath(project), renderProjectWorkingMarkdown(state, { openSessions: listOpenSessions(project) }));
+}
+
+/**
+ * WORKING as one session should see it: its own handoff (or, for a new
+ * session, the latest session no longer open), then the other sessions open
+ * in the project. Null when there's nothing worth injecting.
+ */
+export function renderWorkingForSession(projectName: string, sessionId?: string): string | null {
+  if (!projectName || projectName === "global") {
+    if (!fs.existsSync(CONFIG.paths.workingGlobal)) return null;
+    const content = fs.readFileSync(CONFIG.paths.workingGlobal, "utf-8").trim();
+    return content && !content.includes("No recent activity") && !content.includes("No session handoff captured yet") ? content : null;
+  }
+
+  const state = loadProjectWorkingState(projectName);
+  const content = renderProjectWorkingMarkdown(state, {
+    sessionId,
+    openSessions: listOpenSessions(projectName, { excludeSessionId: sessionId }),
+  });
+  return content.includes(EMPTY_MARKER) ? null : content.trim();
+}
+
+/** Just the other open sessions, for telling a session that one opened or closed. */
+export function renderOpenSessionsForSession(projectName: string, sessionId: string): string {
+  const state = loadProjectWorkingState(projectName);
+  const section = renderOpenSessionsSection(state, listOpenSessions(projectName, { excludeSessionId: sessionId }));
+  return section.trim() || "## Also open in this project\n\nNo other session is open in this project now.";
+}
+
+/** The pickup items a session should start from (see renderWorkingForSession). */
+export function readHandoffPickup(projectName: string, sessionId?: string): string[] {
+  if (!projectName || projectName === "global") return [];
+  if (!fs.existsSync(getProjectWorkingStatePath(projectName))) return [];
+  const { entry } = selectHandoffSession(loadProjectWorkingState(projectName), {
+    sessionId,
+    openSessions: listOpenSessions(projectName, { excludeSessionId: sessionId }),
+  });
+  return (entry?.nextPickup || []).slice(0, 3);
+}
+
+/** When this session's own WORKING entry last changed ("" before it has one). */
+export function readOwnWorkingUpdate(projectName: string, sessionId: string): string {
+  if (!projectName || projectName === "global") return "";
+  if (!fs.existsSync(getProjectWorkingStatePath(projectName))) return "";
+  return loadProjectWorkingState(projectName).sessions.find((session) => session.sessionId === sessionId)?.lastUpdatedAt || "";
 }
 
 export function ensureProjectWorkingFile(projectName: string): void {
   if (!projectName || projectName === "global") return;
   const state = loadProjectWorkingState(projectName);
   saveProjectWorkingState(projectName, state);
-  fs.writeFileSync(getProjectWorkingPath(projectName), renderProjectWorkingMarkdown(state));
+  writeProjectWorkingFile(projectName, state);
 }
 
 export function updateProjectWorkingFromSession(opts: UpdateProjectWorkingOptions): void {
@@ -710,7 +831,7 @@ export function updateProjectWorkingFromSession(opts: UpdateProjectWorkingOption
       state.sessions = existingSessions;
       state.updatedAt = now;
       saveProjectWorkingState(opts.project, state);
-      fs.writeFileSync(getProjectWorkingPath(opts.project), renderProjectWorkingMarkdown(state));
+      writeProjectWorkingFile(opts.project, state);
     }
     return;
   }
@@ -832,7 +953,7 @@ export function updateProjectWorkingFromSession(opts: UpdateProjectWorkingOption
   state.updatedAt = now;
 
   saveProjectWorkingState(opts.project, state);
-  fs.writeFileSync(getProjectWorkingPath(opts.project), renderProjectWorkingMarkdown(state));
+  writeProjectWorkingFile(opts.project, state);
 }
 
 export function addNotionPickupItem(project: string, item: string): void {
@@ -866,7 +987,7 @@ export function addNotionPickupItem(project: string, item: string): void {
 
     state.updatedAt = nowIso();
     saveProjectWorkingState(resolvedProject, state);
-    fs.writeFileSync(getProjectWorkingPath(resolvedProject), renderProjectWorkingMarkdown(state));
+    writeProjectWorkingFile(resolvedProject, state);
   } catch {
     // Non-critical
   }

@@ -6,7 +6,7 @@ import { ensureLens, readModel as readProjectModel, lensExists } from "./lenses/
 import { readRecentSessions } from "./sessions/manager.js";
 import { SessionLog } from "./sessions/types.js";
 import { getAntiPatterns } from "./pipeline/graph-index.js";
-import { getProjectWorkingStatePath } from "./working-files.js";
+import { readHandoffPickup } from "./project-working.js";
 import { readNotionSyncState } from "./pipeline/notion-sync.js";
 import { searchDatabaseRows, listChildBlocks } from "./pipeline/notion-cli.js";
 
@@ -24,7 +24,7 @@ export interface SessionStartResult {
   };
 }
 
-export function buildSessionStartContext(projectName: string): SessionStartResult {
+export function buildSessionStartContext(projectName: string, sessionId?: string): SessionStartResult {
   const parts: string[] = [];
   let tokensUsed = 0;
   const sources = {
@@ -79,7 +79,7 @@ export function buildSessionStartContext(projectName: string): SessionStartResul
       }
     }
 
-    const pickupBlock = readNextPickup(projectName);
+    const pickupBlock = readNextPickup(projectName, sessionId);
     if (pickupBlock) {
       parts.push(pickupBlock);
       tokensUsed += estimateTokens(pickupBlock);
@@ -227,15 +227,11 @@ function buildGuardrails(projectName: string): string | null {
   }
 }
 
-function readNextPickup(projectName: string): string | null {
+function readNextPickup(projectName: string, sessionId?: string): string | null {
   try {
-    const statePath = getProjectWorkingStatePath(projectName);
-    if (!fs.existsSync(statePath)) return null;
-    const state = JSON.parse(fs.readFileSync(statePath, "utf-8"));
-    const latest = state.sessions?.[0];
-    if (!latest?.nextPickup?.length) return null;
+    const items = readHandoffPickup(projectName, sessionId);
+    if (items.length === 0) return null;
 
-    const items = latest.nextPickup.slice(0, 3);
     const lines = ["## Pick Up", ""];
     for (const item of items) {
       lines.push(`- ${item}`);
