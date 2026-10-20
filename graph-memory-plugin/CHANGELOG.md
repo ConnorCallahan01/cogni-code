@@ -1,5 +1,14 @@
 # Changelog
 
+## [3.8.0] (2026-10-20) — Sessions open side by side in one project keep their own handoff
+
+### Changed
+
+- **Two sessions in one project were handed each other's work** — a project had one WORKING handoff, showing whichever session's work was captured last, and the prompt hook re-sent it to every session in the project each time it changed. With two sessions open, each was re-sent the other's "Now" as its own handoff, and a new session's "pick up where we left off" resumed work still running in another window. WORKING is now put together for the session reading it. A session's own work leads ("**From:** this session"). A new session picks up from the most recent session that is no longer open. Other sessions open in the project are listed under "Also open in this project" with their task and the files they're editing, marked as not this session's to pick up.
+- **A session is re-sent WORKING only when its own work changes.** When another session in the project opens or closes, it gets the updated list of open sessions instead, and another session's progress sends nothing.
+- A session counts as open while it has been active in the last 2 hours: each prompt marks it active, and session end removes it. A session whose terminal was closed without ending stops counting after 2 hours.
+- Codex, pi, and opencode session starts build WORKING the same way. The `working/projects/*.md` file on disk is the project-level view: the latest closed session's handoff plus the sessions open when it was written.
+
 ## [3.7.7] (2026-10-20) — Global dreamers and librarians no longer pile up
 
 ### Fixed

@@ -131,6 +131,8 @@ Session-start uses a single injection path:
 
 In Claude Code the injection stops under the 10,000-character hook output cap (longer output is replaced by a 2,000-character preview), so sections are added in that priority order and the MAP fills what's left. A pinned node loads only in sessions of its own `project`.
 
+WORKING is built for the session reading it, so several sessions can work in one project at once. A session's own work leads; a new session picks up from the most recent session that is no longer open; other sessions open in the project are listed with their task and the files they're editing, never handed off. Mid-session, a session is re-sent WORKING only when its own work changes, and is told when another session in the project opens or closes. A session counts as open while it has been active in the last 2 hours.
+
 ### Pipeline Stages
 
 The scribe → auditor → librarian → dreamer pipeline is the proven core. Observer and compressor also run by default (observer produces observations/session logs/node upserts on scribe and buffer thresholds; compressor folds observations into mental models afterward). The separate dreamer-v3 / dreamer-models variant is present in code but not wired. All stages read and write the same durable node files in `nodes/`, while `mind/`, `lenses/`, and `sessions/` hold compressed context layers. LLM-backed stages retry on the configured fallback worker if the primary provider fails or hits a usage limit. A job whose worker couldn't reach its provider at all (machine asleep or offline) waits in the queue and retries with a backoff instead of failing.

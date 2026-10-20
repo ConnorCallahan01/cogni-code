@@ -23,13 +23,6 @@ export function getProjectWorkingUpdatePath(projectName: string, sessionId: stri
   return path.join(getProjectWorkingUpdatesDir(projectName), `${safeSessionId}.json`);
 }
 
-export function getWorkingInjectionPaths(projectName?: string): string[] {
-  if (projectName && projectName !== "global") {
-    return [getProjectWorkingPath(projectName)];
-  }
-  return [CONFIG.paths.workingGlobal];
-}
-
 export function getFileInteractionPath(projectName: string, sessionId: string): string {
   const safeSessionId = sessionId.replace(/[^a-zA-Z0-9_\-]/g, "_");
   return path.join(getProjectWorkingUpdatesDir(projectName), `${safeSessionId}.files.json`);

@@ -1,32 +1,33 @@
 import fs from "fs";
 import path from "path";
 import { CONFIG } from "./config.js";
-import { getProjectWorkingPath } from "./working-files.js";
+import { listOpenSessions } from "./project.js";
+import { readOwnWorkingUpdate } from "./project-working.js";
 
-export type RefreshArtifact = "priors" | "soma" | "map" | "working" | "dreams";
+type FileArtifact = "priors" | "soma" | "map" | "dreams";
+
+// "working" is this session's own handoff (outside a project, the global
+// WORKING file). "sessions" is which other sessions are open in the project.
+// Another session's progress changes neither, so it never re-sends WORKING to
+// this one: it used to, and each session took the other's "Now" as its own.
+export type RefreshArtifact = FileArtifact | "working" | "sessions";
 
 interface SessionContextState {
   sessionId: string;
   projectName?: string;
   updatedAt: string;
-  artifacts: Record<RefreshArtifact, number>;
+  artifacts: Record<FileArtifact, number>;
+  // Absent in states written before 3.8.0; the first diff records them.
+  working?: string;
+  openSessions?: string[];
 }
 
-const STATIC_ARTIFACT_PATHS: Omit<Record<RefreshArtifact, string>, "working"> & { working?: string } = {
+const FILE_ARTIFACT_PATHS: Record<FileArtifact, string> = {
   priors: CONFIG.paths.priors,
   soma: CONFIG.paths.soma,
   map: CONFIG.paths.map,
   dreams: CONFIG.paths.dreamsContext,
 };
-
-function getArtifactPath(artifact: RefreshArtifact, projectName?: string): string {
-  if (artifact === "working") {
-    return projectName && projectName !== "global"
-      ? getProjectWorkingPath(projectName)
-      : CONFIG.paths.workingGlobal;
-  }
-  return STATIC_ARTIFACT_PATHS[artifact]!;
-}
 
 function ensureSessionContextDir(): void {
   if (!fs.existsSync(CONFIG.paths.sessionContext)) {
@@ -39,25 +40,71 @@ function statePath(sessionId: string): string {
   return path.join(CONFIG.paths.sessionContext, `${safeId}.json`);
 }
 
-export function readArtifactMtimes(projectName?: string): Record<RefreshArtifact, number> {
+function mtimeOf(filePath: string): number {
+  return fs.existsSync(filePath) ? fs.statSync(filePath).mtimeMs : 0;
+}
+
+function readFileArtifactMtimes(): Record<FileArtifact, number> {
   return {
-    priors: fs.existsSync(getArtifactPath("priors", projectName)) ? fs.statSync(getArtifactPath("priors", projectName)).mtimeMs : 0,
-    soma: fs.existsSync(getArtifactPath("soma", projectName)) ? fs.statSync(getArtifactPath("soma", projectName)).mtimeMs : 0,
-    map: fs.existsSync(getArtifactPath("map", projectName)) ? fs.statSync(getArtifactPath("map", projectName)).mtimeMs : 0,
-    working: fs.existsSync(getArtifactPath("working", projectName)) ? fs.statSync(getArtifactPath("working", projectName)).mtimeMs : 0,
-    dreams: fs.existsSync(getArtifactPath("dreams", projectName)) ? fs.statSync(getArtifactPath("dreams", projectName)).mtimeMs : 0,
+    priors: mtimeOf(FILE_ARTIFACT_PATHS.priors),
+    soma: mtimeOf(FILE_ARTIFACT_PATHS.soma),
+    map: mtimeOf(FILE_ARTIFACT_PATHS.map),
+    dreams: mtimeOf(FILE_ARTIFACT_PATHS.dreams),
   };
+}
+
+function readWorkingMarker(sessionId: string, projectName?: string): string {
+  if (!projectName || projectName === "global") {
+    const mtime = mtimeOf(CONFIG.paths.workingGlobal);
+    return mtime ? String(mtime) : "";
+  }
+  return readOwnWorkingUpdate(projectName, sessionId);
+}
+
+function captureState(sessionId: string, projectName?: string): SessionContextState {
+  return {
+    sessionId,
+    projectName,
+    updatedAt: new Date().toISOString(),
+    artifacts: readFileArtifactMtimes(),
+    working: readWorkingMarker(sessionId, projectName),
+    openSessions: listOpenSessions(projectName || "global", { excludeSessionId: sessionId })
+      .map((session) => session.sessionId)
+      .sort(),
+  };
+}
+
+function changedSince(artifact: RefreshArtifact, previous: SessionContextState, current: SessionContextState): boolean {
+  switch (artifact) {
+    case "working":
+      // "" means this session's entry is gone (its work wasn't about this
+      // project after all), which leaves it nothing new to read.
+      return previous.working !== undefined && current.working !== "" && previous.working !== current.working;
+    case "sessions":
+      return previous.openSessions !== undefined && previous.openSessions.join("\n") !== (current.openSessions || []).join("\n");
+    default:
+      return (previous.artifacts?.[artifact] || 0) < current.artifacts[artifact];
+  }
+}
+
+function hasContent(artifact: RefreshArtifact, current: SessionContextState): boolean {
+  switch (artifact) {
+    case "working":
+      return true;
+    case "sessions":
+      return (current.openSessions || []).length > 0;
+    default:
+      return current.artifacts[artifact] > 0;
+  }
+}
+
+function saveState(state: SessionContextState): void {
+  fs.writeFileSync(statePath(state.sessionId), JSON.stringify(state, null, 2));
 }
 
 export function writeSessionContextState(sessionId: string, projectName?: string): void {
   ensureSessionContextDir();
-  const payload: SessionContextState = {
-    sessionId,
-    projectName,
-    updatedAt: new Date().toISOString(),
-    artifacts: readArtifactMtimes(projectName),
-  };
-  fs.writeFileSync(statePath(sessionId), JSON.stringify(payload, null, 2));
+  saveState(captureState(sessionId, projectName));
 }
 
 export function clearSessionContextState(sessionId?: string): void {
@@ -77,41 +124,26 @@ export function diffSessionContextState(
 ): RefreshArtifact[] {
   ensureSessionContextDir();
   const filePath = statePath(sessionId);
-  const current = readArtifactMtimes(projectName);
+  const current = captureState(sessionId, projectName);
 
   if (!fs.existsSync(filePath)) {
-    writeSessionContextState(sessionId, projectName);
+    saveState(current);
     return [];
   }
 
   try {
     const previous = JSON.parse(fs.readFileSync(filePath, "utf-8")) as SessionContextState;
     if ((previous.projectName || "global") !== (projectName || "global")) {
-      writeSessionContextState(sessionId, projectName);
-      return watched.filter((artifact) => current[artifact] > 0);
+      saveState(current);
+      return watched.filter((artifact) => hasContent(artifact, current));
     }
-    const changed = watched.filter((artifact) => (previous.artifacts?.[artifact] || 0) < current[artifact]);
-    if (changed.length > 0) {
-      fs.writeFileSync(filePath, JSON.stringify({
-        sessionId,
-        projectName,
-        updatedAt: new Date().toISOString(),
-        artifacts: current,
-      }, null, 2));
+    const changed = watched.filter((artifact) => changedSince(artifact, previous, current));
+    if (changed.length > 0 || previous.working === undefined || previous.openSessions === undefined) {
+      saveState(current);
     }
     return changed;
   } catch {
-    writeSessionContextState(sessionId, projectName);
+    saveState(current);
     return [];
-  }
-}
-
-export function readArtifactContent(artifact: RefreshArtifact, projectName?: string): string {
-  const filePath = getArtifactPath(artifact, projectName);
-  if (!fs.existsSync(filePath)) return "";
-  try {
-    return fs.readFileSync(filePath, "utf-8").trim();
-  } catch {
-    return "";
   }
 }

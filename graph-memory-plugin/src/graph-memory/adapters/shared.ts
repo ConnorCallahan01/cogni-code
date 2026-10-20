@@ -3,8 +3,7 @@ import { detectProject, ProjectInfo, writeActiveProject, cleanActiveProjects, re
 import { hasMentalModelData, buildSessionStartContext as buildModelContext } from "../session-start-context.js";
 import { isDirty, markDirty, clearDirty } from "../dirty-state.js";
 import { writeSessionContextState, clearSessionContextState } from "../context-refresh.js";
-import { ensureProjectWorkingFile } from "../project-working.js";
-import { getWorkingInjectionPaths } from "../working-files.js";
+import { ensureProjectWorkingFile, renderWorkingForSession } from "../project-working.js";
 import { enqueueJob } from "../pipeline/job-queue.js";
 import { activityBus } from "../events.js";
 import { buildProjectMap, loadPinnedNodes, mapHeader, renderPinnedSection } from "../context-sections.js";
@@ -27,7 +26,7 @@ export function buildSessionStartContext(cwd: string, sessionId: string): Sessio
   let tokensUsed = 0;
 
   if (hasMentalModelData()) {
-    const ctx = buildModelContext(project.name);
+    const ctx = buildModelContext(project.name, sessionId);
     if (!ctx.sources.fallback && ctx.context) {
       mentalModelUsed = true;
       tokensUsed = ctx.tokensUsed;
@@ -40,7 +39,7 @@ export function buildSessionStartContext(cwd: string, sessionId: string): Sessio
   return { project, sessionId, mentalModelUsed: false, tokensUsed };
 }
 
-export function buildFallbackInjection(project: ProjectInfo): string {
+export function buildFallbackInjection(project: ProjectInfo, sessionId?: string): string {
   const maxSessionTokens = CONFIG.graph.maxSessionStartTokens || 15000;
   const globalBudget = 4000;
   const projectBudget = maxSessionTokens - globalBudget;
@@ -99,11 +98,8 @@ export function buildFallbackInjection(project: ProjectInfo): string {
   }
 
   if (project.name !== "global") {
-    const workingPath = path.join(CONFIG.paths.workingProjects, project.name.replace(/[^a-zA-Z0-9._-]+/g, "__") + ".md");
-    if (fs.existsSync(workingPath)) {
-      const content = fs.readFileSync(workingPath, "utf-8").trim();
-      if (content) parts.push("## PROJECT WORKING\n\n" + content);
-    }
+    const content = renderWorkingForSession(project.name, sessionId);
+    if (content) parts.push("## PROJECT WORKING\n\n" + content);
   }
 
   if (fs.existsSync(CONFIG.paths.index)) {
@@ -116,7 +112,7 @@ export function buildFallbackInjection(project: ProjectInfo): string {
   return parts.join("\n\n");
 }
 
-export function buildFullInjection(project: ProjectInfo): string {
+export function buildFullInjection(project: ProjectInfo, sessionId?: string): string {
   const maxSessionTokens = CONFIG.graph.maxSessionStartTokens || 15000;
   const parts: string[] = [];
   let totalTokens = 0;
@@ -130,7 +126,7 @@ export function buildFullInjection(project: ProjectInfo): string {
   let whisperPrefix = "";
   if (hasMentalModelData()) {
     try {
-      const ctx = buildModelContext(project.name);
+      const ctx = buildModelContext(project.name, sessionId);
       if (!ctx.sources.fallback && ctx.context) {
         whisperPrefix = ctx.context;
         totalTokens += ctx.tokensUsed;
@@ -177,16 +173,12 @@ export function buildFullInjection(project: ProjectInfo): string {
     }
   }
 
-  for (const filePath of getWorkingInjectionPaths(project.name)) {
-    if (fs.existsSync(filePath)) {
-      const content = fs.readFileSync(filePath, "utf-8").trim();
-      if (content && !content.includes("No recent activity") && !content.includes("No session handoff captured yet")) {
-        const tokens = Math.ceil(content.length / 4);
-        if (totalTokens + tokens <= maxSessionTokens) {
-          parts.push(content);
-          totalTokens += tokens;
-        }
-      }
+  const working = renderWorkingForSession(project.name, sessionId);
+  if (working) {
+    const tokens = Math.ceil(working.length / 4);
+    if (totalTokens + tokens <= maxSessionTokens) {
+      parts.push(working);
+      totalTokens += tokens;
     }
   }
 

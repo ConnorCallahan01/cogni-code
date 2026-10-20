@@ -12,14 +12,12 @@ import { CONFIG, isGraphInitialized } from "../graph-memory/config.js";
 import { writeSessionContextState } from "../graph-memory/context-refresh.js";
 import { isDirty, markDirty } from "../graph-memory/dirty-state.js";
 import { detectProject, writeActiveProject, cleanActiveProjects } from "../graph-memory/project.js";
-import { ensureProjectWorkingFile } from "../graph-memory/project-working.js";
+import { ensureProjectWorkingFile, readHandoffPickup, renderWorkingForSession } from "../graph-memory/project-working.js";
 import { CLAUDE_HOOK_OUTPUT_CHAR_CAP, SECTION_SEPARATOR, buildProjectMap, loadPinnedNodes, mapHeader, renderPinnedSection } from "../graph-memory/context-sections.js";
-import { getWorkingInjectionPaths } from "../graph-memory/working-files.js";
 import { buildSessionStartContext, hasMentalModelData } from "../graph-memory/session-start-context.js";
 import { getAntiPatterns } from "../graph-memory/pipeline/graph-index.js";
 import { ensureLens, readModel as readProjectModel, lensExists } from "../graph-memory/lenses/manager.js";
 import { readRecentSessions } from "../graph-memory/sessions/manager.js";
-import { getProjectWorkingStatePath } from "../graph-memory/working-files.js";
 
 // Pinned nodes get at most this share of the injection, and each node is
 // clipped to its head (the rule) so one node's accreted history can't crowd
@@ -164,16 +162,12 @@ async function main() {
     } catch { /* fall through */ }
   }
 
-  // 2. WORKING (project handoff — most actionable per-session content)
+  // 2. WORKING (project handoff — most actionable per-session content — and
+  // the other sessions open in this project)
   let workingInjected = false;
-  for (const filePath of getWorkingInjectionPaths(project.name)) {
-    if (fs.existsSync(filePath)) {
-      const content = fs.readFileSync(filePath, "utf-8").trim();
-      if (content && !content.includes("No recent activity") && !content.includes("No session handoff captured yet")) {
-        if (addPart(content)) workingInjected = true;
-      }
-    }
-  }
+  try {
+    workingInjected = addPart(renderWorkingForSession(project.name, sessionId));
+  } catch { /* best effort */ }
 
   // 3. PINNED (procedural memory — follow these procedures exactly)
   try {
@@ -245,16 +239,11 @@ async function main() {
     // WORKING's "Now" section already lists these.
     if (!workingInjected) {
       try {
-        const statePath = getProjectWorkingStatePath(project.name);
-        if (fs.existsSync(statePath)) {
-          const state = JSON.parse(fs.readFileSync(statePath, "utf-8"));
-          const latest = state.sessions?.[0];
-          if (latest?.nextPickup?.length) {
-            const items = latest.nextPickup.slice(0, 3);
-            const pkLines = ["## Pick Up", ""];
-            for (const item of items) pkLines.push("- " + item);
-            addPart(pkLines.join("\n"));
-          }
+        const items = readHandoffPickup(project.name, sessionId);
+        if (items.length > 0) {
+          const pkLines = ["## Pick Up", ""];
+          for (const item of items) pkLines.push("- " + item);
+          addPart(pkLines.join("\n"));
         }
       } catch { /* fall through */ }
     }
