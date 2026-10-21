@@ -1767,3 +1767,61 @@ test("worker-fallback: runtime config persists fallbackProvider/fallbackModel", 
     fs.rmSync(tmp, { recursive: true, force: true });
   }
 });
+
+test("worker-env: parses graph-root .env and gitignores it", async () => {
+  const { parseEnvFile, loadWorkerEnv, resolveWorkerEnv } = await import(
+    pathToFileURL(path.join(pluginDir, "dist/graph-memory/pipeline/worker-env.js")).href
+  );
+
+  const parsed = parseEnvFile(
+    [
+      "# a comment",
+      "",
+      "GX10_MEMORY_API_KEY=sk-abc123",
+      'QUOTED="with spaces"',
+      "export EXPORTED=yes",
+      "  SPACED = padded  ",
+      "not a valid line",
+      "=novalue",
+      "1BAD=skipped",
+    ].join("\n")
+  );
+  assert.equal(parsed.GX10_MEMORY_API_KEY, "sk-abc123");
+  assert.equal(parsed.QUOTED, "with spaces");
+  assert.equal(parsed.EXPORTED, "yes");
+  assert.equal(parsed.SPACED, "padded");
+  assert.equal(parsed["1BAD"], undefined);
+  assert.equal(Object.keys(parsed).length, 4);
+
+  const { tmp, graphRoot } = makeTempGraph();
+  fs.mkdirSync(graphRoot, { recursive: true });
+
+  // Absent file is the default: no credentials, no side effects.
+  assert.deepEqual(loadWorkerEnv(graphRoot), {});
+  assert.equal(fs.existsSync(path.join(graphRoot, ".gitignore")), false);
+
+  fs.writeFileSync(path.join(graphRoot, ".gitignore"), ".buffer/\n.deltas/\n");
+  fs.writeFileSync(path.join(graphRoot, ".env"), "GX10_MEMORY_API_KEY=pipeline-key\n");
+
+  assert.equal(loadWorkerEnv(graphRoot).GX10_MEMORY_API_KEY, "pipeline-key");
+
+  // The graph root is a git repo — the credentials file must be ignored.
+  const gitignore = fs.readFileSync(path.join(graphRoot, ".gitignore"), "utf-8");
+  assert.match(gitignore, /^\.env$/m);
+  assert.match(gitignore, /^\.buffer\/$/m);
+
+  // Idempotent: a second load does not duplicate the entry.
+  loadWorkerEnv(graphRoot);
+  const again = fs.readFileSync(path.join(graphRoot, ".gitignore"), "utf-8");
+  assert.equal(again.split(/\r?\n/).filter((l) => l.trim() === ".env").length, 1);
+
+  // Pipeline credentials override the ambient environment.
+  process.env.GX10_MEMORY_API_KEY = "ambient-key";
+  try {
+    assert.equal(resolveWorkerEnv(graphRoot).GX10_MEMORY_API_KEY, "pipeline-key");
+  } finally {
+    delete process.env.GX10_MEMORY_API_KEY;
+  }
+
+  fs.rmSync(tmp, { recursive: true, force: true });
+});

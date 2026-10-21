@@ -19,11 +19,13 @@ if [ ! -f "$HOST_PI_DIR/agent/auth.json" ]; then
   exit 1
 fi
 
-# Copy the full .pi directory into the container's auth volume
-docker run --rm \
+# Copy what pi needs to authenticate and pick a model, not the whole ~/.pi:
+# its sessions are host transcripts, and workers can read their auth volume.
+# The copy runs in the daemon image itself rather than a separately pulled one.
+docker run --rm --network none --entrypoint sh \
   -v "$GRAPH_MEMORY_DOCKER_AUTH_VOLUME:$GRAPH_MEMORY_CONTAINER_AUTH_PATH" \
-  -v "$HOST_PI_DIR:/host-pi:ro" \
-  alpine cp -r /host-pi "$GRAPH_MEMORY_CONTAINER_AUTH_PATH/.pi"
+  -v "$HOST_PI_DIR/agent:/host-pi-agent:ro" \
+  "$GRAPH_MEMORY_DOCKER_IMAGE" -c "mkdir -p '$CONTAINER_PI_DIR/agent' && for f in auth.json settings.json models.json; do if [ -f /host-pi-agent/\$f ]; then cp /host-pi-agent/\$f '$CONTAINER_PI_DIR/agent/'\$f; fi; done && chmod 600 '$CONTAINER_PI_DIR/agent/auth.json'"
 
 echo "pi auth imported into container."
 echo

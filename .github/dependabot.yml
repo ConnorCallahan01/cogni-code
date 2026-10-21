@@ -114,3 +114,12 @@ updates:
     labels:
       - "dependencies"
       - "security"
+
+  # Proposes bumps to the daemon image's digest-pinned base.
+  - package-ecosystem: "docker"
+    directory: "/graph-memory-plugin/docker"
+    schedule:
+      interval: "weekly"
+    labels:
+      - "dependencies"
+      - "security"

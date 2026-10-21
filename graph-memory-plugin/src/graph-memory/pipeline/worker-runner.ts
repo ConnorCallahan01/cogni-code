@@ -14,6 +14,7 @@ import {
   recordAuthRejection,
 } from "./worker-auth.js";
 import { activityBus } from "../events.js";
+import { loadWorkerEnv, resolveWorkerEnv } from "./worker-env.js";
 
 export interface WorkerRunOptions {
   name: string;
@@ -240,12 +241,12 @@ const opencodeAdapter: HarnessAdapter = {
 //   2. ANTHROPIC_AUTH_TOKEN → Authorization: Bearer  (proxy / subscription token)
 //   3. ~/.claude/.credentials.json                   (Claude CLI OAuth fallback)
 
-function resolveAnthropicAuth(): { value: string; header: string; headerName: string } | null {
-  if (process.env.ANTHROPIC_API_KEY) {
-    return { value: process.env.ANTHROPIC_API_KEY, header: process.env.ANTHROPIC_API_KEY, headerName: "x-api-key" };
+function resolveAnthropicAuth(env: NodeJS.ProcessEnv): { value: string; header: string; headerName: string } | null {
+  if (env.ANTHROPIC_API_KEY) {
+    return { value: env.ANTHROPIC_API_KEY, header: env.ANTHROPIC_API_KEY, headerName: "x-api-key" };
   }
-  if (process.env.ANTHROPIC_AUTH_TOKEN) {
-    return { value: process.env.ANTHROPIC_AUTH_TOKEN, header: `Bearer ${process.env.ANTHROPIC_AUTH_TOKEN}`, headerName: "Authorization" };
+  if (env.ANTHROPIC_AUTH_TOKEN) {
+    return { value: env.ANTHROPIC_AUTH_TOKEN, header: `Bearer ${env.ANTHROPIC_AUTH_TOKEN}`, headerName: "Authorization" };
   }
   try {
     const credPath = path.join(os.homedir(), ".claude", ".credentials.json");
@@ -259,7 +260,8 @@ function resolveAnthropicAuth(): { value: string; header: string; headerName: st
 
 const apiAdapter: HarnessAdapter = {
   async execute(prompt, opts, runtime) {
-    const auth = resolveAnthropicAuth();
+    const env = resolveWorkerEnv(opts.graphRoot);
+    const auth = resolveAnthropicAuth(env);
     if (!auth) {
       throw new Error(
         "No Anthropic credentials found. Set ANTHROPIC_API_KEY (direct API) " +
@@ -272,7 +274,7 @@ const apiAdapter: HarnessAdapter = {
       || runtime.docker.workerModel
       || "claude-sonnet-4-20250514";
 
-    const baseUrl = process.env.ANTHROPIC_BASE_URL || "https://api.anthropic.com";
+    const baseUrl = env.ANTHROPIC_BASE_URL || "https://api.anthropic.com";
 
     const res = await fetch(`${baseUrl}/v1/messages`, {
       method: "POST",
@@ -460,6 +462,14 @@ async function runWorkerAttempt(
 
   // Redirect stdio to log file for detached output
   plan.spawnOptions.stdio = ["ignore", fd, fd];
+
+  // Overlay the pipeline's own credentials (graph-root .env) so the worker
+  // authenticates as the memory lane rather than with whatever the daemon
+  // happened to inherit from the shell that launched it.
+  plan.spawnOptions.env = {
+    ...(plan.spawnOptions.env ?? process.env),
+    ...loadWorkerEnv(opts.graphRoot),
+  };
 
   const child = spawn(plan.command, plan.args, {
     ...plan.spawnOptions,
