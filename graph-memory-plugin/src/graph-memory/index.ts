@@ -1,4 +1,4 @@
-import { CONFIG, isGraphInitialized } from "./config.js";
+import { CONFIG, ensureGraphRootPrivate, isGraphInitialized } from "./config.js";
 import { activityBus } from "./events.js";
 import { createManifestIfMissing } from "./manifest.js";
 import { ensureRuntimeConfig } from "./runtime.js";
@@ -65,6 +65,7 @@ export function initializeGraph() {
       fs.mkdirSync(dir, { recursive: true });
     }
   }
+  ensureGraphRootPrivate(CONFIG.paths.graphRoot);
 
   if (!fs.existsSync(CONFIG.paths.map)) {
     fs.writeFileSync(

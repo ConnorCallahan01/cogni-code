@@ -1,6 +1,7 @@
 import fs from "fs";
 import path from "path";
 import { CONFIG } from "./config.js";
+import { redactedJsonLine } from "./redact.js";
 
 export type ToolTracePhase = "pre" | "post";
 export type ToolAccessKind = "read" | "write" | "search" | "execute" | "mcp" | "unknown";
@@ -242,7 +243,7 @@ export function appendToolTrace(
     rawKeys: Object.keys(input).sort(),
   };
 
-  fs.appendFileSync(getToolTracePath(sessionId), `${JSON.stringify(event)}\n`);
+  fs.appendFileSync(getToolTracePath(sessionId), redactedJsonLine(event));
 }
 
 function buildAssistantTraceIdentity(event: AssistantTraceEvent): string {
@@ -288,7 +289,7 @@ export function appendAssistantTraceEvents(
     if (existingIds.has(identity)) {
       continue;
     }
-    fs.appendFileSync(filePath, `${JSON.stringify(event)}\n`);
+    fs.appendFileSync(filePath, redactedJsonLine(event));
     existingIds.add(identity);
     appended += 1;
   }

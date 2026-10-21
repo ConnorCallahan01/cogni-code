@@ -25,6 +25,7 @@ export interface GraphIndexEntry {
   pinned?: boolean;
   anti_pattern?: boolean;
   decay_exempt?: boolean;
+  written_via?: string;
   updated: string | null;
   last_accessed: string | null;
   access_count: number;
@@ -139,6 +140,7 @@ export function entryFromFile(nodePath: string, filePath: string): GraphIndexEnt
       ...(fm.pinned ? { pinned: true } : {}),
       ...(fm.anti_pattern ? { anti_pattern: true } : {}),
       ...(fm.decay_exempt ? { decay_exempt: true } : {}),
+      ...(fm.written_via ? { written_via: String(fm.written_via) } : {}),
       updated: fm.updated || fm.created || null,
       last_accessed: fm.last_accessed || fm.updated || fm.created || null,
       access_count: fm.access_count || 0,

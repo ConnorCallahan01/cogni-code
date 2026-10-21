@@ -21,7 +21,7 @@ import { scoreCandidates, computeNodeContentHash, computeMultiNodeContentHash } 
 import { listManifests, findDriftedManifests, manifestKeyForNodes } from "./skillforge-manifest.js";import { getAssistantTracePath, getToolTracePath } from "../session-trace.js";
 import { getDailyBriefPaths } from "../briefs.js";
 import { loadExternalInputsConfig, readRecentClassifiedInputs } from "../external-inputs.js";
-import { getProjectWorkingPath, getProjectWorkingStatePath, getProjectWorkingUpdatePath, getFileInteractionPath, getProjectAuditDir, getProjectPreflightPath, getProjectAuditReportPath, getProjectAuditBriefPath, getProjectDreamsDir, getProjectDreamSummaryPath, ensureAuditDirectories, ensureDreamDirectories, sanitizeProjectSlug } from "../working-files.js";
+import { getProjectWorkingPath, getProjectWorkingStatePath, getProjectWorkingUpdatePath, getFileInteractionPath, getProjectAuditDir, getProjectPreflightPath, getProjectAuditReportPath, getProjectAuditBriefPath, getProjectDreamsDir, getProjectDreamSummaryPath, ensureAuditDirectories, ensureDreamDirectories, isSafeProjectName, sanitizeProjectSlug } from "../working-files.js";
 import { processObserverOutputs } from "./observer-tools.js";
 import { processCompressorOutputs, runAutoPrune } from "./compressor-tools.js";
 import { rebuildIndex as rebuildGraphIndex } from "./graph-index.js";
@@ -933,7 +933,8 @@ async function runCompressor(job: GraphMemoryJob): Promise<void> {
 
   const compressorPromptPath = path.join(AGENTS_DIR, "memory-compressor.md");
   const layers = payload.layers || ["global", "project"];
-  const projectList = payload.projects || [];
+  // Project names are pasted into the prompt; anything but a plain name is dropped.
+  const projectList = (payload.projects || []).filter((project) => isSafeProjectName(project));
 
   let prompt = "Read the compressor instructions at " + compressorPromptPath + ", then follow them. Graph root: " + CONFIG.paths.graphRoot + ". Layers to process: " + layers.join(", ") + ".";
   if (projectList.length > 0) {

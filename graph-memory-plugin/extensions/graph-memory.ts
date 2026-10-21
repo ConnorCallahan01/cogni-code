@@ -32,6 +32,7 @@ let _ambientRecall: any;
 let _hasMentalModelData: any;
 let _buildMentalModelContext: any;
 let _detectProject: any;
+let _redactedJsonLine: (entry: unknown) => string = (entry) => JSON.stringify(entry) + "\n";
 
 async function loadCore() {
   if (_handleGraphMemory) return;
@@ -46,6 +47,10 @@ async function loadCore() {
   const soma = await import(path.join(distDir, "soma.js"));
   const manifest = await import(path.join(distDir, "pipeline", "skillforge-manifest.js"));
   const sessionStart = await import(path.join(distDir, "session-start-context.js"));
+  try {
+    const redact = await import(path.join(distDir, "redact.js"));
+    _redactedJsonLine = redact.redactedJsonLine;
+  } catch { /* older dist: no value redaction */ }
   const projectMod = await import(path.join(distDir, "project.js"));
   _handleGraphMemory = tools.handleGraphMemory;
   _initializeGraph = index.initializeGraph;
@@ -203,10 +208,7 @@ SETUP (command line only, so the user sees and approves each change):
   function appendToBuffer(entry: Record<string, unknown>) {
     if (!captureEnabled || !_CONFIG) return;
     ensureBufferDir();
-    fs.appendFileSync(
-      sessionLogPath(),
-      JSON.stringify(entry) + "\n"
-    );
+    fs.appendFileSync(sessionLogPath(), _redactedJsonLine(entry));
     messageCount++;
   }
 
@@ -390,25 +392,6 @@ SETUP (command line only, so the user sees and approves each change):
     const recallBlock = doAmbientRecall(event.prompt);
     if (recallBlock) {
       parts.unshift(recallBlock);
-    }
-
-    // --- Inject skillforge skill files ---
-    if (_listManifests && _CONFIG) {
-      try {
-        const manifests = _listManifests();
-        for (const m of manifests) {
-          if (!m.project_root || !m.files) continue;
-          for (const filePath of Object.values(m.files) as string[]) {
-            const full = path.join(m.project_root, filePath);
-            if (fs.existsSync(full)) {
-              const skillContent = fs.readFileSync(full, "utf-8").trim();
-              if (skillContent) {
-                parts.push(`<!-- Skill: ${m.skill_name} -->\n${skillContent}`);
-              }
-            }
-          }
-        }
-      } catch { /* ignore */ }
     }
 
     if (parts.length === 0) return;

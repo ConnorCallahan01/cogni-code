@@ -96,9 +96,9 @@ test("hooks manifest includes tracing hooks and self-allow rule", () => {
     hooks.PreToolUse?.some(
       (entry) =>
         entry.matcher === "mcp__graph-memory__graph_memory" &&
-        entry.hooks.some((hook) => hook.command.includes("\"permissionDecision\":\"allow\""))
+        entry.hooks.some((hook) => hook.command === "${CLAUDE_PLUGIN_ROOT}/bin/graph-memory-permission.sh")
     ),
-    "graph_memory self-allow rule is missing"
+    "graph_memory read-only allow rule is missing"
   );
   assert.ok(
     hooks.PostToolUse?.some((entry) =>

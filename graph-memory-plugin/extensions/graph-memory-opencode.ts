@@ -43,6 +43,9 @@ let _ambientRecall: any;
 let _hasMentalModelData: any;
 let _buildMentalModelContext: any;
 let _renderWorkingForSession: any;
+let _loadPinnedNodes: any;
+let _renderPinnedSection: any;
+let _redactedJsonLine: (entry: unknown) => string = (entry) => JSON.stringify(entry) + "\n";
 let _appendToolTrace: any;
 
 function resolveDistDir(): string {
@@ -101,6 +104,15 @@ async function loadCore() {
     const projectWorking = await import(path.join(distDir, "project-working.js"));
     _renderWorkingForSession = projectWorking.renderWorkingForSession;
   } catch { /* older dist: read the WORKING file instead */ }
+  try {
+    const contextSections = await import(path.join(distDir, "context-sections.js"));
+    _loadPinnedNodes = contextSections.loadPinnedNodes;
+    _renderPinnedSection = contextSections.renderPinnedSection;
+  } catch { /* older dist: no pinned section */ }
+  try {
+    const redact = await import(path.join(distDir, "redact.js"));
+    _redactedJsonLine = redact.redactedJsonLine;
+  } catch { /* older dist: no value redaction */ }
 }
 
 export const GraphMemoryPlugin: Plugin = async ({ project, client, directory, worktree }) => {
@@ -140,10 +152,7 @@ export const GraphMemoryPlugin: Plugin = async ({ project, client, directory, wo
     if (content && isMemoryInjectionText(content)) return;
     const dir = getBufferDir();
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-    fs.appendFileSync(
-      sessionLogPath(),
-      JSON.stringify(entry) + "\n"
-    );
+    fs.appendFileSync(sessionLogPath(), _redactedJsonLine(entry));
     messageCount++;
   }
 
@@ -355,30 +364,6 @@ export const GraphMemoryPlugin: Plugin = async ({ project, client, directory, wo
     return lines.length > 0 ? lines.join("\n") : null;
   }
 
-  function loadPinnedNodes(projectName?: string): Array<{ title: string; content: string }> {
-    const results: Array<{ title: string; content: string }> = [];
-    try {
-      const indexPath = _CONFIG.paths.index;
-      if (!fs.existsSync(indexPath)) return results;
-      const index = JSON.parse(fs.readFileSync(indexPath, "utf-8"));
-      for (const entry of index) {
-        if (!entry?.pinned) continue;
-        if (entry.project && projectName && entry.project !== projectName) continue;
-        const nodePath = path.join(_CONFIG.paths.nodes, `${entry.path}.md`);
-        if (!fs.existsSync(nodePath)) continue;
-        const raw = fs.readFileSync(nodePath, "utf-8");
-        const fmMatch = raw.match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/);
-        if (!fmMatch) continue;
-        const frontmatter = fmMatch[1];
-        const content = fmMatch[2].trim();
-        const titleMatch = frontmatter.match(/^title:\s*["']?(.+?)["']?\s*$/m);
-        const title = titleMatch ? titleMatch[1] : entry.path;
-        results.push({ title, content });
-      }
-    } catch { /* non-critical */ }
-    return results;
-  }
-
   function loadProjectWorking(projectName?: string): string | null {
     try {
       if (_renderWorkingForSession) return _renderWorkingForSession(projectName || "global", captureSessionId || undefined);
@@ -447,11 +432,11 @@ export const GraphMemoryPlugin: Plugin = async ({ project, client, directory, wo
     const workingContent = loadProjectWorking(currentProject);
     if (workingContent) parts.push(workingContent);
 
-    // ── Layer 5: Pinned procedures (project-scoped) ──
-    const pinned = loadPinnedNodes(currentProject);
-    if (pinned.length > 0) {
-      const sections = pinned.map(p => `### ${p.title}\n\n${p.content}`);
-      parts.push(`# PINNED — Durable Procedural Memory\n\n> Auto-loaded pinned nodes for this project. Follow these procedures exactly.\n\n${sections.join("\n\n---\n\n")}`);
+    // ── Layer 5: Pinned procedures (project-scoped; agent-written pins are
+    // set apart as unreviewed by the shared renderer) ──
+    if (_loadPinnedNodes && _renderPinnedSection && currentProject) {
+      const pinnedBlock = _renderPinnedSection(_loadPinnedNodes(currentProject), Infinity);
+      if (pinnedBlock) parts.push(pinnedBlock);
     }
 
     if (parts.length === 0) return null;

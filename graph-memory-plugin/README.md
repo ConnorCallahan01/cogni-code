@@ -131,6 +131,8 @@ Session-start uses a single injection path:
 
 In Claude Code the injection stops under the 10,000-character hook output cap (longer output is replaced by a 2,000-character preview), so sections are added in that priority order and the MAP fills what's left. A pinned node loads only in sessions of its own `project`.
 
+Anti-patterns and pins saved through `graph_memory`'s `remember` are marked `written_via: graph_memory` and load under their own "unreviewed, saved by an agent session" headings, framed as information rather than instructions, apart from the ones the pipeline produced.
+
 WORKING is built for the session reading it, so several sessions can work in one project at once. A session's own work leads; a new session picks up from the most recent session that is no longer open; other sessions open in the project are listed with their task and the files they're editing, never handed off. Mid-session, a session is re-sent WORKING only when its own work changes, and is told when another session in the project opens or closes. A session counts as open while it has been active in the last 2 hours.
 
 ### Pipeline Stages
@@ -180,7 +182,7 @@ cd graph-memory-plugin
 ./bin/install-codex.sh
 ```
 
-Then start Codex CLI and run `/hooks` to review and trust the graph-memory hooks. Codex supports lifecycle hooks (`SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `PreCompact`, `Stop`) with the same stdin/stdout contract as Claude Code.
+Then start Codex CLI and run `/hooks` to review and trust the graph-memory hooks. Its `PreToolUse` rule lets `graph_memory`'s read-only actions (recall, search, read_node, list_edges, read_dream, status, history) run without a prompt; actions that write ask as any tool would. Codex supports lifecycle hooks (`SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `PreCompact`, `Stop`) with the same stdin/stdout contract as Claude Code.
 
 The npm installer (`cogni-code install --codex`) also copies the slash commands into `~/.codex/prompts/`, so `/memory-onboard`, `/memory-status`, etc. work in Codex as custom prompts.
 

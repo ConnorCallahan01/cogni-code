@@ -6,6 +6,7 @@ import { ensureLens, readModel as readProjectModel, lensExists } from "./lenses/
 import { readRecentSessions } from "./sessions/manager.js";
 import { SessionLog } from "./sessions/types.js";
 import { getAntiPatterns } from "./pipeline/graph-index.js";
+import { renderAntiPatternLines } from "./context-sections.js";
 import { readHandoffPickup } from "./project-working.js";
 
 export interface SessionStartResult {
@@ -206,11 +207,7 @@ function buildGuardrails(projectName: string): string | null {
     const antiPatterns = getAntiPatterns(projectName !== "global" ? projectName : undefined);
     if (antiPatterns.length === 0) return null;
 
-    const lines: string[] = ["## Anti-Patterns", ""];
-    for (const ap of antiPatterns) {
-      lines.push("- " + ap.gist);
-    }
-    return lines.join("\n");
+    return renderAntiPatternLines(antiPatterns).join("\n");
   } catch {
     return null;
   }

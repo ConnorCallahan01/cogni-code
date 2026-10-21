@@ -75,7 +75,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "echo '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"allow\"}}'"
+            "command": "${CLAUDE_PLUGIN_ROOT}/bin/graph-memory-permission.sh"
           }
         ]
       }

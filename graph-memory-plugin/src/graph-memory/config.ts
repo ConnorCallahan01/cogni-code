@@ -277,3 +277,14 @@ export function saveGlobalConfig(graphRoot: string): void {
 export function isGraphInitialized(graphRoot: string = resolveGraphRoot()): boolean {
   return fs.existsSync(path.join(graphRoot, "MAP.md"));
 }
+
+// The graph root holds transcripts, tool output, and inputs, and files under it
+// are created with the default umask, readable by every account on the machine.
+// Closing the root itself to everyone but its owner covers all of them.
+export function ensureGraphRootPrivate(graphRoot: string = resolveGraphRoot()): void {
+  if (process.platform === "win32") return;
+  try {
+    const mode = fs.statSync(graphRoot).mode & 0o777;
+    if (mode & 0o077) fs.chmodSync(graphRoot, mode & 0o700);
+  } catch { /* best effort: never block a session on this */ }
+}

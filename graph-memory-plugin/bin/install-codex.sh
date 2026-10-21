@@ -154,7 +154,8 @@ node -e "
           .replace('\$GRAPH_MEMORY_PLUGIN_DIR/bin/on-post-tool-use.sh', pluginDir + '/dist/hooks/on-post-tool-use.js')
           .replace('\$GRAPH_MEMORY_PLUGIN_DIR/bin/on-pre-compact.sh', pluginDir + '/dist/hooks/on-pre-compact.js')
           .replace('\$GRAPH_MEMORY_PLUGIN_DIR/bin/on-assistant-response.sh', pluginDir + '/dist/hooks/on-assistant-response.js')
-          .replace('\$GRAPH_MEMORY_PLUGIN_DIR/bin/session-end.sh', pluginDir + '/dist/hooks/session-end.js');
+          .replace('\$GRAPH_MEMORY_PLUGIN_DIR/bin/session-end.sh', pluginDir + '/dist/hooks/session-end.js')
+          .replace('\$GRAPH_MEMORY_PLUGIN_DIR/bin/graph-memory-permission.sh', pluginDir + '/dist/hooks/graph-memory-permission.js');
         return nodeBin + ' ' + script;
       }
       return cmd.split('\$GRAPH_MEMORY_PLUGIN_DIR').join(pluginDir);
@@ -176,14 +177,18 @@ node -e "
     }));
   }
 
-  // Read existing hooks (if any).
+  // Read existing hooks. Start fresh only when there is no file: one that
+  // won't parse is left alone, since rewriting it would drop the user's hooks.
   let existing = { hooks: {} };
-  try {
-    const raw = fs.readFileSync(hooksPath, 'utf8');
-    existing = JSON.parse(raw);
+  if (fs.existsSync(hooksPath)) {
+    try {
+      existing = JSON.parse(fs.readFileSync(hooksPath, 'utf8'));
+    } catch (e) {
+      console.error('Could not parse ' + hooksPath + ' (' + e.message + '); left it unchanged.');
+      console.error('Merge the graph-memory hooks into it by hand, or fix the file and re-run this installer.');
+      process.exit(1);
+    }
     if (!existing.hooks) existing.hooks = {};
-  } catch {
-    // No existing hooks file — start fresh.
   }
 
   // Merge: for each incoming event, remove old graph-memory entries then append.
@@ -191,7 +196,7 @@ node -e "
     if (!existing.hooks[event]) existing.hooks[event] = [];
     const incomingKeys = matcherGroups.map(g => JSON.stringify(g));
     existing.hooks[event] = existing.hooks[event].filter(group => {
-      // Dedup exact matches (handles the echo auto-allow hook).
+      // Dedup exact matches.
       if (incomingKeys.includes(JSON.stringify(group))) return false;
       // Remove plugin-dir-based entries (handles reinstall with a new path)
       // and stale npm-installer entries (bare or absolute cogni-code CLI).
@@ -199,7 +204,9 @@ node -e "
       return !hooks.some(h => typeof h.command === 'string' && (
         h.command.includes(pluginDir) ||
         h.command.includes('cogni-code hook') ||
-        h.command.includes('cli.js\" hook')
+        h.command.includes('cli.js\" hook') ||
+        // The old rule allowed every graph_memory action with a bare echo.
+        (typeof group.matcher === 'string' && group.matcher.includes('graph_memory') && h.command.includes('permissionDecision'))
       ));
     });
     existing.hooks[event].push(...matcherGroups);

@@ -4,6 +4,7 @@ import { CONFIG } from "./config.js";
 import { activityBus } from "./events.js";
 import { enqueueJob } from "./pipeline/job-queue.js";
 import { sanitizeSessionId } from "./session-trace.js";
+import { redactedJsonLine } from "./redact.js";
 
 export interface ConversationEntry {
   role: "user" | "assistant";
@@ -49,7 +50,7 @@ export class BufferWatcher {
       this.startSession();
     }
 
-    const line = JSON.stringify(entry) + "\n";
+    const line = redactedJsonLine(entry);
     fs.appendFileSync(this.sessionLogPath(), line);
 
     this.messageCount++;
