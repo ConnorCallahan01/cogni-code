@@ -1,5 +1,15 @@
 # Changelog
 
+## [4.2.1] (2026-10-21) — The daemon image builds from the npm package again
+
+### Fixed
+
+- **`bin/docker-build.sh` failed for every npm install.** 4.2.0's image installs its packages with `npm ci` from the lockfile, but npm never publishes `package-lock.json`, so the build only worked from a clone. The lockfile is now `npm-shrinkwrap.json`, which npm does publish. A test checks that every file the image copies is in the npm package.
+
+### Changed
+
+- Because the lockfile ships as `npm-shrinkwrap.json`, `npm install -g cogni-code` now installs the exact dependency versions each release was tested with, instead of resolving its version ranges at install time.
+
 ## [4.2.0] (2026-10-21) — The daemon container contains its workers
 
 ### Security
