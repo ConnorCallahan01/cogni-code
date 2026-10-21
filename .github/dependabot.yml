@@ -105,3 +105,12 @@ updates:
       - dependency-name: "typescript"
         update-types:
           - "version-update:semver-major"
+
+  # Keeps the commit-pinned actions in the release workflow current.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    labels:
+      - "dependencies"
+      - "security"
