@@ -123,3 +123,10 @@ updates:
     labels:
       - "dependencies"
       - "security"
+    # Node majors move with the runtime the pipeline is verified on, by hand:
+    # a new major isn't long-term support yet (odd ones never are). Digest
+    # bumps within the pinned major still come through.
+    ignore:
+      - dependency-name: "node"
+        update-types:
+          - "version-update:semver-major"
