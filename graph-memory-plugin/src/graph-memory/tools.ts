@@ -5,7 +5,7 @@ import { z } from "zod";
 import { CONFIG, isGraphInitialized } from "./config.js";
 import { activityBus } from "./events.js";
 import { safePath, countFiles as countFilesUtil } from "./utils.js";
-import { listCommits, revertTo, autoCommit } from "./git.js";
+import { listCommits, revertTo, autoCommit, findGitTampering } from "./git.js";
 import { somaBoost } from "./soma.js";
 import { overlap, recencyBoost, projectBoost } from "./scoring.js";
 import { applyDeltas } from "./pipeline/mechanical-apply.js";
@@ -1012,6 +1012,10 @@ function getStatus() {
   const unscopedPinned = index.filter((e: any) => e.pinned && !e.project).map((e: any) => e.path);
   if (unscopedPinned.length > 0) {
     warnings.push(`${unscopedPinned.length} pinned node(s) have no project, so they auto-load in no session: ${unscopedPinned.join(", ")} (set one with remember, project="owner/repo")`);
+  }
+  const gitTampering = findGitTampering();
+  if (gitTampering.length > 0) {
+    warnings.push(`The graph's .git has settings graph-memory never creates, which run programs on git commands (a shell prompt's git status included): ${gitTampering.join(", ")}. Inspect and remove them.`);
   }
 
   // Check for pending operations

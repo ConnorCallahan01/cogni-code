@@ -231,6 +231,7 @@ The migration script `src/graph-memory/scripts/migrate-mental-model.ts` was used
 - tool and graph storage only
 - no daemon container
 - useful for lightweight local testing
+- pipeline workers run as you, with your access: nothing contains them, so use Docker mode for anything but testing
 - works with Claude Code, Codex CLI, OpenCode, and pi
 
 ### Docker daemon mode
@@ -239,6 +240,7 @@ The migration script `src/graph-memory/scripts/migrate-mental-model.ts` was used
 - host agent stays on the host
 - graph root stays on the host filesystem
 - daemon and bounded workers run in Docker against the mounted graph root
+- workers are contained: the image is read-only, the container keeps only the `DAC_OVERRIDE` and `FOWNER` capabilities, and the runtime config, the pipeline `.env`, and the graph's `.git/config` and `.git/hooks` are mounted read-only, so a worker can write the graph and its own auth volume but nothing the host acts on. Restart the daemon after editing `.env` or the runtime config
 - also works with **Podman** as a drop-in replacement — `runtime-env.sh` detects whichever of `docker`/`podman` is on `PATH` and, if it's podman, defines a `docker` shell function that forwards to it, so every `docker-*.sh` script works unmodified. `docker-bootstrap.sh` and `docker-start.sh` additionally start the podman machine if it isn't already running (podman doesn't auto-start its VM the way Docker Desktop does).
 
 Useful helpers (harness-agnostic):

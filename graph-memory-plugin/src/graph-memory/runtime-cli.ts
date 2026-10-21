@@ -49,6 +49,7 @@ async function main() {
       // file's own claim.
       process.stdout.write(`GRAPH_MEMORY_HOST_ROOT=${quote(CONFIG.paths.graphRoot)}\n`);
       process.stdout.write(`GRAPH_MEMORY_WORKER_PROVIDER=${quote(docker.workerProvider)}\n`);
+      process.stdout.write(`GRAPH_MEMORY_WORKER_MODEL=${quote(docker.workerModel || "")}\n`);
       process.stdout.write(`GRAPH_MEMORY_DOCKER_IMAGE=${quote(docker.image)}\n`);
       process.stdout.write(`GRAPH_MEMORY_DOCKER_CONTAINER=${quote(docker.containerName)}\n`);
       process.stdout.write(`GRAPH_MEMORY_DOCKER_AUTH_VOLUME=${quote(docker.authVolume)}\n`);

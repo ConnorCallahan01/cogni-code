@@ -1,9 +1,66 @@
 import { simpleGit, type SimpleGit } from "simple-git";
 import fs from "fs";
+import os from "os";
+import path from "path";
 import { CONFIG } from "./config.js";
 import { activityBus } from "./events.js";
 
 let git: SimpleGit | null = null;
+
+// Workers write the graph, and outside Docker its .git too. A hook or a
+// core.fsmonitor command planted there would run as the user on the graph's
+// next commit, so the graph's own git runs with both turned off. (simple-git
+// refuses to set either without the opt-ins; these set them to nothing.)
+function graphGit(graphRoot: string): SimpleGit {
+  return simpleGit(graphRoot, {
+    config: [`core.hooksPath=${os.devNull}`, "core.fsmonitor=false"],
+    unsafe: { allowUnsafeHooksPath: true, allowUnsafeFsMonitor: true },
+  });
+}
+
+// Git settings that name a program for git to run. The graph's own git turns
+// hooks and fsmonitor off, but a user running `git status` in the graph (a
+// shell prompt does) would still run whatever these name.
+const RISKY_GIT_CONFIG = [
+  /^core\.(hookspath|fsmonitor|sshcommand|pager|editor|askpass|gitproxy)$/,
+  /^diff\.external$/,
+  /^diff\..+\.(textconv|command)$/,
+  /^filter\..+\.(clean|smudge|process)$/,
+  /^merge\..+\.driver$/,
+  /^credential(\..+)?\.helper$/,
+  /^(include|includeif\..+)\.path$/,
+  /^alias\..+$/,
+  /^(sequence\.editor|gpg\.program|gpg\..+\.program)$/,
+];
+
+/**
+ * Hooks and program-running settings in the graph's .git, which graph-memory
+ * itself never creates. Each finding is a path or a config key.
+ */
+export function findGitTampering(graphRoot = CONFIG.paths.graphRoot): string[] {
+  const findings: string[] = [];
+  const gitDir = path.join(graphRoot, ".git");
+  try {
+    for (const name of fs.readdirSync(path.join(gitDir, "hooks"))) {
+      if (!name.endsWith(".sample")) findings.push(`.git/hooks/${name}`);
+    }
+  } catch { /* no hooks directory */ }
+  try {
+    let section = "";
+    for (const line of fs.readFileSync(path.join(gitDir, "config"), "utf-8").split("\n")) {
+      const header = line.match(/^\s*\[\s*([^\s\]"]+)(?:\s+"([^"]*)")?\s*\]/);
+      if (header) {
+        section = header[2] !== undefined ? `${header[1]}.${header[2]}` : header[1];
+        continue;
+      }
+      const entry = line.match(/^\s*([A-Za-z][\w-]*)\s*(?:=|$)/);
+      if (!entry || !section) continue;
+      const key = `${section}.${entry[1]}`.toLowerCase();
+      if (RISKY_GIT_CONFIG.some((pattern) => pattern.test(key))) findings.push(`.git/config ${key}`);
+    }
+  } catch { /* no config */ }
+  return findings;
+}
 
 // Runtime state the pipeline writes under the graph root. It churns on every run,
 // can hold raw conversation captures, external inputs, and credentials, and is not
@@ -60,7 +117,7 @@ async function getGit(): Promise<SimpleGit | null> {
 
     // Init repo if needed
     if (!fs.existsSync(`${graphRoot}/.git`)) {
-      const freshGit = simpleGit(graphRoot);
+      const freshGit = graphGit(graphRoot);
       await freshGit.init();
       activityBus.log("git:commit", "Initialized git repo in graph/");
 
@@ -69,7 +126,7 @@ async function getGit(): Promise<SimpleGit | null> {
       await freshGit.commit("memory: init graph repository");
     }
 
-    git = simpleGit(graphRoot);
+    git = graphGit(graphRoot);
   }
 
   return git;
@@ -124,7 +181,9 @@ export async function autoCommit(summary?: string): Promise<void> {
     // Nothing to commit
     if (status.isClean()) return;
 
-    // Stage all graph changes (nodes, MAP, PRIORS, index, dreams)
+    // Stage all graph changes (nodes, MAP, PRIORS, index, dreams). Only paths
+    // that exist: git refuses the whole add over one missing path, and a new
+    // graph has no SOMA.md, DREAMS.md, or archive index yet.
     await g.add([
       "nodes/",
       "archive/",
@@ -138,7 +197,7 @@ export async function autoCommit(summary?: string): Promise<void> {
       ".index.json",
       ".archive-index.json",
       "manifest.yml",
-    ]);
+    ].filter((entry) => fs.existsSync(path.join(CONFIG.paths.graphRoot, entry))));
 
     // Re-check after staging
     const staged = await g.status();

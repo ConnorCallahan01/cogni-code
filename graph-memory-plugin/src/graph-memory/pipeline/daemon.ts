@@ -10,7 +10,7 @@ import { claimNextJob, completeRunningJob, countJobs, deferRunningJob, enqueueJo
 import { GraphMemoryJob, GraphMemoryJobState } from "./job-schema.js";
 import { runPipelineWorker, WorkerRunOptions } from "./worker-runner.js";
 import { TRANSIENT_DEFER_LIMIT, transientRetryDelayMs, WorkerUnavailableError } from "./worker-transient.js";
-import { ensureGraphGitHygiene } from "../git.js";
+import { ensureGraphGitHygiene, findGitTampering } from "../git.js";
 import { acquireProjectChainLock, clearChainLocks, releaseProjectChainLock } from "./chain-locks.js";
 import { pruneOpencodeSessions } from "./opencode-housekeeping.js";
 import { loadRuntimeConfig } from "../runtime.js";
@@ -1710,6 +1710,10 @@ export async function runDaemon({ once = false }: { once?: boolean } = {}): Prom
   // Before any worker runs `git add -A`, make sure runtime state is ignored.
   try {
     await ensureGraphGitHygiene();
+    const gitTampering = findGitTampering();
+    if (gitTampering.length > 0) {
+      activityBus.log("system:error", `Graph .git has hooks or program-running settings graph-memory never creates: ${gitTampering.join(", ")}`, { findings: gitTampering });
+    }
   } catch (err: any) {
     activityBus.log("git:error", `Graph repo hygiene skipped: ${err?.message || err}`);
   }

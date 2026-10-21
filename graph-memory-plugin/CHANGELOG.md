@@ -1,5 +1,28 @@
 # Changelog
 
+## [4.2.0] (2026-10-21) — The daemon container contains its workers
+
+### Security
+
+- **Workers can no longer change what the host acts on.** Pipeline workers run with their harness's permission checks off and write the graph, and the files that steer the host sat in that same writable mount. `bin/docker-start.sh` now mounts `.runtime-config.json` (which the docker scripts eval), the pipeline `.env`, and the graph's `.git/config` and `.git/hooks` read-only over the writable graph. The image is read-only, root keeps only `DAC_OVERRIDE` and `FOWNER` (what it needs for files the host user owns on Linux), and `no-new-privileges` is set. The start script creates an empty, mode-600 `.env` when there is none, so a worker can't create one to redirect the next worker's provider. `docker-bootstrap.sh` starts the container through `docker-start.sh`, so the flags live in one place.
+- **The graph's own git runs no hooks or fsmonitor command.** A hook or `core.fsmonitor` command planted in the graph's `.git` ran as the user on the next commit. Status warns, and the daemon logs at start, when the graph's `.git` has hooks or program-running settings (`core.fsmonitor`, `core.sshCommand`, filters, aliases, ...) that graph-memory never creates, since a shell prompt's `git status` there would still run them.
+- **Credential imports copy only what the harness needs.** The opencode import writes a fresh container config (model, provider definitions) instead of copying all of `~/.config/opencode`; the pi import copies `agent/auth.json`, `settings.json`, and `models.json` instead of all of `~/.pi`, sessions included. Both copy through the daemon image instead of pulling an unpinned `alpine`, and the opencode config goes through a private temp file instead of a fixed `/tmp` path.
+- **The image is pinned.** The base image by digest (Dependabot proposes bumps), the plugin's packages with `npm ci` from the lockfile, and opencode by the release's own checksums.
+
+### Added
+
+- **Local-model pipeline credentials.** Workers read a pipeline-scoped `~/.graph-memory/.env` whose values win over the ambient environment, and the opencode import carries the host's `provider` block and uses the configured `workerModel` verbatim, so a local OpenAI-compatible endpoint works in Docker mode. See `docs/local-model-pipeline.md` and `/memory-switch-harness`.
+
+### Fixed
+
+- The image build fetched `opencode-linux-amd64`, which opencode doesn't publish (its x86_64 build is `x64`), so it failed on x86_64 hosts.
+- The graph's auto-commit staged a fixed list of paths, and git refuses the whole add over one missing path, so a new graph (no `SOMA.md`, `DREAMS.md`, or archive index yet) never committed. It now stages the paths that exist.
+
+### Upgrading
+
+- Rebuild the image and restart the daemon (`bin/docker-build.sh`, then `bin/docker-stop.sh && bin/docker-start.sh`). Restart again after editing `.env` or the runtime config: the container sees them read-only.
+- In manual mode workers run as you, with your access; nothing contains them.
+
 ## [4.1.0] (2026-10-21) — Agent-written guardrails are labeled, captures redact secrets by value
 
 ### Security

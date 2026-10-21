@@ -1,4 +1,6 @@
-FROM node:24-bookworm-slim
+# Pinned by digest: a tag can be repointed at a different image. Dependabot
+# proposes digest bumps.
+FROM node:24-bookworm-slim@sha256:55fb5f5a527ea2c5c4a95f963e48ef90aa38c7b346054fdc8ee9957a2b55d205
 
 WORKDIR /app
 
@@ -15,22 +17,31 @@ RUN git config --system user.name "graph-memory" \
   && git config --system user.email "graph-memory@localhost" \
   && git config --system --add safe.directory /graph-memory
 
-COPY package.json ./
-RUN npm install --omit=dev --ignore-scripts
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev --ignore-scripts --no-audit --no-fund
 # Worker CLIs are pinned so a rebuild can't silently change how the pipeline
 # runs: codex, pi, and Claude Code install from docker/worker-clis' lockfile
-# (transitive dependencies included), opencode by version.
+# (transitive dependencies included), opencode by version and checksum.
 # These are the versions the 3.7.x pipeline was verified on; bump deliberately
 # and re-verify.
 COPY docker/worker-clis/package.json docker/worker-clis/package-lock.json /opt/worker-clis/
 RUN cd /opt/worker-clis && npm ci --omit=dev --no-audit --no-fund
 ENV PATH=/opt/worker-clis/node_modules/.bin:$PATH
 
+# The checksums are the release's own asset digests. opencode names its x86_64
+# build "x64", not "amd64".
 ARG OPENCODE_VERSION=1.18.35
-RUN ARCH=$(uname -m) && \
-    case "$ARCH" in aarch64) GOARCH="arm64" ;; x86_64) GOARCH="amd64" ;; esac && \
-    curl -fsSL "https://github.com/anomalyco/opencode/releases/download/v${OPENCODE_VERSION}/opencode-linux-${GOARCH}.tar.gz" \
-    | tar xz -C /usr/local/bin opencode
+ARG OPENCODE_SHA256_ARM64=f7f2ba59ee8aa94d388f9696575a32d20e71c2ee48def9f80fc693a60fec6c72
+ARG OPENCODE_SHA256_X64=c8f888b451f5494a18f858fffb0e0b68f4e4baa9c241761c5f206884f0fa640d
+RUN case "$(uname -m)" in \
+      aarch64) ASSET=arm64; SHA="$OPENCODE_SHA256_ARM64" ;; \
+      x86_64) ASSET=x64; SHA="$OPENCODE_SHA256_X64" ;; \
+      *) echo "unsupported architecture: $(uname -m)" >&2; exit 1 ;; \
+    esac && \
+    curl -fsSL -o /tmp/opencode.tar.gz "https://github.com/anomalyco/opencode/releases/download/v${OPENCODE_VERSION}/opencode-linux-${ASSET}.tar.gz" && \
+    echo "$SHA  /tmp/opencode.tar.gz" | sha256sum -c - && \
+    tar xzf /tmp/opencode.tar.gz -C /usr/local/bin opencode && \
+    rm /tmp/opencode.tar.gz
 
 COPY dist ./dist
 COPY extensions ./extensions
