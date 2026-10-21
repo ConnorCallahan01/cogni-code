@@ -15,7 +15,16 @@ if [ ! -d "$DIR/dist" ]; then
   fi
 fi
 
+# npm installs every file with the same 1985 timestamp, and the build-context
+# transfer skips a file whose size and timestamp it has already seen: after an
+# upgrade, a file that kept its size kept its old contents in the image, even
+# with --no-cache. Building from a copy stamped now sends every file fresh.
+CONTEXT="$(mktemp -d)"
+trap 'rm -rf "$CONTEXT"' EXIT
+(cd "$DIR" && tar --exclude=node_modules --exclude=.git -cf - .) | (cd "$CONTEXT" && tar -xmf -)
+
 docker build \
-  -f "$DIR/docker/Dockerfile" \
+  -f "$CONTEXT/docker/Dockerfile" \
   -t "$GRAPH_MEMORY_DOCKER_IMAGE" \
-  "$DIR"
+  "$@" \
+  "$CONTEXT"
