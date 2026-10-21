@@ -12,7 +12,7 @@ app.use(express.json())
 const PORT = Number.parseInt(process.env.MEMORY_DASHBOARD_API_PORT || process.env.PORT || '3001', 10)
 
 type JobState = 'queued' | 'running' | 'done' | 'failed'
-type JobType = 'scribe' | 'working_update' | 'auditor' | 'librarian' | 'dreamer' | 'dreamer_v3' | 'memory_analysis' | 'skillforge' | 'skillforge_refresh' | 'observer' | 'compressor' | 'bootstrap_project_doc' | 'notion_sync' | 'notion_inbound_triage' | 'notion_inbound_enrich'
+type JobType = 'scribe' | 'working_update' | 'auditor' | 'librarian' | 'dreamer' | 'dreamer_v3' | 'memory_analysis' | 'skillforge' | 'skillforge_refresh' | 'observer' | 'compressor' | 'bootstrap_project_doc'
 
 interface RuntimeConfig {
   mode?: 'manual' | 'docker'
@@ -76,7 +76,7 @@ interface ProjectWorkingFileSummary {
 }
 
 interface PipelineCutoffStatus {
-  stage: 'scribe' | 'working_update' | 'auditor' | 'librarian' | 'dreamer' | 'observer' | 'compressor' | 'skillforge' | 'memory_analysis' | 'notion_sync'
+  stage: 'scribe' | 'working_update' | 'auditor' | 'librarian' | 'dreamer' | 'observer' | 'compressor' | 'skillforge' | 'memory_analysis'
   current: number
   threshold: number | null
   remaining: number | null
@@ -643,9 +643,6 @@ function readAllJobs(graphRoot = getGraphRoot()) {
     observer: { queued: 0, running: 0, done: 0, failed: 0 },
     compressor: { queued: 0, running: 0, done: 0, failed: 0 },
     bootstrap_project_doc: { queued: 0, running: 0, done: 0, failed: 0 },
-    notion_sync: { queued: 0, running: 0, done: 0, failed: 0 },
-    notion_inbound_triage: { queued: 0, running: 0, done: 0, failed: 0 },
-    notion_inbound_enrich: { queued: 0, running: 0, done: 0, failed: 0 },
   }
 
   for (const state of Object.keys(jobs) as JobState[]) {
@@ -767,25 +764,6 @@ function buildPipelineCutoffs(graphRoot = getGraphRoot(), jobs = readAllJobs(gra
     const today = new Date().toISOString().slice(0, 10)
     return existsSync(join(getPaths(graphRoot).dailyBriefs, `${today}.md`))
   })()
-
-  const notionSyncJobState = hasJobInFlight(jobs, 'notion_sync')
-  const notionSyncEnabled = (() => {
-    const configPath = join(graphRoot, 'config.yml')
-    if (!existsSync(configPath)) return false
-    const raw = readFileSync(configPath, 'utf-8')
-    return /notionSync\.enabled:\s*true/i.test(raw)
-  })()
-  const notionSyncStateFile = (() => {
-    const statePath = join(graphRoot, '.notion-sync-state.json')
-    if (!existsSync(statePath)) return null
-    try { return JSON.parse(readFileSync(statePath, 'utf-8')) } catch { return null }
-  })()
-  const notionLastSyncAt = notionSyncStateFile?.lastSyncAt ? new Date(notionSyncStateFile.lastSyncAt) : null
-  const notionSyncHour = notionSyncStateFile?.syncHourLocal ?? 8
-  const notionPageCount = notionSyncStateFile?.pages ? Object.keys(notionSyncStateFile.pages).length : 0
-  const notionRowCount = notionSyncStateFile?.databases
-    ? Object.values(notionSyncStateFile.databases as Record<string, { rowCount?: number }>).reduce((s: number, d: { rowCount?: number }) => s + (d.rowCount ?? 0), 0)
-    : 0
 
   return [
     {
@@ -909,22 +887,6 @@ function buildPipelineCutoffs(graphRoot = getGraphRoot(), jobs = readAllJobs(gra
           : analysisReady
             ? `Daily brief window is open after ${DAILY_ANALYSIS_HOUR_LOCAL}:00 local.`
             : `Daily brief will become eligible after ${DAILY_ANALYSIS_HOUR_LOCAL}:00 local.`,
-    },
-    {
-      stage: 'notion_sync',
-      current: notionPageCount + notionRowCount,
-      threshold: null,
-      remaining: null,
-      status: !notionSyncEnabled
-        ? 'idle'
-        : notionSyncJobState || (notionLastSyncAt ? 'idle' : 'waiting'),
-      detail: !notionSyncEnabled
-        ? 'Notion sync is not enabled.'
-        : notionSyncJobState
-          ? `Notion sync is ${notionSyncJobState}.`
-          : notionLastSyncAt
-            ? `${notionPageCount} pages, ${notionRowCount} rows synced. Last sync ${notionLastSyncAt.toLocaleDateString()} ${notionLastSyncAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}. Next at ${notionSyncHour}:00.`
-            : `Notion sync enabled. Waiting for first sync at ${notionSyncHour}:00 local.`,
     },
   ]
 }

@@ -44,10 +44,10 @@ Recommended default:
 
 If they choose a custom path, use it.
 
-Then initialize the graph:
+Then initialize the graph by running this in the shell:
 
-```text
-graph_memory(action="initialize", graphRoot="<chosen_path>")
+```bash
+cogni-code init --graph-root "<chosen_path>"
 ```
 
 ## Step 3: Choose Runtime Mode
@@ -59,7 +59,7 @@ Explain the runtime options:
 
 Strongly recommend Docker daemon mode unless the user explicitly wants otherwise.
 
-"Docker daemon mode" means container mode generically — **Podman works as a drop-in replacement for Docker** and is fully supported. Every `docker-*.sh` helper script auto-detects whichever of `docker`/`podman` is on `PATH` and works unmodified either way; `configure_runtime` still takes `runtimeMode="docker"` regardless of which engine is actually used.
+"Docker daemon mode" means container mode generically — **Podman works as a drop-in replacement for Docker** and is fully supported. Every `docker-*.sh` helper script auto-detects whichever of `docker`/`podman` is on `PATH` and works unmodified either way; `cogni-code configure-runtime` still takes `--mode docker` regardless of which engine is actually used.
 
 To check availability, don't just look for a literal `docker` binary — check for **either** `docker` or `podman` on PATH (e.g. `command -v docker || command -v podman`, or inspect `docker.state.engine` from `graph_memory(action="status")` once a runtime is configured). Only tell the user no container engine is available if neither is found. If podman is found but its machine isn't running, that's expected — `docker-bootstrap.sh` and `docker-start.sh` start it automatically.
 
@@ -82,22 +82,22 @@ Then ask two optional follow-ups:
 - **Model override** — each harness has a default model, but the user can pick one (e.g. `sonnet`, `o3`, `gpt-5`, `glm-5.1`). Skip to use the harness default.
 - **Fallback harness (recommended)** — a *second* harness the daemon automatically retries on when the primary worker fails or times out (e.g. the primary provider hits a usage limit). A good fallback is a different provider from the primary. Optionally a fallback model too. Skip for no fallback.
 
-Once chosen, hold the primary harness, model, fallback harness, and fallback model for the configure_runtime call in the next step.
+Once chosen, hold the primary harness, model, fallback harness, and fallback model for the `cogni-code configure-runtime` command in the next step.
 
 ## Step 4: Configure the chosen mode
 
-Include `workerModel`, `fallbackProvider`, and `fallbackModel` only if the user chose them; otherwise omit them.
+Run it in the shell. Include `--worker-model`, `--fallback`, and `--fallback-model` only if the user chose them.
 
 For Docker:
 
-```text
-graph_memory(action="configure_runtime", runtimeMode="docker", workerProvider="<chosen_harness>", workerModel="<model or omit>", fallbackProvider="<fallback or omit>", fallbackModel="<fallback model or omit>")
+```bash
+cogni-code configure-runtime --mode docker --worker <chosen_harness> [--worker-model <model>] [--fallback <fallback>] [--fallback-model <fallback model>]
 ```
 
 For manual:
 
-```text
-graph_memory(action="configure_runtime", runtimeMode="manual", workerProvider="<chosen_harness>", workerModel="<model or omit>", fallbackProvider="<fallback or omit>", fallbackModel="<fallback model or omit>")
+```bash
+cogni-code configure-runtime --mode manual --worker <chosen_harness> [--worker-model <model>] [--fallback <fallback>] [--fallback-model <fallback model>]
 ```
 
 ## Step 5: Docker Runtime Bootstrap

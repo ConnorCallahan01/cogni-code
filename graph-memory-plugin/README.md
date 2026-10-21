@@ -137,26 +137,6 @@ WORKING is built for the session reading it, so several sessions can work in one
 
 The scribe → auditor → librarian → dreamer pipeline is the proven core. Observer and compressor also run by default (observer produces observations/session logs/node upserts on scribe and buffer thresholds; compressor folds observations into mental models afterward). The separate dreamer-v3 / dreamer-models variant is present in code but not wired. All stages read and write the same durable node files in `nodes/`, while `mind/`, `lenses/`, and `sessions/` hold compressed context layers. LLM-backed stages retry on the configured fallback worker if the primary provider fails or hits a usage limit. A job whose worker couldn't reach its provider at all (machine asleep or offline) waits in the queue and retries with a backoff instead of failing.
 
-### Notion Sync
-
-Two-way sync between graph-memory and a Notion workspace for human-readable access. Five steward agents manage scoped areas:
-
-| Steward | Scope |
-|---------|-------|
-| Knowledge | Knowledge nodes → Notion wiki pages |
-| Project | Project lenses → Notion project pages |
-| Tasks | Working state → Notion task database |
-| Enrichment | Dreams, briefs → Notion databases |
-| Workspace | Workspace manifest, structure |
-
-**Outbound sync** uses a diff + plan + execute cycle, chunked at 100 items per batch. The daemon auto-enqueues the next batch after each completed cycle.
-
-**Inbound sync** detects human edits in Notion via webhooks and creates observations/deltas (not direct node mutations). Ngrok tunnels webhook traffic to the daemon on port 3100.
-
-**Three-way merge** — when both sides change, human intent wins with agent info preserved as callouts.
-
-**Commands:** `/notion-setup`, `/notion-sync`, `/notion-consolidate`
-
 ### Harness Adapters
 
 The core is harness-agnostic via an adapter system:
@@ -275,16 +255,6 @@ General:
 
 - `bin/docker-stop.sh`
 
-### Ngrok (Notion Webhooks)
-
-If you are using Notion sync with webhooks, start an ngrok tunnel pointing at the daemon port:
-
-```bash
-ngrok http 3100
-```
-
-Free-tier ngrok URLs change on every restart — update the webhook URL in your Notion integration settings after restarting. See [docs/notion-webhook-troubleshooting.md](docs/notion-webhook-troubleshooting.md) for full details.
-
 ## Commands
 
 Installed slash commands (available in both Claude Code and OpenCode):
@@ -299,9 +269,6 @@ Installed slash commands (available in both Claude Code and OpenCode):
 | `/memory-input-refresh` | Refresh configured external inputs and ingest new data |
 | `/memory-switch-harness` | Switch the background pipeline worker between codex, claude, pi, opencode, and api |
 | `/memory-wire-project` | Wire (or refresh) the graph-memory section in this project's `CLAUDE.md` |
-| `/notion-setup` | Configure Notion sync for a parent page or database |
-| `/notion-sync` | Sync graph-memory content to Notion |
-| `/notion-consolidate` | Merge batched wiki pages into category pages, apply reviewed Notion edits back into memory |
 | `/refresh-skill` | Manually refresh a skillforged skill whose source node has drifted |
 | `/skill-install` | Install skillforged skills from graph memory into the current project |
 
@@ -345,8 +312,6 @@ Supported actions:
 
 | Action | Description |
 |--------|-------------|
-| `initialize` | Create the graph structure and global pointer file |
-| `configure_runtime` | Choose manual or Docker runtime and write runtime config |
 | `status` | Report initialization state, runtime, counts, and warnings |
 | `remember` | Create or update a durable graph node |
 | `write_note` | Save a working note into the buffer |
@@ -359,9 +324,8 @@ Supported actions:
 | `history` | Show recent git history |
 | `revert` | Roll the graph back to an earlier commit |
 | `resurface` | Move an archived node back into the active graph |
-| `notion_setup` | Create Notion workspace structure (databases + wiki pages) |
-| `notion_sync` | Run outbound sync (diff + plan + execute) |
-| `notion_consolidate` | Merge batched wiki pages into category pages (supports `dryRun` option) |
+
+Setup runs from the command line, where you see and approve each change, not through the tool: `cogni-code init [--graph-root <path>]` creates the graph or points memory at a new location, and `cogni-code configure-runtime` chooses the runtime mode and pipeline workers.
 
 Resources:
 
@@ -385,9 +349,6 @@ Resources:
 | `skillforge_refresh` | Update drifted skillforged skills |
 | `bootstrap_project_doc` | Auto-generate project documentation |
 | `memory_analysis` | Daily brief and analysis generation |
-| `notion_sync` | Outbound sync to Notion |
-| `notion_inbound_triage` | Triage incoming Notion edits |
-| `notion_inbound_enrich` | Enrich triaged Notion edits |
 
 ## Configuration
 
@@ -432,9 +393,6 @@ Resources:
     gmail/, calendar/, slack/  # Per-source classified/normalized/
     config.json
   .skillforge/              # Generated skill manifests
-  .notion-sync-state.json   # Notion workspace sync state
-  .notion-sync-input.json   # Notion sync input staging
-  .notion-sync-plan.json    # Notion sync execution plan
   MAP.md                    # Knowledge graph index (context file)
   WORKING.md                # Project handoff state (context file)
   DREAMS.md                 # Speculative fragments (context file)
@@ -465,5 +423,4 @@ Server: Express on port 3001. Frontend: React + Vite on port 5173.
 - agent instructions: [`agents/`](./agents/)
 - optional pipeline agents: observer, compressor, dreamer
 - migration script: [`src/graph-memory/scripts/migrate-mental-model.ts`](./src/graph-memory/scripts/migrate-mental-model.ts) (legacy)
-- Notion sync design spec: [`docs/notion-sync-spec.md`](./docs/notion-sync-spec.md)
 - examples: [`../examples/`](../examples/)

@@ -13,8 +13,8 @@ First-time setup for graph memory. Guides the user through choosing a storage lo
 2. If already initialized, show current status and ask if they want to re-initialize.
 3. If not initialized, guide through:
    - **Storage location**: Default is `~/.graph-memory/`. Ask if they want a custom location.
-   - **Initialize**: Call `graph_memory(action="initialize", graphRoot="<path>")`.
-   - **Runtime mode**: Ask whether they want manual or Docker runtime. Docker is recommended for background pipeline workers. Call `graph_memory(action="configure_runtime", runtimeMode="manual|docker", ...)`.
+   - **Initialize**: Run `cogni-code init --graph-root "<path>"` in the shell.
+   - **Runtime mode**: Ask whether they want manual or Docker runtime. Docker is recommended for background pipeline workers. Run `cogni-code configure-runtime --mode manual|docker [--worker <harness>]` in the shell.
    - **Seed initial memory**: Run a short interview to capture key facts, preferences, and project context. Use `graph_memory(action="remember", ...)` to persist each node.
    - **Wire project**: Add graph-memory awareness to the current project's `CLAUDE.md` (see /memory-wire-project skill).
 4. End with concrete next steps: what slash commands to use, how to check status, and when the background pipeline runs.

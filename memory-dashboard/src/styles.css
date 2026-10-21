@@ -491,11 +491,6 @@ a:hover { text-decoration: underline; }
 .pipeline-job.running { background: var(--primary-subtle); }
 .pipeline-job.failed { background: var(--error-bg); }
 
-.pipeline-job-type-notion {
-  color: oklch(45% 0.12 280);
-  font-weight: 600;
-}
-
 .pipeline-job-state {
   font-size: 9px;
   font-weight: 700;
@@ -3559,17 +3554,6 @@ a:hover { text-decoration: underline; }
 .pipeline-flow-compact-global {
   border-color: oklch(88% 0.02 250);
   background: oklch(98% 0.005 250);
-}
-
-.pipeline-flow-compact-notion {
-  border-color: oklch(85% 0.04 280);
-  background: oklch(97% 0.01 280);
-}
-
-.pf-step-notion .pf-num {
-  background: oklch(50% 0.12 280);
-  color: white;
-  border-color: oklch(50% 0.12 280);
 }
 
 .pf-step {

@@ -255,7 +255,7 @@ export const GraphMemoryPlugin: Plugin = async ({ project, client, directory, wo
     return _hasMentalModelData();
   }
 
-  function buildMentalModelContext(): { context: string; tokensUsed: number; sources: { globalModel: boolean; projectModel: boolean; sessionLog: boolean; guardrails: boolean; pickup: boolean; notionTasks: boolean; fallback: boolean } } {
+  function buildMentalModelContext(): { context: string; tokensUsed: number; sources: { globalModel: boolean; projectModel: boolean; sessionLog: boolean; guardrails: boolean; pickup: boolean; fallback: boolean } } {
     try {
       const currentProject = detectCurrentProject();
       const result = _buildMentalModelContext(currentProject || "global", captureSessionId || undefined);
@@ -267,7 +267,7 @@ export const GraphMemoryPlugin: Plugin = async ({ project, client, directory, wo
     } catch {
       const parts: string[] = [];
       let tokensUsed = 0;
-      const sources = { globalModel: false, projectModel: false, sessionLog: false, guardrails: false, pickup: false, notionTasks: false, fallback: false };
+      const sources = { globalModel: false, projectModel: false, sessionLog: false, guardrails: false, pickup: false, fallback: false };
       return { context: parts.join("\n\n---\n\n"), tokensUsed, sources };
     }
   }
@@ -516,7 +516,7 @@ export const GraphMemoryPlugin: Plugin = async ({ project, client, directory, wo
     // ── Register the graph_memory tool ─────────────────────────────
     tool: {
       graph_memory: tool({
-        description: `Access the persistent knowledge graph. Actions: initialize, configure_runtime, status, remember, write_note, search, recall, read_node, list_edges, read_dream, consolidate, history, revert, resurface.
+        description: `Access the persistent knowledge graph. Actions: status, remember, write_note, search, recall, read_node, list_edges, read_dream, consolidate, history, revert, resurface.
 
 MEMORY ACTIONS:
 - remember: Create or update a graph node directly. Provide path, gist, and optionally content, tags, edges, soma markers.
@@ -533,13 +533,13 @@ RETRIEVAL GUIDANCE — follow these steps proactively:
 PIPELINE:
 - consolidate: Run mechanical delta processing (apply scribe deltas, rebuild MAP, decay, git commit).
 
-SETUP:
-- initialize: First-time setup. Pass graphRoot to choose storage location (defaults to ~/.graph-memory/).
-- configure_runtime: Set manual or Docker runtime configuration.`,
+SETUP (command line only, so the user sees and approves each change):
+- First-time setup or a new storage location: "cogni-code install [--graph-root <path>]".
+- Pipeline workers and runtime mode: "cogni-code configure-runtime --help".`,
 
         args: {
           action: z.string().describe(
-            "The action to perform: read_node, search, recall, list_edges, read_dream, write_note, remember, resurface, status, history, revert, consolidate, initialize, configure_runtime"
+            "The action to perform: read_node, search, recall, list_edges, read_dream, write_note, remember, resurface, status, history, revert, consolidate"
           ),
           path: z.string().optional().describe(
             "Node path for read_node/list_edges/remember, dream path for read_dream, commit hash for revert"
@@ -564,25 +564,14 @@ SETUP:
             marker: z.string(),
           }).optional().describe("Somatic marker for remember action"),
           depth: z.number().min(0).max(3).optional().describe("Edge traversal depth for recall action (default 1, max 3)"),
-          graphRoot: z.string().optional().describe("Storage path for initialize action (defaults to ~/.graph-memory/)"),
           project: z.string().optional().describe("Project scope for remember action"),
           pinned: z.boolean().optional().describe("Pin node to prevent decay"),
-          runtimeMode: z.string().optional().describe("Runtime mode for configure_runtime: manual | docker"),
-          containerName: z.string().optional().describe("Docker container name override for configure_runtime"),
-          imageName: z.string().optional().describe("Docker image override for configure_runtime"),
-          authVolume: z.string().optional().describe("Docker auth volume name for configure_runtime"),
-          graphRootInContainer: z.string().optional().describe("Container graph root mount path for configure_runtime"),
-          authPathInContainer: z.string().optional().describe("Container auth mount path for configure_runtime"),
-          memoryLimit: z.string().optional().describe("Container memory limit for configure_runtime"),
-          cpuLimit: z.string().optional().describe("Container CPU limit for configure_runtime"),
-          workerProvider: z.enum(["codex", "claude", "pi", "opencode", "api"]).optional().describe("Worker harness for configure_runtime"),
-          workerModel: z.string().optional().describe("Model override for pipeline workers (e.g. 'sonnet', 'o3', 'gpt-4.1')"),
         },
 
         async execute(args, context) {
           await ensureGraph();
           if (!graphReady) {
-            return "Graph memory is not initialized. Run graph_memory with action='initialize' first, or set GRAPH_MEMORY_ROOT env var.";
+            return "Graph memory is not initialized. Run `cogni-code install` first, or set GRAPH_MEMORY_ROOT env var.";
           }
           if (activeSessionId) {
             args.sessionId = activeSessionId;

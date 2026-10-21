@@ -7,8 +7,6 @@ import { readRecentSessions } from "./sessions/manager.js";
 import { SessionLog } from "./sessions/types.js";
 import { getAntiPatterns } from "./pipeline/graph-index.js";
 import { readHandoffPickup } from "./project-working.js";
-import { readNotionSyncState } from "./pipeline/notion-sync.js";
-import { searchDatabaseRows, listChildBlocks } from "./pipeline/notion-cli.js";
 
 export interface SessionStartResult {
   context: string;
@@ -19,7 +17,6 @@ export interface SessionStartResult {
     sessionLog: boolean;
     guardrails: boolean;
     pickup: boolean;
-    notionTasks: boolean;
     fallback: boolean;
   };
 }
@@ -33,7 +30,6 @@ export function buildSessionStartContext(projectName: string, sessionId?: string
     sessionLog: false,
     guardrails: false,
     pickup: false,
-    notionTasks: false,
     fallback: false,
   };
 
@@ -85,13 +81,6 @@ export function buildSessionStartContext(projectName: string, sessionId?: string
       tokensUsed += estimateTokens(pickupBlock);
       sources.pickup = true;
     }
-  }
-
-  const notionTasks = fetchNotionTasks(projectName);
-  if (notionTasks) {
-    parts.push(notionTasks);
-    tokensUsed += estimateTokens(notionTasks);
-    sources.notionTasks = true;
   }
 
   if (parts.length === 0) {
@@ -240,107 +229,6 @@ function readNextPickup(projectName: string, sessionId?: string): string | null 
   } catch {
     return null;
   }
-}
-
-function fetchNotionTasks(projectName: string): string | null {
-  try {
-    const notionState = readNotionSyncState();
-    if (!notionState?.databases?.tasks?.id || !notionState?.databases?.projects?.id) return null;
-
-    const projectPageId = resolveNotionProjectId(notionState.databases.projects.id, projectName);
-    const filter: Record<string, any> = {
-      and: [
-        { property: "Status", select: { equals: "Next" } },
-      ],
-    };
-    if (projectPageId) {
-      filter.and.push({ property: "Project", relation: { contains: projectPageId } });
-    }
-
-    const rows = searchDatabaseRows(notionState.databases.tasks.id, filter);
-    if (!rows || rows.length === 0) return null;
-
-    const lines: string[] = ["## Next Tasks", ""];
-    for (const row of rows.slice(0, 10)) {
-      const props = row.properties || {};
-      const name = extractPropText(props, "Name") || "Untitled";
-      const priority = extractPropSelect(props, "Priority") || "";
-      const prefix = priority ? `[${priority}] ` : "";
-      lines.push(`- ${prefix}${name}`);
-
-      try {
-        const blocks = listChildBlocks(row.id);
-        const contentLines = extractBlockText(blocks);
-        if (contentLines.length > 0) {
-          for (const cl of contentLines.slice(0, 8)) {
-            lines.push(`  ${cl}`);
-          }
-        }
-      } catch { /* skip content */ }
-    }
-
-    return lines.join("\n");
-  } catch {
-    return null;
-  }
-}
-
-function resolveNotionProjectId(projectsDbId: string, projectName: string): string | null {
-  try {
-    const slug = projectName.replace(/[^a-zA-Z0-9._-]+/g, "__");
-    const rows = searchDatabaseRows(projectsDbId);
-    for (const row of rows) {
-      const props = row.properties || {};
-      const name = extractPropText(props, "Name") || "";
-      const nameSlug = name.toLowerCase().replace(/[^a-zA-Z0-9._-]+/g, "__");
-      if (nameSlug === slug.toLowerCase() || name.toLowerCase().includes(projectName.split("/").pop()?.toLowerCase() || "")) {
-        return row.id;
-      }
-    }
-    return null;
-  } catch {
-    return null;
-  }
-}
-
-function extractBlockText(blocks: any[]): string[] {
-  const lines: string[] = [];
-  for (const block of blocks) {
-    const btype = block.type;
-    if (!btype) continue;
-    const content = block[btype];
-    if (!content?.rich_text) continue;
-    const text = content.rich_text.map((t: any) => t.plain_text || "").join("");
-    if (!text) continue;
-
-    if (btype === "heading_1" || btype === "heading_2" || btype === "heading_3") {
-      lines.push(`**${text}**`);
-    } else if (btype === "bulleted_list_item" || btype === "numbered_list_item") {
-      lines.push(`  - ${text}`);
-    } else if (btype === "to_do") {
-      const checked = content.checked ? "x" : " ";
-      lines.push(`  [${checked}] ${text}`);
-    } else {
-      lines.push(text);
-    }
-  }
-  return lines;
-}
-
-function extractPropText(props: Record<string, any>, key: string): string {
-  const prop = props[key];
-  if (!prop) return "";
-  if (prop.title) return prop.title.map((t: any) => t.plain_text || "").join("");
-  if (prop.rich_text) return prop.rich_text.map((t: any) => t.plain_text || "").join("");
-  return "";
-}
-
-function extractPropSelect(props: Record<string, any>, key: string): string {
-  const prop = props[key];
-  if (!prop) return "";
-  if (prop.select?.name) return prop.select.name;
-  if (prop.status?.name) return prop.status.name;
-  return "";
 }
 
 function estimateTokens(text: string): number {

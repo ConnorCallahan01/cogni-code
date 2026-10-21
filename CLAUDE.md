@@ -20,21 +20,21 @@ Legacy/reference material:
 ```text
 graph-memory-plugin/
   src/graph-memory/       # Core graph logic, runtime, inputs, pipeline
-    pipeline/             # daemon, queue, graph ops, librarian, dreamer, observer, compressor, notion-sync
+    pipeline/             # daemon, queue, graph ops, librarian, dreamer, observer, compressor
     mind/                 # v3 Layer 1: global mental model (model.json, whisper.txt, observations)
     lenses/               # v3 Layer 2: project models and whispers
     sessions/             # v3 Layer 3: session logs
     adapters/             # Harness adapters (claude-code, opencode, pi, codex)
     scripts/              # Migration and utility scripts
   src/hooks/              # Claude Code hooks
-  agents/                 # Background agent instruction files (pipeline prompts, notion sync/merge/inbound)
+  agents/                 # Background agent instruction files (pipeline prompts)
   commands/               # Slash command specs (Claude Code)
   opencode-commands/      # Slash command specs (OpenCode)
   extensions/             # Plugin extension entry points
                            #   graph-memory.ts (pi), graph-memory-opencode.ts (OpenCode)
   skills/                 # Memory skill + /recall
   templates/              # Memory section templates (Claude, OpenCode, Codex, generic)
-  docs/                   # Design specs (notion-sync-spec.md)
+  docs/                   # Design notes
   bin/                    # Install, runtime, Docker, and hook shell wrappers
 
 memory-dashboard/
@@ -79,10 +79,6 @@ memory-dashboard/
     gmail/, calendar/, slack/       # Per-source classified/normalized/
     config.json
   .skillforge/                      # Generated skill manifests
-  .notion-sync-state.json           # Notion workspace sync state
-  .notion-sync-input.json           # Notion sync input staging
-  .notion-sync-plan.json            # Notion sync execution plan
-  .notion-webhook-token             # Notion webhook token
   config.yml                        # Graph memory runtime config
   manifest.yml                      # Service manifest
   MAP.md, WORKING.md, DREAMS.md    # Context files
@@ -116,7 +112,7 @@ The v2 pipeline is the active, proven pipeline. All four prompts were improved t
 
 ### Session Start
 
-Session-start reads `mind/model.json` directly (unconditional) → guardrails (anti-patterns) → project model → session logs → pickup hints → Notion tasks. The structured mental model replaced the old PRIORS.md + SOMA.md approach.
+Session-start reads `mind/model.json` directly (unconditional) → guardrails (anti-patterns) → project model → session logs → pickup hints. The structured mental model replaced the old PRIORS.md + SOMA.md approach.
 
 ### Architecture
 
@@ -145,19 +141,6 @@ Observer and compressor run by default — they are enqueued automatically (obse
 - **Working Update** — extracts key files from tool traces and updates per-project working state
 - **Memory Analysis** — daily brief generation
 
-### Notion Sync Pipeline
-
-Two-way sync between graph-memory and a Notion workspace for human-readable access:
-
-- **Outbound** — mirrors graph state to Notion: knowledge nodes become wiki pages, decisions/briefs become database rows, projects get their own pages
-- **Inbound** — detects human edits in Notion and creates observations/deltas (not direct node mutations)
-- **Three-way merge** — when both sides change, human intent wins with agent info preserved as callouts
-- **Consolidation** — merges batched wiki pages into category pages, archives the rest
-- **Chunked sync** — 100 items per batch, sorted by confidence, daemon auto-enqueues next batch
-- Triggered daily by the daemon (configurable hour), or manually via `/notion-sync` command
-- Uses Notion API v2026-03-11 with data sources for property management
-- Design spec: `graph-memory-plugin/docs/notion-sync-spec.md`
-
 ## Using The Memory System
 
 The `graph_memory` tool is available in Claude Code, Codex CLI, OpenCode, and pi sessions after installation. Common actions:
@@ -181,14 +164,9 @@ graph_memory(action="remember", path="patterns/new-pattern", gist="One-sentence 
 - `list_edges`
 - `status`
 - `history` / `revert`
-- `initialize` / `configure_runtime`
 - `consolidate`
 
-### Notion Sync Actions
-
-- `notion_setup` — creates Notion workspace structure (databases + wiki pages)
-- `notion_sync` — runs outbound sync (diff + plan + execute)
-- `notion_consolidate` — merges batched wiki pages into category pages
+Setup is CLI-only: `cogni-code init [--graph-root <path>]` and `cogni-code configure-runtime`.
 
 ## Key Design Decisions
 
@@ -196,10 +174,8 @@ graph_memory(action="remember", path="patterns/new-pattern", gist="One-sentence 
 - **Keyword retrieval over curated gists** — simple and inspectable
 - **Archive with recall, not delete** — stale nodes can be resurfaced
 - **Git tracks changes** — every consolidation is recoverable
-- **Notion is human-readable mirror** — disk is agent-readable source of truth, Notion is a presentation layer
-- **Notion API v2026-03-11** — properties are managed via data sources, not databases
 - **Shared ambient recall** — `scoring.ts` holds STOPWORDS, patterns, category gates, full `ambientRecall()` — extensions use thin wrappers
-- **Webhook secret via env var** — `${NOTION_WEBHOOK_SECRET}` in config.yml, resolved at runtime
+- **Admin is CLI-only** — the `graph_memory` tool can't re-point storage, change the runtime, or write instruction files; `cogni-code init` / `configure-runtime` do, where the user approves the command. Runtime config values are shape-checked on save and load and single-quoted before the docker scripts `eval` them
 - **WORKING is per session** — a session's own handoff leads; other sessions open in the project are listed, never handed off; refresh re-sends WORKING only for the session's own updates
 - **Session start fits Claude Code's hook cap** — hook output over 10,000 characters becomes a 2,000-character preview, so session start packs sections by priority under it; pinned nodes load only in their own project
 - **Daemon crash resilience** — tick housekeeping wrapped in try/catch, per-file I/O guarded, unknown job types throw explicit errors

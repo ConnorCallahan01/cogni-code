@@ -80,7 +80,7 @@ export default function (pi: ExtensionAPI) {
   pi.registerTool({
     name: "graph_memory",
     label: "Graph Memory",
-    description: `Access the persistent knowledge graph. Actions: initialize, configure_runtime, status, remember, write_note, search, recall, read_node, list_edges, read_dream, consolidate, history, revert, resurface.
+    description: `Access the persistent knowledge graph. Actions: status, remember, write_note, search, recall, read_node, list_edges, read_dream, consolidate, history, revert, resurface.
 
 MEMORY ACTIONS:
 - remember: Create or update a graph node directly. Provide path, gist, and optionally content, tags, edges, soma markers.
@@ -97,9 +97,9 @@ RETRIEVAL GUIDANCE — follow these steps proactively:
 PIPELINE:
 - consolidate: Run mechanical delta processing (apply scribe deltas, rebuild MAP, decay, git commit).
 
-SETUP:
-- initialize: First-time setup. Pass graphRoot to choose storage location (defaults to ~/.graph-memory/).
-- configure_runtime: Set manual or Docker runtime configuration.`,
+SETUP (command line only, so the user sees and approves each change):
+- First-time setup or a new storage location: "cogni-code install [--graph-root <path>]".
+- Pipeline workers and runtime mode: "cogni-code configure-runtime --help".`,
 
     promptSnippet: "search, recall, and write persistent graph memory",
     promptGuidelines: [
@@ -110,7 +110,7 @@ SETUP:
     parameters: Type.Object({
       action: Type.String({
         description:
-          "The action to perform: read_node, search, recall, list_edges, read_dream, write_note, remember, resurface, status, history, revert, consolidate, initialize, configure_runtime",
+          "The action to perform: read_node, search, recall, list_edges, read_dream, write_note, remember, resurface, status, history, revert, consolidate",
       }),
       path: Type.Optional(
         Type.String({
@@ -162,38 +162,11 @@ SETUP:
       depth: Type.Optional(
         Type.Number({ minimum: 0, maximum: 3, description: "Edge traversal depth for recall action (default 1, max 3)" })
       ),
-      graphRoot: Type.Optional(
-        Type.String({ description: "Storage path for initialize action (defaults to ~/.graph-memory/)" })
-      ),
       project: Type.Optional(
         Type.String({ description: "Project scope for remember action (e.g. 'owner/repo'). Only set for project-specific knowledge, omit for global." })
       ),
       pinned: Type.Optional(
         Type.Boolean({ description: "Pin node to prevent decay" })
-      ),
-      runtimeMode: Type.Optional(
-        Type.String({ description: "Runtime mode for configure_runtime: manual | docker" })
-      ),
-      containerName: Type.Optional(
-        Type.String({ description: "Docker container name override for configure_runtime" })
-      ),
-      imageName: Type.Optional(
-        Type.String({ description: "Docker image override for configure_runtime" })
-      ),
-      authVolume: Type.Optional(
-        Type.String({ description: "Docker auth volume name for configure_runtime" })
-      ),
-      graphRootInContainer: Type.Optional(
-        Type.String({ description: "Container graph root mount path for configure_runtime" })
-      ),
-      authPathInContainer: Type.Optional(
-        Type.String({ description: "Container auth mount path for configure_runtime" })
-      ),
-      memoryLimit: Type.Optional(
-        Type.String({ description: "Container memory limit for configure_runtime" })
-      ),
-      cpuLimit: Type.Optional(
-        Type.String({ description: "Container CPU limit for configure_runtime" })
       ),
     }),
 
@@ -361,7 +334,7 @@ SETUP:
 
     // --- Layer 1: Mental model (current contract) ---
     // buildSessionStartContext returns the global model + guardrails +
-    // project model + session log + pickup + Notion tasks. This is the
+    // project model + session log + pickup. This is the
     // canonical session-start packet shared with the Claude Code hook and
     // the OpenCode extension.
     let mentalModelInjected = false;
