@@ -1,6 +1,6 @@
 import { randomUUID } from "crypto";
 
-export type GraphMemoryJobType = "scribe" | "observer" | "compressor" | "working_update" | "auditor" | "librarian" | "dreamer" | "memory_analysis" | "skillforge" | "skillforge_refresh" | "bootstrap_project_doc" | "notion_sync" | "notion_inbound_triage" | "notion_inbound_enrich";
+export type GraphMemoryJobType = "scribe" | "observer" | "compressor" | "working_update" | "auditor" | "librarian" | "dreamer" | "memory_analysis" | "skillforge" | "skillforge_refresh" | "bootstrap_project_doc";
 export type GraphMemoryJobState = "queued" | "running" | "done" | "failed";
 
 export interface ScribeJobPayload {
@@ -77,38 +77,6 @@ export interface BootstrapProjectDocPayload {
   reason: string;
 }
 
-export interface NotionSyncJobPayload {
-  reason: string;
-  date: string;
-  forceFullSync?: boolean;
-  skipInbound?: boolean;
-}
-
-export interface NotionInboundTriagePayload {
-  reason: string;
-  events: Array<{
-    eventType: string;
-    pageId: string;
-    notionKey: string | null;
-    authors: Array<{ id: string; type: string }>;
-    parentType?: string;
-  }>;
-  date: string;
-}
-
-export interface NotionInboundEnrichPayload {
-  reason: string;
-  triageId: string;
-  routes: Array<{
-    action: "enrich" | "record" | "both";
-    target: string;
-    notionKey: string;
-    pageId: string;
-    reason: string;
-  }>;
-  date: string;
-}
-
 export type GraphMemoryJobPayload =
   | ScribeJobPayload
   | ObserverJobPayload
@@ -120,10 +88,7 @@ export type GraphMemoryJobPayload =
   | MemoryAnalysisJobPayload
   | SkillforgeJobPayload
   | SkillforgeRefreshJobPayload
-  | BootstrapProjectDocPayload
-  | NotionSyncJobPayload
-  | NotionInboundTriagePayload
-  | NotionInboundEnrichPayload;
+  | BootstrapProjectDocPayload;
 
 export interface GraphMemoryJob<TPayload = GraphMemoryJobPayload> {
   id: string;
@@ -170,12 +135,6 @@ export function defaultMaxAttempts(type: GraphMemoryJobType): number {
     case "skillforge":
     case "skillforge_refresh":
     case "bootstrap_project_doc":
-      return 2;
-    case "notion_sync":
-      return 2;
-    case "notion_inbound_triage":
-      return 2;
-    case "notion_inbound_enrich":
       return 2;
   }
 }

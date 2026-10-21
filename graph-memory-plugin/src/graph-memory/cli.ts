@@ -31,6 +31,8 @@ Usage:
   cogni-code install [--claude|--codex|--opencode|--all] [--docker] [--worker <provider>]
                                                           Set up for your harness(es)
   cogni-code install --graph-root <path>                  Use a custom graph memory location
+  cogni-code init [--graph-root <path>]                   Create the graph or point memory at a new location
+  cogni-code configure-runtime [options]                  Choose pipeline workers and runtime mode (--help)
   cogni-code hook <event>                                 Run a hook handler (stdin passthrough)
   cogni-code mcp                                          Start the MCP server (stdio transport)
   cogni-code status                                       Show graph memory health
@@ -98,6 +100,18 @@ async function main(): Promise<void> {
   if (command === "install") {
     const { runInstall } = await import("./install/index.js");
     await runInstall(args.slice(1));
+    return;
+  }
+
+  if (command === "init") {
+    const { runInit } = await import("./init-cli.js");
+    await runInit(args.slice(1));
+    return;
+  }
+
+  if (command === "configure-runtime") {
+    const { runConfigureRuntime } = await import("./configure-runtime.js");
+    runConfigureRuntime(args.slice(1));
     return;
   }
 

@@ -68,7 +68,7 @@ export interface PipelineStatus {
   completedJobs: number
   jobCounts: Record<string, Record<string, number>>
   pipelineCutoffs: Array<{
-    stage: 'scribe' | 'working_update' | 'auditor' | 'librarian' | 'dreamer' | 'observer' | 'compressor' | 'skillforge' | 'memory_analysis' | 'notion_sync'
+    stage: 'scribe' | 'working_update' | 'auditor' | 'librarian' | 'dreamer' | 'observer' | 'compressor' | 'skillforge' | 'memory_analysis'
     current: number
     threshold: number | null
     remaining: number | null

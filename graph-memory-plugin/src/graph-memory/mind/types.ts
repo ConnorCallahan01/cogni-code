@@ -14,8 +14,7 @@ export type ObservationType =
   | "decision"
   | "procedure"
   | "emotional"
-  | "relational"
-  | "notion_inbound";
+  | "relational";
 
 export type ObservationLayer = "global" | "project";
 

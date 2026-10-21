@@ -355,9 +355,6 @@ export default function App() {
                   <span className="pf-arrow" />
                   <div className="pf-step pf-step-global"><span className="pf-num">6</span><span className="pf-name">Compressor</span></div>
                 </div>
-                <div className="pipeline-flow-compact pipeline-flow-compact-notion">
-                  <div className="pf-step pf-step-notion"><span className="pf-num">7</span><span className="pf-name">Notion Sync</span></div>
-                </div>
                 <PipelinePanel jobs={jobs} />
               </section>
 

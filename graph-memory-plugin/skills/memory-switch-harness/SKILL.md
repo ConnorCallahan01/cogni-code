@@ -43,9 +43,9 @@ Available: codex | claude | pi | opencode | api
 
 ### Phase 2: Apply the config switch
 
-8. Once they pick, try `graph_memory(action="configure_runtime", runtimeMode="<mode>", workerProvider="<chosen_harness>", workerModel="<model>" or omit)`.
+8. Once they pick, run `cogni-code configure-runtime --mode <mode> --worker <chosen_harness> [--worker-model <model>]` in the shell.
    - `<mode>` is the current runtime mode from status (typically `docker`).
-9. If that fails, fall back to directly editing `~/.graph-memory/.runtime-config.json`: read it, set `docker.workerProvider` to the chosen harness, set `updatedAt` to now, and write it back.
+9. If it fails, show the user its error: it names the value it refused.
 
 ### Phase 3: Ensure Docker image has the harness CLI
 

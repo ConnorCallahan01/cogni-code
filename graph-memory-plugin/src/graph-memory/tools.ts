@@ -2,8 +2,7 @@ import fs from "fs";
 import path from "path";
 import matter from "./frontmatter.js";
 import { z } from "zod";
-import { CONFIG, isGraphInitialized, saveGlobalConfig, reloadConfig } from "./config.js";
-import { initializeGraph } from "./index.js";
+import { CONFIG, isGraphInitialized } from "./config.js";
 import { activityBus } from "./events.js";
 import { safePath, countFiles as countFilesUtil } from "./utils.js";
 import { listCommits, revertTo, autoCommit } from "./git.js";
@@ -14,7 +13,6 @@ import { buildLibrarianInput } from "./pipeline/librarian.js";
 import { buildDreamerInput } from "./pipeline/dreamer.js";
 import { fullRegenerateMAP, rebuildIndex, rebuildArchiveIndex, regenerateAllContextFiles, regenerateCoreContextFiles, validateEdgeType } from "./pipeline/graph-ops.js";
 import { addToIndex as addToGraphIndex, addEntryToIndex, getStats, getAntiPatterns } from "./pipeline/graph-index.js";
-import { bootstrapProjectDoc, detectDocDrift, resolveDocPath } from "./pipeline/bootstrap.js";
 import { runDecay } from "./pipeline/decay.js";
 import { updateManifest } from "./manifest.js";
 import { clearConsolidationPending } from "./dirty-state.js";
@@ -22,11 +20,7 @@ import { readActiveProject } from "./project.js";
 import { countJobs, enqueueJob, hasActiveJob, listJobs } from "./pipeline/job-queue.js";
 import { getJobProject } from "./pipeline/job-queue.js";
 import type { GraphMemoryJob } from "./pipeline/job-schema.js";
-import { getRuntimeStatus, GraphMemoryRuntimeMode, saveRuntimeConfig, WorkerProvider } from "./runtime.js";
-import { readNotionSyncState, writeNotionSyncState, createEmptyNotionSyncState, consolidateNotionWorkspace } from "./pipeline/notion-sync.js";
-import { checkNtn, createPage as notionCreatePage, createDatabaseRow, buildDatabaseProperties, TASKS_DB_SCHEMA, DECISIONS_DB_SCHEMA, BRIEFS_DB_SCHEMA } from "./pipeline/notion-cli.js";
-import { setupNotionWorkspace } from "./pipeline/notion-setup.js";
-import { addNotionPickupItem } from "./project-working.js";
+import { getRuntimeStatus } from "./runtime.js";
 
 // --- Index cache ---
 let indexCache: { data: any[]; mtime: number } | null = null;
@@ -53,7 +47,6 @@ export async function handleGraphMemory(args: {
   path?: string;
   query?: string;
   note?: string;
-  graphRoot?: string;
   gist?: string;
   content?: string;
   title?: string;
@@ -65,16 +58,6 @@ export async function handleGraphMemory(args: {
   depth?: number;
   project?: string;
   sessionId?: string;
-  runtimeMode?: string;
-  containerName?: string;
-  imageName?: string;
-  authVolume?: string;
-  graphRootInContainer?: string;
-  authPathInContainer?: string;
-  memoryLimit?: string;
-  cpuLimit?: string;
-  workerProvider?: string;
-  workerModel?: string;
 }): Promise<{ content: Array<{ type: "text"; text: string }>; isError?: boolean }> {
   const { action } = args;
 
@@ -105,23 +88,9 @@ export async function handleGraphMemory(args: {
       return runCompressAction(args);
     case "resurface":
       return resurfaceNode(args.path);
-    case "initialize":
-      return initializeGraphAction(args.graphRoot);
-    case "configure_runtime":
-      return configureRuntime(args);
-    case "bootstrap":
-      return runBootstrapAction(args);
-    case "notion_setup":
-      return runNotionSetupAction(args);
-    case "notion_sync":
-      return runNotionSyncAction();
-    case "notion_consolidate":
-      return runNotionConsolidateAction(args);
-    case "notion_create_task":
-      return runNotionCreateTaskAction(args);
     default:
       return {
-        content: [{ type: "text", text: `Unknown action: ${action}. Available: read_node, search, recall, list_edges, read_dream, write_note, remember, resurface, status, history, revert, consolidate, compress, initialize, configure_runtime, bootstrap, notion_setup, notion_sync, notion_consolidate, notion_create_task` }],
+        content: [{ type: "text", text: `Unknown action: ${action}. Available: read_node, search, recall, list_edges, read_dream, write_note, remember, resurface, status, history, revert, consolidate, compress` }],
         isError: true,
       };
   }
@@ -953,106 +922,6 @@ async function revertGraph(commitHash?: string) {
   return { content: [{ type: "text" as const, text: result.message }], isError: true };
 }
 
-function initializeGraphAction(graphRoot?: string) {
-  const home = process.env.HOME || process.env.USERPROFILE;
-  if (!home) {
-    return { content: [{ type: "text" as const, text: "Error: cannot determine home directory" }], isError: true };
-  }
-
-  const resolvedRoot = graphRoot
-    ? path.resolve(graphRoot.replace(/^~/, home))
-    : path.join(home, ".graph-memory");
-
-  // Reject dangerous paths (prefix-based check)
-  const normalized = resolvedRoot.replace(/\/+$/, "");
-  const dangerous = ["/etc", "/usr", "/var", "/bin", "/sbin", "/lib", "/sys", "/proc"];
-  if (normalized === "/" || dangerous.some(d => normalized === d || normalized.startsWith(d + "/"))) {
-    return { content: [{ type: "text" as const, text: `Error: refusing to initialize graph at system path: ${resolvedRoot}` }], isError: true };
-  }
-
-  saveGlobalConfig(resolvedRoot);
-  reloadConfig();
-  initializeGraph();
-
-  return getStatus();
-}
-
-function configureRuntime(args: {
-  runtimeMode?: string;
-  workerProvider?: string;
-  workerModel?: string;
-  fallbackProvider?: string;
-  fallbackModel?: string;
-  containerName?: string;
-  imageName?: string;
-  authVolume?: string;
-  graphRootInContainer?: string;
-  authPathInContainer?: string;
-  memoryLimit?: string;
-  cpuLimit?: string;
-}) {
-  const runtimeMode = args.runtimeMode as GraphMemoryRuntimeMode | undefined;
-  if (!runtimeMode || !["manual", "docker"].includes(runtimeMode)) {
-    return {
-      content: [{ type: "text" as const, text: "Error: runtimeMode must be one of manual or docker" }],
-      isError: true,
-    };
-  }
-
-  const current = getRuntimeStatus();
-  const next = saveRuntimeConfig({
-    mode: runtimeMode,
-    docker: {
-      enabled: runtimeMode === "docker",
-      ...(args.workerProvider ? { workerProvider: args.workerProvider as WorkerProvider } : {}),
-      ...(args.workerModel ? { workerModel: args.workerModel } : {}),
-      ...(args.fallbackProvider ? { fallbackProvider: args.fallbackProvider as WorkerProvider } : {}),
-      ...(args.fallbackModel ? { fallbackModel: args.fallbackModel } : {}),
-      ...(args.containerName ? { containerName: args.containerName } : {}),
-      ...(args.imageName ? { image: args.imageName } : {}),
-      ...(args.authVolume ? { authVolume: args.authVolume } : {}),
-      ...(args.graphRootInContainer ? { graphRootInContainer: args.graphRootInContainer } : {}),
-      ...(args.authPathInContainer ? { authPathInContainer: args.authPathInContainer } : {}),
-      ...(args.memoryLimit ? { memoryLimit: args.memoryLimit } : {}),
-      ...(args.cpuLimit ? { cpuLimit: args.cpuLimit } : {}),
-    },
-  });
-
-  return {
-    content: [{ type: "text" as const, text: JSON.stringify({
-      success: true,
-      previousRuntime: current,
-      runtime: next,
-    }, null, 2) }],
-  };
-}
-
-function runBootstrapAction(args: { project?: string; harness?: string; cwd?: string }) {
-  const project = args.project || readActiveProject()?.name || "global";
-  if (project === "global") {
-    return {
-      content: [{ type: "text" as const, text: "Cannot bootstrap doc for 'global' project. Specify a project name." }],
-      isError: true,
-    };
-  }
-
-  const harness = args.harness || "opencode";
-  const cwd = args.cwd || process.cwd();
-
-  const result = bootstrapProjectDoc(project, harness, cwd);
-  const drift = detectDocDrift(project, cwd, harness);
-
-  return {
-    content: [{ type: "text" as const, text: JSON.stringify({
-      success: true,
-      filePath: result.filePath,
-      created: result.created,
-      sections: result.sections,
-      drift: drift.drifted ? { missing: drift.missing } : null,
-    }, null, 2) }],
-  };
-}
-
 function getGraphIndexStatus(): Record<string, any> {
   try {
     const stats = getStats();
@@ -1185,164 +1054,11 @@ function getStatus() {
 
 // overlap, recencyBoost, projectBoost imported from scoring.ts
 
-// --- notion_setup action ---
-
-async function runNotionSetupAction(args: { parentPageId?: string; workspaceName?: string; [key: string]: any }): Promise<{ content: Array<{ type: "text"; text: string }>; isError?: boolean }> {
-  try {
-    const result = setupNotionWorkspace({
-      parentPageId: args.parentPageId,
-      workspaceName: args.workspaceName,
-    });
-
-    return {
-      content: [{
-        type: "text" as const,
-        text: JSON.stringify({ ok: true, ...result }, null, 2),
-      }],
-    };
-  } catch (err: any) {
-    return {
-      content: [{ type: "text" as const, text: `Notion setup failed: ${err.message}` }],
-      isError: true,
-    };
-  }
-}
-
-// --- notion_sync action ---
-
-async function runNotionSyncAction(): Promise<{ content: Array<{ type: "text"; text: string }>; isError?: boolean }> {
-  const state = readNotionSyncState();
-  if (!state.parentPageId) {
-    return {
-      content: [{ type: "text" as const, text: "Notion sync not configured. Run notion_setup first." }],
-      isError: true,
-    };
-  }
-
-  if (hasActiveJob("notion_sync")) {
-    return {
-      content: [{ type: "text" as const, text: "A Notion sync job is already in progress." }],
-      isError: true,
-    };
-  }
-
-  const now = new Date();
-  const date = now.toISOString().slice(0, 10);
-
-  const { job } = enqueueJob({
-    type: "notion_sync",
-    payload: {
-      reason: `manual notion sync for ${date}`,
-      date,
-      forceFullSync: false,
-    },
-    triggerSource: "mcp:notion_sync",
-    idempotencyKey: `notion-sync:manual:${date}:${Date.now()}`,
-  });
-
-  return {
-    content: [{
-      type: "text" as const,
-      text: `Notion sync job queued: ${job.id}`,
-    }],
-  };
-}
-
-async function runNotionConsolidateAction(args: { dryRun?: boolean; [key: string]: any }): Promise<{ content: Array<{ type: "text"; text: string }>; isError?: boolean }> {
-  const state = readNotionSyncState();
-  if (!state.parentPageId) {
-    return {
-      content: [{ type: "text" as const, text: "Notion sync not configured. Run notion_setup first." }],
-      isError: true,
-    };
-  }
-
-  try {
-    const result = consolidateNotionWorkspace(args.dryRun);
-    const prefix = args.dryRun ? "[DRY RUN] " : "";
-    return {
-      content: [{
-        type: "text" as const,
-        text: `${prefix}Consolidation complete: ${result.mergedPages} pages merged, ${result.archivedPages} pages archived, ${result.renamedPages} pages renamed.${result.errors.length > 0 ? ` Errors: ${result.errors.join("; ")}` : ""}`,
-      }],
-    };
-  } catch (err: any) {
-    return {
-      content: [{ type: "text" as const, text: `Consolidation failed: ${err.message}` }],
-      isError: true,
-    };
-  }
-}
-
-// --- notion_create_task action ---
-
-async function runNotionCreateTaskAction(args: { name?: string; project?: string; status?: string; priority?: string; due?: string; [key: string]: any }): Promise<{ content: Array<{ type: "text"; text: string }>; isError?: boolean }> {
-  if (!args.name) {
-    return {
-      content: [{ type: "text" as const, text: "Missing required field: name" }],
-      isError: true,
-    };
-  }
-
-  const state = readNotionSyncState();
-  if (!state.parentPageId) {
-    return {
-      content: [{ type: "text" as const, text: "Notion sync not configured. Run notion_setup first." }],
-      isError: true,
-    };
-  }
-
-  const tasksDb = state.databases.tasks;
-  if (!tasksDb?.id) {
-    return {
-      content: [{ type: "text" as const, text: "Tasks database not found. Run notion_setup first." }],
-      isError: true,
-    };
-  }
-
-  try {
-    const properties: Record<string, any> = {
-      Name: args.name,
-      Status: args.status || "Backlog",
-      Priority: args.priority || "Medium",
-    };
-    if (args.project) properties.Project = args.project;
-    if (args.due) properties.Due = args.due;
-
-    const result = createDatabaseRow(tasksDb.id, properties, undefined, "Name");
-
-    const rowKey = `task:${args.name}`;
-    state.rows[rowKey] = {
-      pageId: result.id,
-      sourceField: "tasks",
-      status: args.status || "Backlog",
-      lastSyncedHash: "",
-    };
-    writeNotionSyncState(state);
-
-    if (args.project) {
-      addNotionPickupItem(args.project, `[Agent → Notion] Created task "${args.name}" (${args.status || "Backlog"})`);
-    }
-
-    return {
-      content: [{
-        type: "text" as const,
-        text: `Task created in Notion: "${args.name}" (${result.url})`,
-      }],
-    };
-  } catch (err: any) {
-    return {
-      content: [{ type: "text" as const, text: `Failed to create Notion task: ${err.message}` }],
-      isError: true,
-    };
-  }
-}
-
 // Zod schema for the tool (exported for MCP server registration)
 export const graphMemorySchema = {
   action: z.enum([
     "read_node", "search", "recall", "list_edges", "read_dream", "write_note",
-    "remember", "resurface", "status", "history", "revert", "consolidate", "compress", "initialize", "configure_runtime", "bootstrap", "notion_setup", "notion_sync", "notion_consolidate", "notion_create_task"
+    "remember", "resurface", "status", "history", "revert", "consolidate", "compress"
   ]).describe("The action to perform on the knowledge graph"),
   path: z.string().optional()
     .describe("Node path for read_node/list_edges/remember, dream path for read_dream, commit hash for revert"),
@@ -1374,46 +1090,10 @@ export const graphMemorySchema = {
     .describe("Somatic marker for remember action"),
   depth: z.number().min(0).max(3).optional()
     .describe("Edge traversal depth for recall action (default 1, max 3)"),
-  graphRoot: z.string().optional()
-    .describe("Storage path for initialize action (defaults to ~/.graph-memory/)"),
   project: z.string().optional()
     .describe("Project scope for remember action (e.g. 'owner/repo'). Only set for project-specific knowledge, omit for global."),
   sessionId: z.string().optional()
     .describe("Session ID for access tracking (supplied by plugin, not user)"),
   pinned: z.boolean().optional()
     .describe("Pin node to prevent decay and auto-load it at session start in its project. Requires project."),
-  workerProvider: z.enum(["codex", "claude", "pi", "opencode", "api"]).optional()
-    .describe("Worker harness for configure_runtime (codex, claude, pi, opencode, api)"),
-  workerModel: z.string().optional()
-    .describe("Model override for pipeline workers (e.g. 'sonnet', 'o3', 'gpt-4.1'). Harness-specific."),
-  fallbackProvider: z.enum(["codex", "claude", "pi", "opencode", "api"]).optional()
-    .describe("Fallback worker harness for configure_runtime — used when the primary worker fails or times out (e.g. on a provider usage limit). Omit for no fallback."),
-  fallbackModel: z.string().optional()
-    .describe("Model for the fallback worker (harness-specific). Optional; defaults to the fallback harness's own default model."),
-  runtimeMode: z.enum(["manual", "docker"]).optional()
-    .describe("Runtime mode for configure_runtime"),
-  containerName: z.string().optional()
-    .describe("Docker container name override for configure_runtime"),
-  imageName: z.string().optional()
-    .describe("Docker image override for configure_runtime"),
-  authVolume: z.string().optional()
-    .describe("Docker auth volume name for configure_runtime"),
-  graphRootInContainer: z.string().optional()
-    .describe("Container graph root mount path for configure_runtime"),
-  authPathInContainer: z.string().optional()
-    .describe("Container auth mount path for configure_runtime"),
-  memoryLimit: z.string().optional()
-    .describe("Container memory limit for configure_runtime"),
-  cpuLimit: z.string().optional()
-    .describe("Container CPU limit for configure_runtime"),
-  harness: z.string().optional()
-    .describe("Target harness for bootstrap action (claude-code, codex, pi, opencode)"),
-  cwd: z.string().optional()
-    .describe("Project working directory for bootstrap action"),
-  parentPageId: z.string().optional()
-    .describe("Existing Notion page ID for notion_setup (omit to create new)"),
-  workspaceName: z.string().optional()
-    .describe("Workspace name for notion_setup (default: 'My Mind')"),
-  dryRun: z.boolean().optional()
-    .describe("Dry run for notion_consolidate — report what would change without making changes"),
 };

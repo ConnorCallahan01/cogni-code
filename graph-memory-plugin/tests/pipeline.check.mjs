@@ -1142,55 +1142,6 @@ test("phase 6: bootstrap preserves custom sections on re-bootstrap", async () =>
   }
 });
 
-test("phase 6: bootstrap action via MCP tool", async () => {
-  const { tmp, graphRoot } = makeTempGraph();
-  try {
-    initGraph(graphRoot);
-    await setupEnv(graphRoot);
-
-    const projectDir = path.join(tmp, "test-project");
-    fs.mkdirSync(projectDir, { recursive: true });
-
-    const lensMod = await importModule("lenses/manager.js");
-    lensMod.ensureLens("test-project");
-    const { writeModel: writeProjectModel } = await importModule("lenses/manager.js");
-    writeProjectModel("test-project", {
-      project: "test-project",
-      model: {
-        version: 3,
-        project: "test-project",
-        generatedAt: new Date().toISOString(),
-        techStack: ["Rust"],
-        conventions: ["Use cargo clippy"],
-        procedures: [],
-        guardrails: [],
-        activeWork: [],
-        openThreads: [],
-        tokenEstimate: 10,
-      },
-      lastCompressorRun: new Date().toISOString(),
-      observationCount: 3,
-      firstSessionAt: new Date().toISOString(),
-      lastSessionAt: new Date().toISOString(),
-    });
-
-    const toolsMod = await importModule("tools.js");
-    const result = await toolsMod.handleGraphMemory({
-      action: "bootstrap",
-      project: "test-project",
-      harness: "opencode",
-      cwd: projectDir,
-    });
-
-    const response = JSON.parse(result.content[0].text);
-    assert.ok(response.success, "Bootstrap succeeded");
-    assert.equal(path.basename(response.filePath), "AGENT.md");
-    assert.ok(response.created, "Doc was created");
-  } finally {
-    fs.rmSync(tmp, { recursive: true, force: true });
-  }
-});
-
 test("phase 6: drift detection finds missing sections", async () => {
   const { tmp, graphRoot } = makeTempGraph();
   try {
@@ -1796,7 +1747,7 @@ test("worker-fallback: planWorkerAttempts dedups an identical fallback", async (
   assert.equal(diffModel.length, 2, "Same-provider different-model fallback is kept");
 });
 
-test("worker-fallback: configure_runtime persists fallbackProvider/fallbackModel", async () => {
+test("worker-fallback: runtime config persists fallbackProvider/fallbackModel", async () => {
   const { tmp, graphRoot } = makeTempGraph();
   try {
     initGraph(graphRoot);

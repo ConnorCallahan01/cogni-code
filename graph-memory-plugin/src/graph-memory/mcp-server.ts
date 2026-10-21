@@ -25,7 +25,7 @@ const server = new McpServer({
 // Main tool
 server.tool(
   "graph_memory",
-  `Access the persistent knowledge graph. Actions: initialize, configure_runtime, status, remember, write_note, search, recall, read_node, list_edges, read_dream, consolidate, history, revert, resurface.
+  `Access the persistent knowledge graph. Actions: status, remember, write_note, search, recall, read_node, list_edges, read_dream, consolidate, history, revert, resurface.
 MEMORY ACTIONS:
 - remember: Create or update a graph node directly. Provide path, gist, and optionally content, tags, edges, soma markers.
 - recall: Combined search + edge traversal. Returns matching nodes plus connected nodes (1 hop).
@@ -42,9 +42,9 @@ RETRIEVAL GUIDANCE — follow these steps proactively:
 PIPELINE:
 - consolidate: Run mechanical delta processing (apply scribe deltas, rebuild MAP, decay, git commit).
 
-SETUP:
-- initialize: First-time setup. Pass graphRoot to choose storage location (defaults to ~/.graph-memory/).
-- configure_runtime: Set manual or Docker runtime configuration. Pass workerProvider (codex, claude, pi, opencode, api) to choose the pipeline agent harness. Pass workerModel to override the model used by pipeline workers (e.g. 'sonnet', 'o3', 'gpt-4.1'). Pass fallbackProvider (and optionally fallbackModel) to have the daemon automatically retry a failed or timed-out worker on a second harness — useful when the primary provider hits a usage limit.`,
+SETUP (command line only, so the user sees and approves each change):
+- First-time setup or a new storage location: "cogni-code install [--graph-root <path>]".
+- Pipeline workers and runtime mode: "cogni-code configure-runtime --help".`,
   graphMemorySchema,
   async (args) => {
     return handleGraphMemory(args);

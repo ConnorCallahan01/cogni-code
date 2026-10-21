@@ -1,5 +1,23 @@
 # Changelog
 
+## [4.0.0] (2026-10-21) — Setup leaves the memory tool, Notion sync is retired, and runtime config can't run commands
+
+### Security
+
+- **A runtime config value could run commands on the host.** Every `bin/docker-*.sh` evals what `runtime-env.sh` prints, and those values were double-quoted with `JSON.stringify`, which leaves `$(…)` and backticks live. `.runtime-config.json` sits in the graph root that container workers can write, and the `configure_runtime` tool action wrote it too, so one edited field ran as the user the next time a docker script started. Values are now single-quoted. Every field is checked against its shape: a bad value is refused on save, and dropped for its default on load with a warning naming the field. The auth volume must be a named volume, not a host path, and the scripts mount the graph root the host resolves, not the one the file names.
+- **Setup is CLI-only.** `graph_memory` no longer has `initialize`, which re-pointed every later session at any directory, `configure_runtime`, or `bootstrap`, which overwrote `CLAUDE.md`/`AGENTS.md` in any directory a caller named, `~/.claude/CLAUDE.md` included. They are `cogni-code init [--graph-root <path>]` and `cogni-code configure-runtime` now, run where the user sees and approves them; `/memory-onboard`, `/memory-switch-harness`, and the onboarder use them. The daemon's own project-doc bootstrap is unchanged.
+
+### Removed
+
+- **Notion sync**: outbound mirroring, inbound edits, the three-way merge, consolidation, the Notion task list at session start, the `notion_*` tool actions and job types, the `/notion-*` commands, and the steward agents. Its webhook receiver was the package's only network listener: it took a new signing key from any unauthenticated request, checked no signature when no secret was set, and the docker scripts published its port on every interface. Inbound deltas could also write any existing file on disk.
+- The daemon image no longer installs the Notion CLI (`curl | bash`), the docker scripts no longer pass a Notion token or publish port 3100, and the unused `docker/start.sh`, which hard-coded a Notion workspace ID, is gone.
+
+### Upgrading
+
+- A `graph_memory` call with `initialize`, `configure_runtime`, `bootstrap`, or a `notion_*` action now returns "Unknown action"; run the CLI commands above instead.
+- Rebuild and restart the Docker daemon (`bin/docker-build.sh`, then `bin/docker-stop.sh && bin/docker-start.sh`) so the container drops the published port and the Notion settings.
+- Existing `.notion-*` files in a graph stay untracked and are otherwise ignored. A Notion job still queued fails as an unknown job type.
+
 ## [3.8.0] (2026-10-20) — Sessions open side by side in one project keep their own handoff
 
 ### Changed

@@ -1,8 +1,11 @@
 import { execSync } from "child_process";
+import { CONFIG } from "./config.js";
 import { getRuntimeStatus, loadRuntimeConfig } from "./runtime.js";
 
+// Callers eval this output, so each value is single-quoted, where the shell
+// expands nothing. JSON.stringify's double quotes left $(...) and backticks live.
 function quote(value: string): string {
-  return JSON.stringify(value);
+  return `'${String(value).replace(/'/g, `'\\''`)}'`;
 }
 
 function commandExists(cmd: string): boolean {
@@ -41,7 +44,10 @@ async function main() {
       // container sees the same path either way.
       const containerPath = (p: string) => (process.platform === "win32" ? `/${p}` : p);
       process.stdout.write(`GRAPH_MEMORY_RUNTIME_MODE=${quote(runtime.mode)}\n`);
-      process.stdout.write(`GRAPH_MEMORY_HOST_ROOT=${quote(runtime.graphRoot)}\n`);
+      // The runtime file sits in the graph root, which container workers can
+      // write, so the root to mount is the one this host resolves, not the
+      // file's own claim.
+      process.stdout.write(`GRAPH_MEMORY_HOST_ROOT=${quote(CONFIG.paths.graphRoot)}\n`);
       process.stdout.write(`GRAPH_MEMORY_WORKER_PROVIDER=${quote(docker.workerProvider)}\n`);
       process.stdout.write(`GRAPH_MEMORY_DOCKER_IMAGE=${quote(docker.image)}\n`);
       process.stdout.write(`GRAPH_MEMORY_DOCKER_CONTAINER=${quote(docker.containerName)}\n`);

@@ -88,6 +88,40 @@ function defaultDockerConfig(graphRoot: string): DockerRuntimeConfig {
   };
 }
 
+const WORKER_PROVIDERS: readonly WorkerProvider[] = ["codex", "claude", "pi", "opencode", "api"];
+
+// These values reach a shell (bin/docker-*.sh eval runtime-env.sh's output) and
+// `docker run` arguments, and the file sits in the graph root, which container
+// workers can write. Each one has to keep its shape.
+const DOCKER_FIELD_SHAPES: Record<string, RegExp> = {
+  image: /^[A-Za-z0-9][A-Za-z0-9._\/:@-]*$/,
+  containerName: /^[A-Za-z0-9][A-Za-z0-9_.-]*$/,
+  // A named volume only: a path here would bind-mount that host directory.
+  authVolume: /^[A-Za-z0-9][A-Za-z0-9_.-]*$/,
+  graphRootInContainer: /^\/[A-Za-z0-9._\/-]*$/,
+  authPathInContainer: /^\/[A-Za-z0-9._\/-]*$/,
+  memoryLimit: /^\d+(\.\d+)?[bkmgBKMG]?$/,
+  cpuLimit: /^\d+(\.\d+)?$/,
+};
+
+export function invalidRuntimeFields(config: RuntimeConfigPatch): string[] {
+  const invalid: string[] = [];
+  if (config.mode !== undefined && config.mode !== "manual" && config.mode !== "docker") invalid.push("mode");
+  const docker = (config.docker || {}) as Record<string, unknown>;
+  for (const [field, shape] of Object.entries(DOCKER_FIELD_SHAPES)) {
+    const value = docker[field];
+    if (value === undefined) continue;
+    if (typeof value !== "string" || !shape.test(value) || value.split("/").includes("..")) {
+      invalid.push(`docker.${field}`);
+    }
+  }
+  for (const field of ["workerProvider", "fallbackProvider"]) {
+    const value = docker[field];
+    if (value !== undefined && !WORKER_PROVIDERS.includes(value as WorkerProvider)) invalid.push(`docker.${field}`);
+  }
+  return invalid;
+}
+
 export function defaultRuntimeConfig(graphRoot = CONFIG.paths.graphRoot): GraphMemoryRuntimeConfig {
   const timestamp = new Date().toISOString();
   return {
@@ -108,7 +142,7 @@ export function loadRuntimeConfig(): GraphMemoryRuntimeConfig {
   try {
     const parsed = JSON.parse(fs.readFileSync(configPath, "utf-8")) as Partial<GraphMemoryRuntimeConfig>;
     const defaults = defaultRuntimeConfig(parsed.graphRoot || CONFIG.paths.graphRoot);
-    return {
+    const loaded: GraphMemoryRuntimeConfig = {
       ...defaults,
       ...parsed,
       docker: {
@@ -117,12 +151,26 @@ export function loadRuntimeConfig(): GraphMemoryRuntimeConfig {
         repoMounts: parsed.docker?.repoMounts || defaults.docker.repoMounts,
       },
     };
+    // A value out of shape is never used, and never dropped quietly either:
+    // the warning is how a tampered file gets noticed.
+    for (const field of invalidRuntimeFields(loaded)) {
+      const key = field.replace(/^docker\./, "");
+      if (field === "mode") loaded.mode = defaults.mode;
+      else if (key === "fallbackProvider") delete loaded.docker.fallbackProvider;
+      else (loaded.docker as unknown as Record<string, unknown>)[key] = (defaults.docker as unknown as Record<string, unknown>)[key];
+      process.stderr.write(`cogni-code: ignoring invalid ${field} in ${configPath}; using the default\n`);
+    }
+    return loaded;
   } catch {
     return defaultRuntimeConfig();
   }
 }
 
 export function saveRuntimeConfig(next: RuntimeConfigPatch): GraphMemoryRuntimeConfig {
+  const invalid = invalidRuntimeFields(next);
+  if (invalid.length > 0) {
+    throw new Error(`Invalid runtime config: ${invalid.join(", ")}`);
+  }
   const current = loadRuntimeConfig();
   const merged: GraphMemoryRuntimeConfig = {
     ...current,

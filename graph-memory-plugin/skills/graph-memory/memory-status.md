@@ -17,6 +17,6 @@ Check the health and status of the graph memory system.
    - Node count and pending dreams
    - Queue activity (`queuedJobs`, `runningJobs`, `scribePending`, `consolidationPending`)
    - Any warnings (MAP budget, decay risk, etc.)
-3. If `firstRun` is true, suggest initializing memory via `graph_memory(action="initialize")`.
+3. If `firstRun` is true, suggest initializing memory by running `cogni-code init` in the shell.
 4. If there are warnings, briefly explain what they mean and any recommended actions.
 5. If Docker runtime is configured but the Docker state looks unhealthy, call that out explicitly.

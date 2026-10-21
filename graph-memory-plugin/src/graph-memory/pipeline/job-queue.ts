@@ -19,9 +19,6 @@ export const PRIORITY: Record<GraphMemoryJobType, number> = {
   skillforge_refresh: 5,
   memory_analysis: 6,
   bootstrap_project_doc: 3,
-  notion_sync: 7,
-  notion_inbound_triage: 3,
-  notion_inbound_enrich: 4,
 };
 
 function stateDir(state: GraphMemoryJobState): string {
