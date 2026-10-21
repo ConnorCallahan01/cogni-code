@@ -21,6 +21,9 @@ import { countJobs, enqueueJob, hasActiveJob, listJobs } from "./pipeline/job-qu
 import { getJobProject } from "./pipeline/job-queue.js";
 import type { GraphMemoryJob } from "./pipeline/job-schema.js";
 import { getRuntimeStatus } from "./runtime.js";
+import { isSafeProjectName } from "./working-files.js";
+import { lensExists } from "./lenses/manager.js";
+import { AGENT_WRITTEN_VIA } from "./context-sections.js";
 
 // --- Index cache ---
 let indexCache: { data: any[]; mtime: number } | null = null;
@@ -189,6 +192,7 @@ function rememberNode(args: {
       }
 
       parsed.data.updated = now;
+      parsed.data.written_via = AGENT_WRITTEN_VIA;
       fs.writeFileSync(filePath, matter.stringify(parsed.content, parsed.data));
 
       // Update index and MAP incrementally
@@ -219,6 +223,7 @@ function rememberNode(args: {
     decay_rate: 0.05,
     tags: args.tags || [],
     keywords: [],
+    written_via: AGENT_WRITTEN_VIA,
   };
 
   // Only tag with project if explicitly provided (caller decides project-specificity)
@@ -284,6 +289,9 @@ function updateIndexEntry(nodePath: string, fm: any) {
     if (fm.pinned) {
       entry.pinned = true;
     }
+    if (fm.written_via) {
+      entry.written_via = String(fm.written_via);
+    }
     if (existing !== -1) {
       index[existing] = entry;
     } else {
@@ -305,6 +313,7 @@ function updateIndexEntry(nodePath: string, fm: any) {
         ...(fm.project ? { project: fm.project } : {}),
         ...(fm.pinned ? { pinned: true } : {}),
         ...(fm.anti_pattern ? { anti_pattern: true, decay_exempt: true } : {}),
+        ...(fm.written_via ? { written_via: String(fm.written_via) } : {}),
         updated: entry.updated,
         last_accessed: entry.last_accessed,
         access_count: entry.access_count,
@@ -585,6 +594,14 @@ async function runConsolidation(): Promise<{ content: Array<{ type: "text"; text
 // --- compress action ---
 
 function runCompressAction(args: { project?: string }) {
+  // The project name goes into the compressor worker's prompt, so it has to be
+  // one of ours: a plain name with a lens, not text.
+  if (args.project && (!isSafeProjectName(args.project) || !lensExists(args.project))) {
+    return {
+      content: [{ type: "text" as const, text: `Error: no project lens named ${JSON.stringify(args.project.slice(0, 80))}. Pass a project with a lens (e.g. "owner/repo"), or omit project to compress everything.` }],
+      isError: true,
+    };
+  }
   const layers: Array<"global" | "project"> = args.project ? ["project"] : ["global", "project"];
 
   const { job, created } = enqueueJob({

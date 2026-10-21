@@ -29,7 +29,7 @@ function buildCodexHooks(): Record<string, Array<{ matcher?: string; command: st
     PreToolUse: [
       {
         matcher: "mcp__graph-memory__graph_memory",
-        command: `echo '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow"}}'`,
+        command: hookCommand("graph-memory-permission"),
       },
     ],
     PostToolUse: [
@@ -140,12 +140,14 @@ function mergeHooks(hooksJsonPath: string): string[] {
       // Match our own entries (bare or absolute CLI) plus the shell
       // installer's wrapper-script entries, so switching install methods
       // replaces rather than duplicates.
-      const shellWrapper = /(cogni-code|graph-memory)[^\s"']*[\\/](?:bin[\\/](?:session-start|on-user-message|on-post-tool-use|on-pre-compact|on-assistant-response|session-end)\.sh|dist[\\/]hooks[\\/][\w-]+\.js)/;
+      const shellWrapper = /(cogni-code|graph-memory)[^\s"']*[\\/](?:bin[\\/](?:session-start|on-user-message|on-post-tool-use|on-pre-compact|on-assistant-response|session-end|graph-memory-permission)\.sh|dist[\\/]hooks[\\/][\w-]+\.js)/;
       return !hooks.some((h: any) =>
         typeof h.command === "string" &&
         (h.command.includes("cogni-code hook") ||
           h.command.includes(`cli.js" hook`) ||
-          shellWrapper.test(h.command))
+          shellWrapper.test(h.command) ||
+          // The old rule allowed every graph_memory action with a bare echo.
+          (typeof group.matcher === "string" && group.matcher.includes("graph_memory") && h.command.includes("permissionDecision")))
       );
     });
     existing.hooks[event].push(...matcherGroups);

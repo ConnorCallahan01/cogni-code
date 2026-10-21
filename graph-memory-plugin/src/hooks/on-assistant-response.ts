@@ -19,6 +19,7 @@ import { clearMemoryGateState } from "../graph-memory/memory-gate.js";
 import { detectProject } from "../graph-memory/project.js";
 import { enqueueJob } from "../graph-memory/pipeline/job-queue.js";
 import { appendAssistantTraceEvents, getAssistantTracePath, getConversationLogPath, getToolTracePath } from "../graph-memory/session-trace.js";
+import { redactedJsonLine } from "../graph-memory/redact.js";
 
 interface StopHookInput {
   session_id: string;
@@ -105,7 +106,7 @@ async function main() {
     final: true,
     ...(project.name !== "global" ? { project: project.name } : {}),
   };
-  fs.appendFileSync(logPath, JSON.stringify(assistantEntry) + "\n");
+  fs.appendFileSync(logPath, redactedJsonLine(assistantEntry));
 
   // Check if we've hit the scribe threshold
   const bufferContent = fs.readFileSync(logPath, "utf-8").trim();

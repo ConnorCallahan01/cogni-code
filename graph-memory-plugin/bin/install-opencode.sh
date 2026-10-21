@@ -157,11 +157,17 @@ node -e "
   const runnerScript = process.env.MCP_RUNNER_SCRIPT;
   let changed = false;
 
-  let config;
-  try {
-    config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-  } catch (e) {
-    config = {};
+  // Start fresh only when there is no file. One that won't parse (comments,
+  // a trailing comma) is left alone: rewriting it would drop everything in it.
+  let config = {};
+  if (fs.existsSync(configPath)) {
+    try {
+      config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+    } catch (e) {
+      console.error('Could not parse ' + configPath + ' (' + e.message + '); left it unchanged.');
+      console.error('Add the graph-memory MCP server to it by hand, or fix the file and re-run this installer.');
+      process.exit(1);
+    }
   }
 
   if (!config.mcp) config.mcp = {};

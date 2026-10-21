@@ -20,6 +20,7 @@ import { buildUserPromptAdditionalContext, clearMemoryGateState, writeMemoryGate
 import { getConversationLogPath } from "../graph-memory/session-trace.js";
 import { overlap, recencyBoost, projectBoost, ambientRecall, STOPWORDS, EXPLICIT_MEMORY_PATTERNS, CONTINUITY_PATTERNS, PREFERENCE_PATTERNS, REPO_OPERATING_CONTEXT_PATTERNS, pathCategory, categoryGateWeight, countMatches, AmbientRecallResult } from "../graph-memory/scoring.js";
 import { somaBoost } from "../graph-memory/soma.js";
+import { redactedJsonLine } from "../graph-memory/redact.js";
 
 
 
@@ -130,7 +131,7 @@ async function main() {
     entry.project = project.name;
   }
 
-  fs.appendFileSync(getConversationLogPath(sessionId), JSON.stringify(entry) + "\n");
+  fs.appendFileSync(getConversationLogPath(sessionId), redactedJsonLine(entry));
 
   // Keep dirty state fresh
   markDirty(sessionId);

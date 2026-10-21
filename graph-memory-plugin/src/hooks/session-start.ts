@@ -8,12 +8,12 @@
  */
 import fs from "fs";
 import path from "path";
-import { CONFIG, isGraphInitialized } from "../graph-memory/config.js";
+import { CONFIG, ensureGraphRootPrivate, isGraphInitialized } from "../graph-memory/config.js";
 import { writeSessionContextState } from "../graph-memory/context-refresh.js";
 import { isDirty, markDirty } from "../graph-memory/dirty-state.js";
 import { detectProject, writeActiveProject, cleanActiveProjects } from "../graph-memory/project.js";
 import { ensureProjectWorkingFile, readHandoffPickup, renderWorkingForSession } from "../graph-memory/project-working.js";
-import { CLAUDE_HOOK_OUTPUT_CHAR_CAP, SECTION_SEPARATOR, buildProjectMap, loadPinnedNodes, mapHeader, renderPinnedSection } from "../graph-memory/context-sections.js";
+import { CLAUDE_HOOK_OUTPUT_CHAR_CAP, SECTION_SEPARATOR, buildProjectMap, loadPinnedNodes, mapHeader, renderAntiPatternLines, renderPinnedSection } from "../graph-memory/context-sections.js";
 import { buildSessionStartContext, hasMentalModelData } from "../graph-memory/session-start-context.js";
 import { getAntiPatterns } from "../graph-memory/pipeline/graph-index.js";
 import { ensureLens, readModel as readProjectModel, lensExists } from "../graph-memory/lenses/manager.js";
@@ -89,6 +89,7 @@ async function main() {
     );
     return;
   }
+  ensureGraphRootPrivate();
 
   // Read stdin for cwd and session_id
   let cwd = process.cwd();
@@ -153,10 +154,7 @@ async function main() {
           for (const g of model.guardrails) gLines.push("- " + g);
         }
         const ap = getAntiPatterns(project.name !== "global" ? project.name : undefined);
-        if (ap.length > 0) {
-          gLines.push("## Anti-Patterns");
-          for (const a of ap) gLines.push("- " + a.gist);
-        }
+        gLines.push(...renderAntiPatternLines(ap));
         if (gLines.length > 0) addPart(gLines.join("\n"));
       }
     } catch { /* fall through */ }

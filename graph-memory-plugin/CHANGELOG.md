@@ -1,5 +1,22 @@
 # Changelog
 
+## [4.1.0] (2026-10-21) — Agent-written guardrails are labeled, captures redact secrets by value
+
+### Security
+
+- **Guardrails and pins an agent saves are labeled.** One `remember` call put its gist in every later session's Anti-Patterns, or its body under "Follow these procedures exactly", with nothing saying an agent had just written it. `remember` now marks what it writes `written_via: graph_memory`, and session start loads those anti-patterns and pins under their own "unreviewed, saved by an agent session" headings, framed as information rather than instructions, apart from the ones the pipeline produced. A reviewed node an agent rewrites through `remember` moves under the heading too. Nodes saved before this release carry no mark.
+- **Captures redact secrets by value.** Redaction looked only at object key names, so a token pasted into a prompt, printed by `env`, or sent in an `Authorization` header reached the buffers and traces that pipeline workers read. Every captured line is now redacted before it is written: provider token formats (Anthropic, OpenAI, GitHub, GitLab, Slack, AWS, Google, npm, Notion), JWTs, private key blocks, `Bearer`/`Basic` credentials, and secret-named assignments such as `GITHUB_TOKEN=…` or `password: …`. This covers the Claude Code hooks and the opencode and pi extensions.
+- **The `graph_memory` permission rule allows read-only actions only.** The Codex `PreToolUse` rule allowed every action; it now allows recall, search, read_node, list_edges, read_dream, status, and history, and leaves anything that writes to the user. Reinstalling (`cogni-code install --codex` or `bin/install-codex.sh`) replaces the old rule.
+- **`compress` takes only a project with a lens.** Its `project` argument went into the compressor worker's prompt as text.
+- **A remote with a `..` owner can't move graph directories.** A cloned repo whose origin was `git@host:../nodes.git` made the project name a path, and the next hook renamed the graph's `nodes/` into `lenses/`.
+- **The pi extension no longer reads files named by skillforge manifests.** Manifests are worker-written, and the extension injected whatever file one named into every prompt; real (v2) manifests never used it.
+- **The graph root is closed to other accounts** (mode 0700): a new graph starts that way, and session start tightens an existing one.
+
+### Fixed
+
+- `bin/install-codex.sh` and `bin/install-opencode.sh` no longer replace a `hooks.json` or `opencode.json` they can't parse; they stop and say so, as the TypeScript installers have since 3.7.3.
+- The opencode extension loaded pinned nodes from every project; it now uses the shared loader, which loads only the current project's pins.
+
 ## [4.0.0] (2026-10-21) — Setup leaves the memory tool, Notion sync is retired, and runtime config can't run commands
 
 ### Security

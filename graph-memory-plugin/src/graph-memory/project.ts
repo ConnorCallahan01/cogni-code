@@ -111,13 +111,15 @@ function deriveProjectName(cwd: string): string {
 function extractOwnerRepo(remoteUrl: string): string | null {
   // SSH: git@github.com:owner/repo.git
   const sshMatch = remoteUrl.match(/[@:]([^/:]+)\/([^/.]+?)(?:\.git)?$/);
-  if (sshMatch) return `${sshMatch[1]}/${sshMatch[2]}`;
-
   // HTTPS: https://github.com/owner/repo.git
-  const httpsMatch = remoteUrl.match(/\/([^/]+)\/([^/.]+?)(?:\.git)?$/);
-  if (httpsMatch) return `${httpsMatch[1]}/${httpsMatch[2]}`;
+  const httpsMatch = sshMatch ? null : remoteUrl.match(/\/([^/]+)\/([^/.]+?)(?:\.git)?$/);
+  const match = sshMatch || httpsMatch;
+  if (!match) return null;
 
-  return null;
+  // A cloned repo chooses its own remote: an owner of ".." made the project
+  // name a path out of lenses/, and migration renamed graph directories there.
+  const name = `${match[1]}/${match[2]}`;
+  return name.split("/").some((segment) => segment === "." || segment === "..") ? null : name;
 }
 
 /**
@@ -302,6 +304,9 @@ function tryRenameContents(oldDir: string, newDir: string): number {
 export function migrateProjectState(projectName: string): { migrated: string[] } {
   const slug = sanitizeProjectSlug(projectName);
   if (slug === projectName) return { migrated: [] };
+  // The old layouts joined the raw name onto a directory, so a "." or ".."
+  // segment would rename something outside it.
+  if (projectName.split(/[\\/]/).some((segment) => segment === "." || segment === "..")) return { migrated: [] };
 
   const migrated: string[] = [];
 

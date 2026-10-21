@@ -16,6 +16,7 @@ const HOOK_SCRIPTS: Record<string, string> = {
   "pre-compact": "on-pre-compact.js",
   "stop": "on-assistant-response.js",
   "session-end": "session-end-launcher.js",
+  "graph-memory-permission": "graph-memory-permission.js",
 };
 
 function resolvePkgRoot(): string {

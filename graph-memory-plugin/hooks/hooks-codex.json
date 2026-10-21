@@ -28,7 +28,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "echo '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"allow\"}}'"
+            "command": "$GRAPH_MEMORY_PLUGIN_DIR/bin/graph-memory-permission.sh"
           }
         ]
       }

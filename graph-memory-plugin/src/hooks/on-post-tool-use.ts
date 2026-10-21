@@ -3,6 +3,7 @@ import fs from "fs";
 import { CONFIG, isGraphInitialized } from "../graph-memory/config.js";
 import { detectProject } from "../graph-memory/project.js";
 import { appendToolTrace, getConversationLogPath } from "../graph-memory/session-trace.js";
+import { redactedJsonLine } from "../graph-memory/redact.js";
 
 async function main() {
   if (process.env.GRAPH_MEMORY_PIPELINE_CHILD === "1" || process.env.GRAPH_MEMORY_WORKER === "1") return;
@@ -48,7 +49,7 @@ async function main() {
         entry.project = project.name;
       }
 
-      fs.appendFileSync(getConversationLogPath(sessionId), JSON.stringify(entry) + "\n");
+      fs.appendFileSync(getConversationLogPath(sessionId), redactedJsonLine(entry));
     }
   }
 }
