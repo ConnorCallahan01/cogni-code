@@ -164,3 +164,44 @@ test("every file the image copies is in the npm package", () => {
     assert.ok(packed.some((file) => file === clean || file.startsWith(`${clean}/`)), `${source} is copied into the image but npm doesn't publish it`);
   }
 });
+
+// npm installs every file with the same 1985 timestamp, and the build-context
+// transfer skips a file whose size and timestamp it has already seen, even with
+// --no-cache: an upgraded package.json that kept its size reached the image as
+// the previous version's.
+test("docker-build.sh sends the build a freshly stamped copy of the package", () => {
+  const { tmp, graphRoot } = dockerGraph("fresh-context-");
+  const stubDir = fs.mkdtempSync(path.join(os.tmpdir(), "docker-stub-"));
+  const log = path.join(stubDir, "build");
+  fs.writeFileSync(path.join(stubDir, "docker"), `#!/bin/sh
+if [ "$1" = "build" ]; then
+  for last; do :; done
+  node -e 'const fs = require("fs"); const [ctx, args] = process.argv.slice(1); fs.writeFileSync(process.env.BUILD_LOG, JSON.stringify({ ctx, args, mtime: fs.statSync(ctx + "/package.json").mtimeMs, pkg: fs.readFileSync(ctx + "/package.json", "utf-8"), nodeModules: fs.existsSync(ctx + "/node_modules") }))' "$last" "$*"
+fi
+exit 0
+`, { mode: 0o755 });
+  try {
+    const started = Date.now();
+    const env = { ...process.env, PATH: `${stubDir}${path.delimiter}${process.env.PATH}`, GRAPH_MEMORY_ROOT: graphRoot, BUILD_LOG: log };
+    const result = spawnSync("bash", [path.join(pluginDir, "bin/docker-build.sh"), "--quiet"], { env, encoding: "utf-8" });
+    assert.equal(result.status, 0, result.stderr);
+    const build = JSON.parse(fs.readFileSync(log, "utf-8"));
+
+    assert.notEqual(path.resolve(build.ctx), pluginDir, "the build reads a copy, not the package directory");
+    assert.ok(build.mtime >= started - 2000, "the copy's files are stamped now");
+    assert.equal(build.pkg, readText("package.json"), "with the package's own contents");
+    assert.equal(build.nodeModules, false, "node_modules stays out of the context");
+    assert.ok(build.args.includes(`-f ${build.ctx}/docker/Dockerfile`), "the Dockerfile comes from the same copy");
+    assert.ok(build.args.includes("--quiet"), "extra arguments reach docker build");
+    assert.equal(fs.existsSync(build.ctx), false, "the copy is removed afterwards");
+  } finally {
+    fs.rmSync(stubDir, { recursive: true, force: true });
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test("bootstrap builds the image through docker-build.sh", () => {
+  const bootstrap = readText("bin/docker-bootstrap.sh");
+  assert.match(bootstrap, /"\$DIR\/bin\/docker-build\.sh"/);
+  assert.doesNotMatch(bootstrap, /docker build /);
+});

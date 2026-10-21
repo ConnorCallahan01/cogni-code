@@ -1,5 +1,11 @@
 # Changelog
 
+## [4.2.2] (2026-10-21) — Rebuilding the daemon image after an upgrade picks up every changed file
+
+### Fixed
+
+- **An image rebuilt after upgrading could keep files from the previous version.** npm installs every file with the same 1985 timestamp, and Docker's build-context transfer skips a file whose size and timestamp it has already seen, even with `--no-cache`. After an in-place upgrade, any file whose size hadn't changed reached the image with its old contents. `bin/docker-build.sh` now builds from a temporary copy of the package stamped with the current time, so every file is sent fresh; `docker-bootstrap.sh` builds through it. Images built from a git clone were not affected (checkout and build timestamps differ).
+
 ## [4.2.1] (2026-10-21) — The daemon image builds from the npm package again
 
 ### Fixed
