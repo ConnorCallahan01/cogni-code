@@ -17,7 +17,9 @@ RUN git config --system user.name "graph-memory" \
   && git config --system user.email "graph-memory@localhost" \
   && git config --system --add safe.directory /graph-memory
 
-COPY package.json package-lock.json ./
+# npm never publishes package-lock.json, so the lockfile is npm-shrinkwrap.json,
+# which it does: the image builds from the npm package as well as from a clone.
+COPY package.json npm-shrinkwrap.json ./
 RUN npm ci --omit=dev --ignore-scripts --no-audit --no-fund
 # Worker CLIs are pinned so a rebuild can't silently change how the pipeline
 # runs: codex, pi, and Claude Code install from docker/worker-clis' lockfile

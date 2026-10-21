@@ -129,7 +129,7 @@ test("the graph's own git runs no hook or fsmonitor command planted in its .git"
 test("the image is pinned: base by digest, packages from the lockfile, opencode by checksum", () => {
   const dockerfile = readText("docker/Dockerfile");
   assert.match(dockerfile, /^FROM node:24-bookworm-slim@sha256:[0-9a-f]{64}$/m);
-  assert.match(dockerfile, /^COPY package\.json package-lock\.json \.\/$/m);
+  assert.match(dockerfile, /^COPY package\.json npm-shrinkwrap\.json \.\/$/m);
   assert.match(dockerfile, /^RUN npm ci --omit=dev/m);
   assert.doesNotMatch(dockerfile, /npm install/);
   assert.match(dockerfile, /sha256sum -c -/);
@@ -147,4 +147,20 @@ test("credential imports copy only what the harness needs, through the daemon im
   }
   assert.doesNotMatch(readText("bin/docker-opencode-import-host-auth.sh"), /cp -r \/host-opencode-config/, "the whole host opencode config directory is copied");
   assert.doesNotMatch(readText("bin/docker-pi-import-host-auth.sh"), /cp -r \/host-pi\b/, "the whole ~/.pi, sessions included, is copied");
+});
+
+// 4.2.0's image copied package-lock.json, which npm never publishes, so
+// docker-build.sh failed for everyone who installed from npm; building from a
+// clone, which has the file, hid it.
+test("every file the image copies is in the npm package", () => {
+  const packed = JSON.parse(execFileSync("npm", ["pack", "--dry-run", "--json", "--ignore-scripts"], { cwd: pluginDir, encoding: "utf-8" }))[0].files.map((file) => file.path);
+  const sources = readText("docker/Dockerfile")
+    .split("\n")
+    .filter((line) => /^COPY\s/.test(line) && !/--from/.test(line))
+    .flatMap((line) => line.trim().split(/\s+/).slice(1, -1));
+  assert.ok(sources.length > 5, "found the COPY lines");
+  for (const source of sources) {
+    const clean = source.replace(/\/$/, "");
+    assert.ok(packed.some((file) => file === clean || file.startsWith(`${clean}/`)), `${source} is copied into the image but npm doesn't publish it`);
+  }
 });
