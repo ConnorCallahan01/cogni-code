@@ -1,7 +1,7 @@
 import fs from "fs";
 import path from "path";
 import { CONFIG } from "./config.js";
-import { redactedJsonLine } from "./redact.js";
+import { redactedJsonLine, redactSecrets } from "./redact.js";
 
 export type ToolTracePhase = "pre" | "post";
 export type ToolAccessKind = "read" | "write" | "search" | "execute" | "mcp" | "unknown";
@@ -253,22 +253,50 @@ function buildAssistantTraceIdentity(event: AssistantTraceEvent): string {
   return `fallback:${event.timestamp}:${event.kind}:${event.text}`;
 }
 
-function readExistingAssistantTraceIds(sessionId: string): Set<string> {
+// A final the Stop hook recorded before Claude Code wrote it to the transcript
+// comes back from the transcript on a later turn with its own uuid. Same text
+// within a minute is the same message.
+const STOP_HOOK_TWIN_WINDOW_MS = 60_000;
+
+// Compared as written: redaction runs over the JSON-encoded line.
+function comparableTraceText(text: string): string {
+  let captured = text;
+  try {
+    captured = JSON.parse(redactSecrets(JSON.stringify(text))) as string;
+  } catch { /* compare unredacted */ }
+  return captured.replace(/\s+/g, " ").trim();
+}
+
+function isStopHookTwin(event: AssistantTraceEvent, stopHookFinals: AssistantTraceEvent[]): boolean {
+  if (event.source !== "claude_session_log" || event.kind !== "final") return false;
+  const text = comparableTraceText(event.text);
+  const at = Date.parse(event.timestamp);
+  return stopHookFinals.some((final) =>
+    Math.abs(Date.parse(final.timestamp) - at) <= STOP_HOOK_TWIN_WINDOW_MS
+    && comparableTraceText(final.text) === text
+  );
+}
+
+function readExistingAssistantTrace(sessionId: string): { ids: Set<string>; stopHookFinals: AssistantTraceEvent[] } {
   const filePath = getAssistantTracePath(sessionId);
   const ids = new Set<string>();
-  if (!fs.existsSync(filePath)) return ids;
+  const stopHookFinals: AssistantTraceEvent[] = [];
+  if (!fs.existsSync(filePath)) return { ids, stopHookFinals };
 
   for (const line of fs.readFileSync(filePath, "utf-8").split("\n")) {
     if (!line.trim()) continue;
     try {
       const parsed = JSON.parse(line) as AssistantTraceEvent;
       ids.add(buildAssistantTraceIdentity(parsed));
+      if (parsed.source === "stop_hook" && parsed.kind === "final") {
+        stopHookFinals.push(parsed);
+      }
     } catch {
       continue;
     }
   }
 
-  return ids;
+  return { ids, stopHookFinals };
 }
 
 export function appendAssistantTraceEvents(
@@ -281,12 +309,12 @@ export function appendAssistantTraceEvents(
 
   ensureSessionTraceDir(sessionId);
   const filePath = getAssistantTracePath(sessionId);
-  const existingIds = readExistingAssistantTraceIds(sessionId);
+  const { ids: existingIds, stopHookFinals } = readExistingAssistantTrace(sessionId);
 
   let appended = 0;
   for (const event of events) {
     const identity = buildAssistantTraceIdentity(event);
-    if (existingIds.has(identity)) {
+    if (existingIds.has(identity) || isStopHookTwin(event, stopHookFinals)) {
       continue;
     }
     fs.appendFileSync(filePath, redactedJsonLine(event));

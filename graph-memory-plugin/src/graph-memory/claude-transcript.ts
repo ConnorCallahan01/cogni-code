@@ -24,6 +24,9 @@ interface ClaudeAssistantEntry {
 interface VisibleAssistantTraceResult {
   transcriptPath: string | null;
   events: AssistantTraceEvent[];
+  // Index of the first event after the transcript's latest user line, so
+  // events.slice(currentTurnStart) holds only the turn in progress.
+  currentTurnStart: number;
 }
 
 function sanitizeClaudeProjectDir(projectRoot: string): string {
@@ -110,10 +113,11 @@ export function collectVisibleAssistantTrace(
 ): VisibleAssistantTraceResult {
   const transcriptPath = resolveClaudeTranscriptPath(projectRoot, sessionId);
   if (!transcriptPath || !fs.existsSync(transcriptPath)) {
-    return { transcriptPath: null, events: [] };
+    return { transcriptPath: null, events: [], currentTurnStart: 0 };
   }
 
   const events: AssistantTraceEvent[] = [];
+  let currentTurnStart = 0;
 
   for (const line of fs.readFileSync(transcriptPath, "utf-8").split("\n")) {
     if (!line.trim()) continue;
@@ -122,6 +126,12 @@ export function collectVisibleAssistantTrace(
     try {
       parsed = JSON.parse(line) as ClaudeAssistantEntry;
     } catch {
+      continue;
+    }
+
+    // A prompt or tool result: a turn's final always comes after its last one.
+    if (parsed.type === "user") {
+      currentTurnStart = events.length;
       continue;
     }
 
@@ -153,5 +163,5 @@ export function collectVisibleAssistantTrace(
     });
   }
 
-  return { transcriptPath, events };
+  return { transcriptPath, events, currentTurnStart };
 }

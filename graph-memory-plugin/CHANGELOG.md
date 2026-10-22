@@ -1,5 +1,11 @@
 # Changelog
 
+## [4.2.4] (2026-10-22) — Each turn's final answer is captured as its own
+
+### Fixed
+
+- **A Claude Code answer was captured with the previous turn's time, and reached the assistant trace a turn late.** Claude Code often runs the Stop hook before it writes the turn's final message to the transcript, and the hook took the newest final there, the previous turn's. In the conversation buffer, about half of all answers carried the previous answer's timestamp, so they sorted before their own prompts. In `assistant-trace.jsonl`, each final arrived one turn late, so a session's last answer usually never got there and the daily brief missed it. The hook now accepts only a final after the transcript's latest user line. Without one, it stamps its own time and records the final it was handed, and the transcript's copy is skipped when a later turn syncs it.
+
 ## [4.2.3] (2026-10-22) — Captures redact secrets in JSON
 
 ### Security
