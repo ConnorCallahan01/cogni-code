@@ -6,8 +6,8 @@
  * `env` would otherwise be copied into nodes. Redaction used to look only at
  * object key names; these patterns match the values themselves.
  *
- * Writers apply this to the serialized JSONL line, so no pattern may match a
- * quote or a backslash-escaped quote: a replacement must never break the JSON.
+ * Writers apply this to the serialized JSONL line, so no replacement may drop
+ * a quote or a backslash-escaped quote: it must never break the JSON.
  */
 
 const REDACTED = "[redacted]";
@@ -31,9 +31,10 @@ const PRIVATE_KEY_BLOCK = /-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----(?:[A-Za-z0-9+/=
 const AUTH_HEADER = /\b(Bearer|Basic)(\s+)[A-Za-z0-9._~+/=-]{16,}/gi;
 
 // NAME=value or NAME: value where the name says it holds a secret, e.g.
-// `export GITHUB_TOKEN="…"` or `password: …`. The value may sit behind a quote
-// (or a JSON-escaped one).
-const SECRET_ASSIGNMENT = /\b([A-Za-z0-9_.-]*(?:api[_-]?key|apikey|token|secret|password|passwd|private[_-]?key|access[_-]?key|credentials?)[A-Za-z0-9_.-]*)(\s*[=:]\s*)(\\?["']?)([^\s"'\\,;&)}\]]+)/gi;
+// `export GITHUB_TOKEN="…"`, `password: …`, or a JSON `"api_key": "…"`. The
+// name and the value may each sit behind a quote (or a JSON-escaped one);
+// both quotes are kept.
+const SECRET_ASSIGNMENT = /\b([A-Za-z0-9_.-]*(?:api[_-]?key|apikey|token|secret|password|passwd|private[_-]?key|access[_-]?key|credentials?)[A-Za-z0-9_.-]*)(\\?["']?\s*[=:]\s*)(\\?["']?)([^\s"'\\,;&)}\]]+)/gi;
 
 function looksLikeSecretValue(value: string): boolean {
   if (value === REDACTED || value.startsWith("[redacted")) return false;
