@@ -1,5 +1,11 @@
 # Changelog
 
+## [4.2.3] (2026-10-22) — Captures redact secrets in JSON
+
+### Security
+
+- **A secret under a quoted name reached the captures.** Redaction caught `API_KEY=…` and `api_key: …` but not `"API_KEY": "…"`, because the closing quote after the name stood between it and the colon. A session that printed a JSON config holding a key, such as an MCP server's `environment` block in `opencode.json`, captured the key as-is for the pipeline workers to read. Names may now sit behind a quote, plain or JSON-escaped, so JSON and Python dicts are redacted like shell and YAML. Counts such as `"input_tokens": 1234` are still left alone.
+
 ## [4.2.2] (2026-10-21) — Rebuilding the daemon image after an upgrade picks up every changed file
 
 ### Fixed

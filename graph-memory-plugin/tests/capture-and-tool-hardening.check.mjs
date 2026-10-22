@@ -129,6 +129,10 @@ test("secrets are redacted by value, and ordinary text is left alone", async () 
   assert.equal(redactSecrets("password: " + "hunter2hunter2"), "password: [redacted]");
   assert.equal(redactSecrets("DB_PASSWORD=" + "correcthorsebatterystaple"), "DB_PASSWORD=[redacted]");
   assert.equal(redactSecrets("https://api.example.com/v1?access_token=" + "abc123def456" + "&page=2"), "https://api.example.com/v1?access_token=[redacted]&page=2");
+  // JSON and Python dicts quote the name too.
+  const zaiKey = "0123456789abcdef0123456789abcdef.AbCdEfGhIjKlMnOp";
+  assert.equal(redactSecrets(`"Z_AI_API_KEY": "${zaiKey}"`), '"Z_AI_API_KEY": "[redacted]"');
+  assert.equal(redactSecrets(`{'api_key': '${zaiKey}'}`), "{'api_key': '[redacted]'}");
 
   for (const prose of [
     "max_tokens: 4096",
@@ -139,6 +143,9 @@ test("secrets are redacted by value, and ordinary text is left alone", async () 
     "id 550e8400-e29b-41d4-a716-446655440000",
     "desk-lamp-with-a-very-long-name-here",
     "tokensUsed: 1234",
+    '"max_tokens": 4096',
+    '{"input_tokens": 1234, "output_tokens": 56}',
+    '"password": "required"',
   ]) {
     assert.equal(redactSecrets(prose), prose);
   }
@@ -148,13 +155,16 @@ test("secrets are redacted by value, and ordinary text is left alone", async () 
     prompt: `use ${FAKE.anthropic} and "quoted ${FAKE.github}"`,
     nested: { command: `curl -H "Authorization: Bearer ${"abc123".repeat(4)}" -d 'password=${"s3cr3tpass"}'` },
     pem: PEM,
+    // A JSON config printed by a tool, e.g. `cat opencode.json`.
+    output: JSON.stringify({ mcp: { zai: { environment: { Z_AI_API_KEY: zaiKey } } } }, null, 2),
   };
   const line = redactedJsonLine(entry);
   const parsed = JSON.parse(line);
-  for (const value of [FAKE.anthropic, FAKE.github, "abc123".repeat(4), "s3cr3tpass", "MIIEow"]) {
+  for (const value of [FAKE.anthropic, FAKE.github, "abc123".repeat(4), "s3cr3tpass", "MIIEow", zaiKey]) {
     assert.ok(!line.includes(value), `${value.slice(0, 12)}… survived`);
   }
   assert.equal(parsed.pem, "[redacted private key]");
+  assert.equal(JSON.parse(parsed.output).mcp.zai.environment.Z_AI_API_KEY, "[redacted]");
 });
 
 test("a secret in a prompt or tool output is redacted before it is captured", async () => {
