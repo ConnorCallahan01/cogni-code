@@ -30,11 +30,11 @@ function gitRepo(dir, remote) {
   return dir;
 }
 
-// Each hook run gets an empty HOME, so it finds the test graph through
-// GRAPH_MEMORY_ROOT alone.
-function runHook(script, graphRoot, input) {
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), "hook-home-"));
-  const env = { ...process.env, HOME: home, USERPROFILE: home, GRAPH_MEMORY_ROOT: graphRoot };
+// Each hook run gets an empty HOME unless the test passes one, so it finds the
+// test graph through GRAPH_MEMORY_ROOT alone.
+function runHook(script, graphRoot, input, home) {
+  const hookHome = home ?? fs.mkdtempSync(path.join(os.tmpdir(), "hook-home-"));
+  const env = { ...process.env, HOME: hookHome, USERPROFILE: hookHome, GRAPH_MEMORY_ROOT: graphRoot };
   delete env.GRAPH_MEMORY_PIPELINE_CHILD;
   delete env.GRAPH_MEMORY_WORKER;
   try {
@@ -44,7 +44,7 @@ function runHook(script, graphRoot, input) {
       env,
     });
   } finally {
-    fs.rmSync(home, { recursive: true, force: true });
+    if (!home) fs.rmSync(hookHome, { recursive: true, force: true });
   }
 }
 
@@ -188,6 +188,57 @@ test("a secret in a prompt or tool output is redacted before it is captured", as
     for (const value of [FAKE.anthropic, FAKE.github, "wJalrXUtnFEMI"]) {
       assert.ok(!captured.includes(value), `${value.slice(0, 12)}… reached a capture file`);
     }
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+// Claude Code can run the Stop hook before the turn's final reaches the
+// transcript. The hook took the newest final there, the previous turn's, so
+// the buffer got that turn's timestamp and the trace ran a turn behind.
+test("a turn's final is captured as its own, even before the transcript has it", async () => {
+  const { tmp, graphRoot } = await freshGraph("stop-final-");
+  try {
+    const cwd = gitRepo(path.join(tmp, "repo"), `https://github.com/${PROJECT}.git`);
+    const home = path.join(tmp, "home");
+    const transcriptDir = path.join(home, ".claude", "projects", cwd.replace(/[^a-zA-Z0-9._-]/g, "-"));
+    fs.mkdirSync(transcriptDir, { recursive: true });
+    const write = (entry) => fs.appendFileSync(path.join(transcriptDir, "sess-f.jsonl"), JSON.stringify(entry) + "\n");
+    const prompt = (text) => write({ type: "user", timestamp: new Date().toISOString(), message: { role: "user", content: text } });
+    const final = (uuid, text) => {
+      const timestamp = new Date().toISOString();
+      write({ type: "assistant", uuid, timestamp, message: { role: "assistant", stop_reason: "end_turn", content: [{ type: "text", text }] } });
+      return timestamp;
+    };
+    const stop = (text) => runHook("on-assistant-response.js", graphRoot, { cwd, session_id: "sess-f", hook_event_name: "Stop", last_assistant_message: text }, home);
+    const buffered = () => fs.readFileSync(path.join(graphRoot, ".buffer", "conversation-sess-f.jsonl"), "utf-8")
+      .split("\n").filter(Boolean).map((line) => JSON.parse(line)).filter((entry) => entry.role === "assistant");
+    const traceFinals = () => fs.readFileSync(path.join(graphRoot, ".sessions", "sess-f", "assistant-trace.jsonl"), "utf-8")
+      .split("\n").filter(Boolean).map((line) => JSON.parse(line)).filter((event) => event.kind === "final");
+
+    // Turn 1: the final is in the transcript when the hook runs.
+    prompt("first");
+    const firstAt = final("a1", "Answer one.");
+    stop("Answer one.");
+
+    // Turn 2: the hook runs first, then Claude Code writes the final.
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    prompt("second");
+    const secondStopAt = new Date().toISOString();
+    stop("Answer two.");
+    final("a2", "Answer two.");
+    assert.ok(buffered()[1].timestamp >= secondStopAt, `turn 2 was stamped ${buffered()[1].timestamp}, before its own Stop hook`);
+    assert.notEqual(buffered()[1].timestamp, firstAt);
+    assert.deepEqual(traceFinals().map((event) => event.text), ["Answer one.", "Answer two."], "turn 2's final is in the trace at its own Stop");
+
+    // Turn 3: the transcript now also holds turn 2's final, already recorded.
+    prompt("third");
+    const thirdAt = final("a3", "Answer three.");
+    stop("Answer three.");
+    assert.deepEqual(buffered().map((entry) => entry.content), ["Answer one.", "Answer two.", "Answer three."]);
+    assert.equal(buffered()[0].timestamp, firstAt);
+    assert.equal(buffered()[2].timestamp, thirdAt);
+    assert.deepEqual(traceFinals().map((event) => event.text), ["Answer one.", "Answer two.", "Answer three."], "each final is in the trace once");
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
   }

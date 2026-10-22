@@ -70,23 +70,29 @@ async function main() {
     project: project.name,
     cwd,
   });
-  const assistantTraceEvents = transcript.events.length > 0
+  // Claude Code can run this hook before the turn's final message reaches the
+  // transcript, when the newest final there is the previous turn's. Only a
+  // final after the latest user line is this turn's; without one, the hook
+  // records the final itself and the transcript's copy is skipped later.
+  const turnFinal = transcript.events
+    .slice(transcript.currentTurnStart)
+    .reverse()
+    .find((event) => event.kind === "final");
+  const now = turnFinal?.timestamp || new Date().toISOString();
+  const assistantTraceEvents = turnFinal
     ? transcript.events
-    : [{
+    : [...transcript.events, {
         type: "assistant_text" as const,
-        timestamp: new Date().toISOString(),
+        timestamp: now,
         sessionId,
         project: project.name,
         cwd,
         kind: "final" as const,
         text: input.last_assistant_message,
         source: "stop_hook" as const,
-        transcriptPath: null,
+        transcriptPath: transcript.transcriptPath,
       }];
   const transcriptResult = appendAssistantTraceEvents(sessionId, assistantTraceEvents);
-  const latestTranscriptFinal = [...transcript.events]
-    .reverse()
-    .find((event) => event.kind === "final");
 
   // Ensure buffer directory exists
   const bufferDir = CONFIG.paths.buffer;
@@ -95,7 +101,6 @@ async function main() {
   }
 
   const logPath = getConversationLogPath(sessionId);
-  const now = latestTranscriptFinal?.timestamp || new Date().toISOString();
 
   // Append assistant message
   const assistantEntry: BufferEntry = {
