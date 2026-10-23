@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.2.5] (2026-10-23) — Dependencies with security fixes
+
+### Security
+
+- **zod 4.6.5 → 4.6.7** ([GHSA-mrhx-c7xc-m3w5](https://github.com/advisories/GHSA-mrhx-c7xc-m3w5), high). zod could exhaust memory while validating an oversized constrained collection. The MCP server validates every `graph_memory` call's arguments with zod, so an oversized call from the agent could stall it.
+- **ip-address 10.7.3 → 10.7.4** ([GHSA-rxp7-6hxx-x8q5](https://github.com/advisories/GHSA-rxp7-6hxx-x8q5), moderate). Parsing an IPv6 zone identifier took quadratic time. It comes in through the MCP SDK's `express-rate-limit`, which only its HTTP transport uses; cogni-code's MCP server uses stdio, so the slow path was never reached.
+
 ## [4.2.4] (2026-10-22) — Each turn's final answer is captured as its own
 
 ### Fixed
