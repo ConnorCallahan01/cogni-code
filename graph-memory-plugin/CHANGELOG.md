@@ -1,5 +1,11 @@
 # Changelog
 
+## [4.2.6] (2026-10-23) — body-parser with a security fix
+
+### Security
+
+- **body-parser 2.3.0 → 2.4.0** ([GHSA-27r3-jxmh-p828](https://github.com/advisories/GHSA-27r3-jxmh-p828), high). Trailing bytes after a compressed request body could tie up the server. It comes in through the MCP SDK's `express`, which only its HTTP transport uses. cogni-code's MCP server uses stdio, so the parser never ran, but the shrinkwrap pinned the vulnerable version for every install.
+
 ## [4.2.5] (2026-10-23) — Dependencies with security fixes
 
 ### Security
