@@ -19,12 +19,12 @@
     "@anthropic-ai/sdk": "^0.78.0",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "chokidar": "^4.0.0",
-    "dotenv": "^18.0.5",
+    "dotenv": "^18.0.8",
     "express": "^4.21.0",
     "js-yaml": "^4.2.0",
     "simple-git": "^4.0.2",
     "ws": "^8.22.0",
-    "zod": "^4.6.5"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@types/express": "^5.0.0",
@@ -32,6 +32,6 @@
     "@types/ws": "^8.18.2",
     "tsx": "^4.23.15",
     "typescript": "^5.6.0",
-    "vitest": "^5.0.3"
+    "vitest": "^5.0.5"
   }
 }
