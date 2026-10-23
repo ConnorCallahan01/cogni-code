@@ -1,10 +1,12 @@
 # Changelog
 
-## [4.2.6] (2026-10-23) — body-parser with a security fix
+## [4.2.6] (2026-10-23) — Dependencies with security fixes, in the package and the daemon image
 
 ### Security
 
 - **body-parser 2.3.0 → 2.4.0** ([GHSA-27r3-jxmh-p828](https://github.com/advisories/GHSA-27r3-jxmh-p828), high). Trailing bytes after a compressed request body could tie up the server. It comes in through the MCP SDK's `express`, which only its HTTP transport uses. cogni-code's MCP server uses stdio, so the parser never ran, but the shrinkwrap pinned the vulnerable version for every install.
+- **fast-uri 3.1.8 → 3.1.9** ([GHSA-w74x-v6f9-j3xg](https://github.com/advisories/GHSA-w74x-v6f9-j3xg), [GHSA-wjr9-j795-jxcr](https://github.com/advisories/GHSA-wjr9-j795-jxcr), moderate; two low). It comes in through the MCP SDK's `ajv`, which resolves URIs in cogni-code's own tool schemas, not in anything a caller sends.
+- **undici 8.10.2 → 8.12.3 in the daemon image** ([GHSA-xjj6-f33q-929c](https://github.com/advisories/GHSA-xjj6-f33q-929c), high; two moderate). `@earendil-works/pi-coding-agent` pins undici 8.10.2 exactly in every release up to 1.4.0, so `docker/worker-clis` now overrides it. pi is the only worker CLI that uses it. Rebuild the image to pick it up.
 
 ## [4.2.5] (2026-10-23) — Dependencies with security fixes
 
