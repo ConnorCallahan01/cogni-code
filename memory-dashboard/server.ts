@@ -10,6 +10,9 @@ import { spawnSync } from 'child_process'
 const app = express()
 app.use(express.json())
 const PORT = Number.parseInt(process.env.MEMORY_DASHBOARD_API_PORT || process.env.PORT || '3001', 10)
+// Loopback only unless asked: the API has no authentication and serves the
+// whole graph, so binding every interface handed it to the local network.
+const HOST = process.env.MEMORY_DASHBOARD_API_HOST || '127.0.0.1'
 
 type JobState = 'queued' | 'running' | 'done' | 'failed'
 type JobType = 'scribe' | 'working_update' | 'auditor' | 'librarian' | 'dreamer' | 'dreamer_v3' | 'memory_analysis' | 'skillforge' | 'skillforge_refresh' | 'observer' | 'compressor' | 'bootstrap_project_doc'
@@ -2850,8 +2853,8 @@ watcher.on('all', (_event, changedPath) => {
   }
 })
 
-const server = app.listen(PORT, () => {
-  console.log(`Memory dashboard server listening on http://localhost:${PORT}`)
+const server = app.listen(PORT, HOST, () => {
+  console.log(`Memory dashboard server listening on http://${HOST.includes(':') ? `[${HOST}]` : HOST}:${PORT}`)
   console.log(`Graph root: ${initialGraphRoot}`)
 })
 
