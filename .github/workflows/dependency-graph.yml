@@ -1,0 +1,32 @@
+name: Dependency graph
+
+# GitHub's dependency graph doesn't read npm-shrinkwrap.json, so Dependabot
+# alerts stopped covering the plugin's installed dependencies when 4.2.1
+# replaced its package-lock.json. This submits the shrinkwrap's resolved tree
+# on every push to master.
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+concurrency:
+  group: dependency-graph
+  cancel-in-progress: true
+
+jobs:
+  submit:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      # Actions are pinned to a commit: a tag can be moved to other code.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+
+      - name: Submit the plugin's npm-shrinkwrap.json
+        run: node .github/scripts/submit-shrinkwrap-dependencies.mjs graph-memory-plugin/npm-shrinkwrap.json
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
